@@ -3,6 +3,7 @@ package registry
 import (
 	"context"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -71,16 +72,16 @@ func newFreeleechAdapter(t *testing.T, inner native.Driver, freeleechOnly bool) 
 	t.Helper()
 	db := dbtest.OpenMigrated(t)
 	return &indexerAdapter{
-		info:         core.IndexerInfo{ID: "fake"},
-		inner:        inner,
-		instanceID:   insertTestInstance(t, db),
-		db:           db,
-		settings:     instanceSettings{Freeleech: freeleechOnly},
-		circuitLocks: &circuitLocks{},
-		stats:        newIndexerStats(db, time.Now, zerolog.Nop()),
-		budget:       newRequestBudget(db, time.Now, zerolog.Nop()),
-		clock:        time.Now,
-		log:          zerolog.Nop(),
+		info:       core.IndexerInfo{ID: "fake"},
+		inner:      inner,
+		instanceID: insertTestInstance(t, db),
+		db:         db,
+		settings:   instanceSettings{Freeleech: freeleechOnly},
+		circuitMu:  &sync.Mutex{},
+		stats:      newIndexerStats(db, time.Now, zerolog.Nop()),
+		budget:     newRequestBudget(db, time.Now, zerolog.Nop()),
+		clock:      time.Now,
+		log:        zerolog.Nop(),
 	}
 }
 

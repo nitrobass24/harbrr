@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,16 +29,16 @@ func newDiagTestAdapter(t *testing.T) (*indexerAdapter, *diagnostics) {
 	db := dbtest.OpenMigrated(t)
 	ring := newDiagnostics()
 	return &indexerAdapter{
-		instanceID:   insertTestInstance(t, db),
-		db:           db,
-		health:       database.Health{},
-		circuit:      database.Circuit{},
-		circuitLocks: &circuitLocks{},
-		diagnostics:  ring,
-		startedAt:    diagNow.Add(-2 * time.Hour),
-		clock:        func() time.Time { return diagNow },
-		stats:        newIndexerStats(db, func() time.Time { return diagNow }, zerolog.Nop()),
-		log:          zerolog.Nop(),
+		instanceID:  insertTestInstance(t, db),
+		db:          db,
+		health:      database.Health{},
+		circuit:     database.Circuit{},
+		circuitMu:   &sync.Mutex{},
+		diagnostics: ring,
+		startedAt:   diagNow.Add(-2 * time.Hour),
+		clock:       func() time.Time { return diagNow },
+		stats:       newIndexerStats(db, func() time.Time { return diagNow }, zerolog.Nop()),
+		log:         zerolog.Nop(),
 	}, ring
 }
 

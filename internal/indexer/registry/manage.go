@@ -51,15 +51,12 @@ type serveEvicter interface {
 	invalidateSearchCache(ctx context.Context, id int64)
 }
 
-// instanceForgetter drops the in-memory per-instance state that would otherwise
-// OUTLIVE the deleted row — cache counters, query/grab stats, request budget, and the
-// diagnostics ring. Delete only: for an update the instance still exists and its
-// counters are still its own.
+// instanceForgetter drops everything keyed by an instance id that would otherwise
+// OUTLIVE the deleted row — the search-cache entries and epoch, the cache counters,
+// the query/grab stats, the request budget, and the diagnostics ring. Delete only:
+// for an update the instance still exists and its counters are still its own.
 type instanceForgetter interface {
-	forgetCacheCounters(id int64)
-	forgetStats(id int64)
-	forgetBudget(id int64)
-	forgetDiagnostics(id int64)
+	forgetInstance(ctx context.Context, id int64)
 }
 
 // StatsReporter is the health/stats reporting + lifecycle half of the registry: a read and
@@ -589,11 +586,7 @@ func (r *Manager) Delete(ctx context.Context, slug string) error {
 		return fmt.Errorf("registry: delete %q: %w", slug, err)
 	}
 	r.evicter.invalidate(slug)
-	r.evicter.invalidateSearchCache(ctx, inst.ID)
-	r.forgetter.forgetCacheCounters(inst.ID)
-	r.forgetter.forgetStats(inst.ID)
-	r.forgetter.forgetBudget(inst.ID)
-	r.forgetter.forgetDiagnostics(inst.ID)
+	r.forgetter.forgetInstance(ctx, inst.ID)
 	return nil
 }
 
@@ -737,7 +730,7 @@ const healthEventLimit = 20
 // time-based expiry at all. "unknown" therefore means NEVER TESTED — nothing has ever
 // been observed for this indexer — not "what we knew has expired". Idleness is not a
 // health signal: an indexer nobody queries keeps the last answer it gave.
-// Exported so API handlers tallying or switching on FleetStatus.Status share one
+// Exported so API handlers tallying or switching on HealthStatus.Status share one
 // definition with the derivation instead of re-typing wire literals.
 const (
 	StatusHealthy = "healthy"
@@ -754,9 +747,13 @@ func ValidStatus(s string) bool {
 }
 
 // HealthStatus is one indexer's derived health plus the recent events behind it
-// (details already credential-scrubbed at write time). DisabledTill is non-nil
-// while the circuit breaker (#253) currently excludes the indexer from dispatch;
-// FailingSince mirrors FleetStatus.
+// (details already credential-scrubbed at write time). DisabledTill is non-nil while
+// the circuit breaker (#253) currently excludes the indexer from dispatch;
+// FailingSince is when the current failure streak began (the circuit's
+// InitialFailure) — non-nil only while the status is failing and the ladder has
+// actually been climbed, so it never claims a start time for a working indexer.
+// AllStatuses returns the same shape with Events holding at most the single most
+// recent event.
 type HealthStatus struct {
 	Slug         string
 	Status       string
@@ -794,37 +791,23 @@ func (r *StatsReporter) Diagnostics(ctx context.Context, slug string) ([]Failure
 	return r.diagnostics.list(inst.ID), nil
 }
 
-// FleetStatus is one indexer's derived health for the fleet-wide roll-up: the
-// status plus its single most recent health event (Events is empty when it has
-// none, mirroring HealthStatus.Events). DisabledTill mirrors HealthStatus.
-// FailingSince is when the current failure streak began (the circuit's
-// InitialFailure) — non-nil only while the status is failing and the ladder has
-// actually been climbed, so it never claims a start time for a working indexer.
-type FleetStatus struct {
-	Slug         string
-	Status       string
-	Events       []domain.IndexerHealthEvent
-	DisabledTill *time.Time
-	FailingSince *time.Time
-}
-
 // AllStatuses returns every configured instance's derived health, sorted by slug.
 // Like Status, it derives from only the newest event per instance (deriveStatus
 // reads events[0]), so it fetches with limit 1 rather than pulling healthEventLimit
 // events per instance.
-func (r *StatsReporter) AllStatuses(ctx context.Context) ([]FleetStatus, error) {
+func (r *StatsReporter) AllStatuses(ctx context.Context) ([]HealthStatus, error) {
 	list, err := r.instances.List(ctx, r.db)
 	if err != nil {
 		return nil, fmt.Errorf("registry: all statuses: %w", err)
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].Slug < list[j].Slug })
-	out := make([]FleetStatus, 0, len(list))
+	out := make([]HealthStatus, 0, len(list))
 	for _, inst := range list {
 		snap, err := r.statusOf(ctx, inst.ID, 1)
 		if err != nil {
 			return nil, fmt.Errorf("registry: all statuses %q: %w", inst.Slug, err)
 		}
-		out = append(out, FleetStatus{
+		out = append(out, HealthStatus{
 			Slug: inst.Slug, Status: snap.status, Events: snap.events,
 			DisabledTill: snap.disabledTill, FailingSince: snap.failingSince,
 		})

@@ -57,18 +57,22 @@ type RequestBudget struct {
 // budgetState is one instance's in-memory query/grab counters, guarded by its own
 // mutex so concurrent Reserve/MarkQuotaSpent calls for the SAME instance serialize
 // (different instances never contend). loaded gates the one-time read-through from
-// the store on first touch.
+// the store on first touch. kinds is indexed by budgetKind, so every path addresses
+// the one kind it is working on instead of switching over a duplicated field pair.
 type budgetState struct {
 	mu     sync.Mutex
 	loaded bool
 
-	queryPeriod    string
-	queryCount     int64
-	queryExhausted bool
+	kinds [2]budgetKindState
+}
 
-	grabPeriod    string
-	grabCount     int64
-	grabExhausted bool
+// budgetKindState is one kind's standing in its rolling period: the period key the
+// count was taken under, the count itself, and the reactively-learned exhausted
+// latch. A period key that is no longer current reads as a fresh (zero) state.
+type budgetKindState struct {
+	period    string
+	count     int64
+	exhausted bool
 }
 
 // newRequestBudget builds the budget tracker over db with the given clock/logger.
@@ -99,8 +103,8 @@ func (b *RequestBudget) ensureLoaded(ctx context.Context, instanceID int64, st *
 		b.log.Warn().Int64("instance_id", instanceID).Str("error", apphttp.RedactError(err)).
 			Msg("registry: budget counters read failed; starting from zero")
 	case ok:
-		st.queryPeriod, st.queryCount, st.queryExhausted = row.QueryPeriod, row.QueryCount, row.QueryExhausted
-		st.grabPeriod, st.grabCount, st.grabExhausted = row.GrabPeriod, row.GrabCount, row.GrabExhausted
+		st.kinds[budgetKindQuery] = budgetKindState{period: row.QueryPeriod, count: row.QueryCount, exhausted: row.QueryExhausted}
+		st.kinds[budgetKindGrab] = budgetKindState{period: row.GrabPeriod, count: row.GrabCount, exhausted: row.GrabExhausted}
 	}
 	st.loaded = true
 }
@@ -149,12 +153,11 @@ func (b *RequestBudget) release(ctx context.Context, instanceID int64, limits bu
 	defer st.mu.Unlock()
 	b.ensureLoaded(ctx, instanceID, st)
 
-	period := periodKey(reservedAt, limits.unit)
-	count, exhausted, curPeriod := st.snapshot(kind)
-	if curPeriod != period || count <= 0 {
+	k := &st.kinds[kind]
+	if k.period != periodKey(reservedAt, limits.unit) || k.count <= 0 {
 		return
 	}
-	st.set(kind, period, count-1, exhausted)
+	k.count--
 	// Under st.mu for the same write-ordering reason as reserve.
 	b.persist(ctx, st.row(instanceID, b.clock()))
 }
@@ -171,18 +174,16 @@ func (b *RequestBudget) reserve(ctx context.Context, instanceID int64, limits bu
 	st.mu.Lock()
 	b.ensureLoaded(ctx, instanceID, st)
 
-	period := periodKey(now, limits.unit)
-	count, exhausted, curPeriod := st.snapshot(kind)
-	if curPeriod != period {
-		count, exhausted = 0, false
+	k := &st.kinds[kind]
+	if period := periodKey(now, limits.unit); k.period != period {
+		*k = budgetKindState{period: period}
 	}
 
-	limit := limits.limit(kind)
-	allow := !exhausted && (limit == nil || count < int64(*limit))
+	limit := limits.kinds[kind].limit
+	allow := !k.exhausted && (limit == nil || k.count < int64(*limit))
 	if allow {
-		count++
+		k.count++
 	}
-	st.set(kind, period, count, exhausted)
 	// Persisted under st.mu so snapshots reach the store in mutation order —
 	// unlocking first would let two concurrent reserves persist in reverse and
 	// leave a stale count (or a dropped exhausted latch) for the next process
@@ -203,12 +204,11 @@ func (b *RequestBudget) MarkQuotaSpent(ctx context.Context, instanceID int64, li
 	st.mu.Lock()
 	b.ensureLoaded(ctx, instanceID, st)
 
-	period := periodKey(now, limits.unit)
-	count, _, curPeriod := st.snapshot(kind)
-	if curPeriod != period {
-		count = 0
+	k := &st.kinds[kind]
+	if period := periodKey(now, limits.unit); k.period != period {
+		*k = budgetKindState{period: period}
 	}
-	st.set(kind, period, count, true)
+	k.exhausted = true
 	// Under st.mu for the same write-ordering reason as reserve.
 	b.persist(ctx, st.row(instanceID, b.clock()))
 	st.mu.Unlock()
@@ -224,35 +224,18 @@ func (b *RequestBudget) persist(ctx context.Context, row database.BudgetCounter)
 	}
 }
 
-// snapshot returns kind's current count, exhausted latch, and period key. Caller
-// must hold st.mu.
-func (st *budgetState) snapshot(kind budgetKind) (count int64, exhausted bool, period string) {
-	if kind == budgetKindGrab {
-		return st.grabCount, st.grabExhausted, st.grabPeriod
-	}
-	return st.queryCount, st.queryExhausted, st.queryPeriod
-}
-
-// set overwrites kind's period/count/exhausted. Caller must hold st.mu.
-func (st *budgetState) set(kind budgetKind, period string, count int64, exhausted bool) {
-	if kind == budgetKindGrab {
-		st.grabPeriod, st.grabCount, st.grabExhausted = period, count, exhausted
-		return
-	}
-	st.queryPeriod, st.queryCount, st.queryExhausted = period, count, exhausted
-}
-
 // row snapshots st into a database.BudgetCounter ready to persist. Caller must hold
 // st.mu.
 func (st *budgetState) row(instanceID int64, now time.Time) database.BudgetCounter {
+	q, g := st.kinds[budgetKindQuery], st.kinds[budgetKindGrab]
 	return database.BudgetCounter{
 		InstanceID:     instanceID,
-		QueryPeriod:    st.queryPeriod,
-		QueryCount:     st.queryCount,
-		QueryExhausted: st.queryExhausted,
-		GrabPeriod:     st.grabPeriod,
-		GrabCount:      st.grabCount,
-		GrabExhausted:  st.grabExhausted,
+		QueryPeriod:    q.period,
+		QueryCount:     q.count,
+		QueryExhausted: q.exhausted,
+		GrabPeriod:     g.period,
+		GrabCount:      g.count,
+		GrabExhausted:  g.exhausted,
 		UpdatedAt:      now,
 	}
 }
@@ -309,14 +292,14 @@ func (b *RequestBudget) Status(ctx context.Context, instanceID int64, limits bud
 // stored period is still current, zeroes once it has rolled over. Caller must hold
 // st.mu.
 func kindStatus(st *budgetState, kind budgetKind, limits budgetLimits, period string) BudgetKindStatus {
-	count, exhausted, curPeriod := st.snapshot(kind)
-	if curPeriod != period {
-		count, exhausted = 0, false
+	k := st.kinds[kind]
+	if k.period != period {
+		k = budgetKindState{}
 	}
-	out := BudgetKindStatus{Used: count, Learned: exhausted}
-	if limit := limits.limit(kind); limit != nil {
-		out.Limit = *limit
-		out.Detected = limits.detected(kind)
+	out := BudgetKindStatus{Used: k.count, Learned: k.exhausted}
+	if lim := limits.kinds[kind]; lim.limit != nil {
+		out.Limit = *lim.limit
+		out.Detected = lim.detected
 	}
 	return out
 }

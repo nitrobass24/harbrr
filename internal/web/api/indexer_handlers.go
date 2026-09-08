@@ -530,9 +530,10 @@ func (rt *router) allIndexerStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// toFleetIndexerStatus maps a registry FleetStatus to its API view, reusing
-// statusEvent for the most recent event (nil when the indexer has none).
-func toFleetIndexerStatus(st registry.FleetStatus) fleetIndexerStatus {
+// toFleetIndexerStatus maps one registry HealthStatus from the fleet roll-up to its
+// API view, reusing statusEvent for the most recent event (nil when the indexer has
+// none).
+func toFleetIndexerStatus(st registry.HealthStatus) fleetIndexerStatus {
 	fs := fleetIndexerStatus{
 		Slug: st.Slug, Status: st.Status,
 		DisabledTill: st.DisabledTill, FailingSince: st.FailingSince,

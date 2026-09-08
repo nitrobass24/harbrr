@@ -3,6 +3,7 @@ package registry
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -73,20 +74,20 @@ func newBudgetTestAdapter(t *testing.T, inner *budgetFakeDriver, cfg map[string]
 	budget := newRequestBudget(db, clock, zerolog.Nop())
 
 	a := &indexerAdapter{
-		info:         core.IndexerInfo{ID: "fake"},
-		inner:        inner,
-		instanceID:   instID,
-		settings:     instanceSettings{Budget: resolveBudgetLimits(cfg)},
-		cache:        sc,
-		db:           db,
-		health:       database.Health{},
-		stats:        newIndexerStats(db, clock, zerolog.Nop()),
-		budget:       budget,
-		circuit:      database.Circuit{},
-		circuitLocks: &circuitLocks{},
-		startedAt:    now,
-		clock:        clock,
-		log:          zerolog.Nop(),
+		info:       core.IndexerInfo{ID: "fake"},
+		inner:      inner,
+		instanceID: instID,
+		settings:   instanceSettings{Budget: resolveBudgetLimits(cfg)},
+		cache:      sc,
+		db:         db,
+		health:     database.Health{},
+		stats:      newIndexerStats(db, clock, zerolog.Nop()),
+		budget:     budget,
+		circuit:    database.Circuit{},
+		circuitMu:  &sync.Mutex{},
+		startedAt:  now,
+		clock:      clock,
+		log:        zerolog.Nop(),
 	}
 	return a, &clk
 }

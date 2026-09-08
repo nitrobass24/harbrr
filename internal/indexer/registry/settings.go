@@ -253,14 +253,17 @@ func warmIntervalFromValue(raw string) (time.Duration, bool) {
 type budgetLimits struct {
 	// unit is "day" (the default) or "hour", mirroring Prowlarr's limitsUnit.
 	unit string
-	// query/grab are the configured caps; nil = no cap configured (the budget is
-	// disabled for that kind — only the reactive learning latch can still block it).
-	query *int
-	grab  *int
-	// queryDetected/grabDetected report that the cap was read from the indexer's own
-	// account limits rather than typed by the operator (autobrr/harbrr#377).
-	queryDetected bool
-	grabDetected  bool
+	// kinds is the per-kind cap, indexed by budgetKind.
+	kinds [2]budgetKindLimit
+}
+
+// budgetKindLimit is one kind's configured cap. limit is nil when no cap is
+// configured (the budget is disabled for that kind — only the reactive learning
+// latch can still block it); detected reports the cap was read from the indexer's
+// own account limits rather than typed by the operator (autobrr/harbrr#377).
+type budgetKindLimit struct {
+	limit    *int
+	detected bool
 }
 
 // limitSourceDetected is the provenance marker a driver writes beside a cap it
@@ -275,28 +278,12 @@ const limitSourceDetected = "detected"
 // layer's budgetStatus (a fresh per-read view for the usage meter).
 func resolveBudgetLimits(cfg map[string]string) budgetLimits {
 	return budgetLimits{
-		unit:          resolveLimitsUnit(cfg),
-		query:         parseLimit(cfg["query_limit"]),
-		grab:          parseLimit(cfg["grab_limit"]),
-		queryDetected: cfg["query_limit_source"] == limitSourceDetected,
-		grabDetected:  cfg["grab_limit_source"] == limitSourceDetected,
+		unit: resolveLimitsUnit(cfg),
+		kinds: [2]budgetKindLimit{
+			budgetKindQuery: {limit: parseLimit(cfg["query_limit"]), detected: cfg["query_limit_source"] == limitSourceDetected},
+			budgetKindGrab:  {limit: parseLimit(cfg["grab_limit"]), detected: cfg["grab_limit_source"] == limitSourceDetected},
+		},
 	}
-}
-
-// limit returns kind's configured cap (nil = none).
-func (b budgetLimits) limit(kind budgetKind) *int {
-	if kind == budgetKindGrab {
-		return b.grab
-	}
-	return b.query
-}
-
-// detected reports whether kind's cap carries the detected-provenance marker.
-func (b budgetLimits) detected(kind budgetKind) bool {
-	if kind == budgetKindGrab {
-		return b.grabDetected
-	}
-	return b.queryDetected
 }
 
 // resolveLimitsUnit reads the instance's limits_unit setting ("day" default, "hour"

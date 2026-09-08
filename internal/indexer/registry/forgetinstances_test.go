@@ -17,15 +17,16 @@ import (
 //
 // This base does not (yet) clear the negative breaker on invalidate/forget — that
 // landed separately (autobrr/harbrr#345/#352) outside this branch's ancestry — so
-// this test only covers the four seams ForgetInstances actually runs here: the
-// search-cache epoch bump (drops a stale write-back), cache counters, stats, and
-// budget state.
+// this test covers the five seams forgetInstance runs here: the search-cache epoch
+// bump (drops a stale write-back), cache counters, stats, budget state, and the
+// diagnostics ring.
 func TestForgetInstancesEvictsPerInstanceState(t *testing.T) {
 	t.Parallel()
 	sc, instID, clk := testCache(t, keywordTTL, 0)
 	stats := newIndexerStats(sc.db, sc.clock, zerolog.Nop())
 	budget := newRequestBudget(sc.db, sc.clock, zerolog.Nop())
-	r := &Resolver{searchCache: sc, stats: stats, budget: budget, log: zerolog.Nop()}
+	diag := newDiagnostics()
+	r := &Resolver{searchCache: sc, stats: stats, budget: budget, diagnostics: diag, log: zerolog.Nop()}
 	ctx := context.Background()
 
 	// Prime: one live search through a probe that snapshots builtEpoch (0) BEFORE
@@ -45,9 +46,10 @@ func TestForgetInstancesEvictsPerInstanceState(t *testing.T) {
 		t.Fatalf("prime search did not store: found=%v err=%v", found, err)
 	}
 
-	// Prime stats + budget counters for the same instance.
+	// Prime stats + budget counters + a diagnostics capture for the same instance.
 	stats.RecordQuery(instID, 5*time.Millisecond)
 	budget.ReserveQuery(ctx, instID, resolveBudgetLimits(nil), *clk.Load())
+	diag.record(instID, FailureCapture{Kind: "transport", OccurredAt: *clk.Load()})
 	if queries := stats.snapshot(instID).queries; queries != 1 {
 		t.Fatalf("prime stats queries = %d, want 1", queries)
 	}
@@ -67,6 +69,11 @@ func TestForgetInstancesEvictsPerInstanceState(t *testing.T) {
 	}
 	if _, ok := budget.states.Load(instID); ok {
 		t.Error("budget state survived Forget")
+	}
+	// A restored-over instance's captured failed fetches go with it too — the seam
+	// the old per-field fan-out skipped (autobrr/harbrr#390).
+	if got := diag.list(instID); got != nil {
+		t.Errorf("diagnostics captures survived Forget: %d entries", len(got))
 	}
 	// The prior row is gone (InvalidateByInstance purges on top of the epoch bump).
 	if _, found, err := sc.store.Fetch(ctx, sc.db, key, sc.clock()); err != nil || found {

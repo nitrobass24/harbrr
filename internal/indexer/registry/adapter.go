@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -58,9 +59,14 @@ type indexerAdapter struct {
 	// classified failure climbs its escalation ladder and sets DisabledTill; a success
 	// descends one rung. liveSearch/Grab consult it before hitting the tracker.
 	circuit database.Circuit
-	// circuitLocks serializes this instance's circuit read-modify-write against a
-	// concurrent search/grab on the same indexer (#253 review). Shared across adapters.
-	circuitLocks *circuitLocks
+	// circuitMu serializes the Get -> escalate/recover -> Upsert read-modify-write so
+	// two concurrent failures (or a failure racing a recovery) can't both read the
+	// same level and clobber each other's update (#253 review). One process-wide
+	// mutex, held by the resolver (not the adapter) so it survives an adapter
+	// rebuild. ponytail: the store runs on a SetMaxOpenConns(1) SQLite handle, so
+	// these writes already serialize on the connection; per-instance locks would buy
+	// nothing at single-user scale. Split by instance id if that ever changes.
+	circuitMu *sync.Mutex
 	// startedAt is the registry's boot time, snapshotted here so the escalation ladder
 	// can cap a failure landing inside the startup grace window (see circuitbreaker.go).
 	startedAt time.Time
@@ -402,8 +408,8 @@ func (a *indexerAdapter) checkCircuit(ctx context.Context) error {
 // search/grab result.
 func (a *indexerAdapter) recordCircuitSuccess(ctx context.Context) {
 	a.stats.RecordSuccess(a.instanceID)
-	unlock := a.circuitLocks.lock(a.instanceID)
-	defer unlock()
+	a.circuitMu.Lock()
+	defer a.circuitMu.Unlock()
 	state, err := a.circuit.Get(ctx, a.db, a.instanceID)
 	if err != nil {
 		a.log.Warn().Str("indexer", a.info.ID).Str("error", apphttp.RedactError(err)).
@@ -452,8 +458,8 @@ func recoveryDetail(initialFailure, now time.Time) string {
 // state it wrote (the zero value when it could not write one), which carries the
 // failure streak the base-URL failover reads.
 func (a *indexerAdapter) escalateCircuit(ctx context.Context, kind string, err error) database.CircuitState {
-	unlock := a.circuitLocks.lock(a.instanceID)
-	defer unlock()
+	a.circuitMu.Lock()
+	defer a.circuitMu.Unlock()
 	state, gerr := a.circuit.Get(ctx, a.db, a.instanceID)
 	if gerr != nil {
 		a.log.Warn().Str("indexer", a.info.ID).Str("error", apphttp.RedactError(gerr)).
