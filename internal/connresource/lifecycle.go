@@ -31,8 +31,8 @@ func New[T any](db dbinterface.Querier, keyring *secrets.Keyring, clock func() t
 	return &Lifecycle[T]{db: db, keyring: keyring, clock: clock}
 }
 
-// CreateSpec is the input to Lifecycle.Create. Build, Insert, Secrets, SetSecrets
-// and Finalize are required; Minter/MintName and Hook/Conflict are optional.
+// CreateSpec is the input to Lifecycle.Create. Build, Insert and Finalize are
+// required; Minter/MintName, Secret/SetSecret and Conflict are optional.
 type CreateSpec[T any] struct {
 	// Minter mints the resource's dedicated harbrr key before Build runs, and is
 	// revoked (fail-closed: a revoke failure is returned alongside the create
@@ -47,26 +47,24 @@ type CreateSpec[T any] struct {
 	// key id (0 when Minter is nil).
 	Build func(now time.Time, mintedKeyID int64) T
 
-	// Hook runs inside the insert transaction, after Build and before Insert. It
-	// may mutate entity. Optional — see the package doc's hook tripwire.
-	Hook func(ctx context.Context, q dbinterface.Execer, entity *T) error
-
 	// Insert writes the row and returns its new id. A unique-constraint violation
 	// is detected by Lifecycle itself (via database.IsUniqueViolation) and does
 	// not need to be special-cased here.
 	Insert func(ctx context.Context, q dbinterface.Execer, entity T) (int64, error)
 
-	// Secrets returns the plaintext secrets to seal once the entity's id is known,
+	// Secret returns the plaintext secret to seal once the entity's id is known,
 	// given the entity and the minted key's plaintext (empty when Minter is nil).
-	Secrets func(entity T, mintedPlain string) []Secret
+	// Nil when the row itself seals nothing (download — its credential lives on
+	// the App), in which case SetSecret is not called either.
+	Secret func(entity T, mintedPlain string) Secret
 
-	// SetSecrets writes the sealed secrets (in Secrets' order) plus the active key
-	// id back onto the row.
-	SetSecrets func(ctx context.Context, q dbinterface.Execer, id int64, encrypted []string, keyID string) error
+	// SetSecret writes the sealed secret plus the active key id back onto the row.
+	// Only read when Secret is non-nil.
+	SetSecret func(ctx context.Context, q dbinterface.Execer, id int64, encrypted, keyID string) error
 
 	// Finalize returns the entity to hand back to the caller: entity with its id
-	// and sealed secrets (in Secrets' order) applied.
-	Finalize func(entity T, id int64, encrypted []string, keyID string) T
+	// and sealed secret applied (both blank when Secret is nil).
+	Finalize func(entity T, id int64, encrypted, keyID string) T
 
 	// Conflict formats the domain.ErrConflict-wrapped error for a unique-
 	// constraint violation on Insert. Nil means a unique violation is not
@@ -76,9 +74,9 @@ type CreateSpec[T any] struct {
 }
 
 // Create mints a key (if Minter is set), builds and inserts the entity, then
-// seals its secrets — the row is written first so its id can bind each secret's
-// encryption AAD. A failure after a successful mint revokes the orphaned key,
-// fail-closed: if the revoke itself fails, that failure is surfaced alongside the
+// seals its secret (if Secret is set) — the row is written first so its id can
+// bind the secret's encryption AAD. A failure after a successful mint revokes the
+// orphaned key, fail-closed: if the revoke itself fails, that failure is surfaced alongside the
 // original error rather than swallowed, since an unrevoked key remains a live
 // credential.
 func (l *Lifecycle[T]) Create(ctx context.Context, spec CreateSpec[T]) (T, error) {
@@ -113,12 +111,6 @@ func (l *Lifecycle[T]) insertSealed(ctx context.Context, spec CreateSpec[T], ent
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if spec.Hook != nil {
-		if err := spec.Hook(ctx, tx, &entity); err != nil {
-			return zero, err
-		}
-	}
-
 	id, err := spec.Insert(ctx, tx, entity)
 	if err != nil {
 		if spec.Conflict != nil && database.IsUniqueViolation(err) {
@@ -127,22 +119,19 @@ func (l *Lifecycle[T]) insertSealed(ctx context.Context, spec CreateSpec[T], ent
 		return zero, fmt.Errorf("connresource: insert: %w", err)
 	}
 
-	encrypted, keyID, err := l.sealSecrets(id, spec.Secrets(entity, mintedPlain))
-	if err != nil {
-		return zero, err
-	}
-	if err := spec.SetSecrets(ctx, tx, id, encrypted, keyID); err != nil {
-		return zero, fmt.Errorf("connresource: set secrets: %w", err)
+	var encrypted, keyID string
+	if spec.Secret != nil {
+		if encrypted, keyID, err = Seal(l.keyring, id, spec.Secret(entity, mintedPlain)); err != nil {
+			return zero, err
+		}
+		if err := spec.SetSecret(ctx, tx, id, encrypted, keyID); err != nil {
+			return zero, fmt.Errorf("connresource: set secret: %w", err)
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return zero, fmt.Errorf("connresource: commit: %w", err)
 	}
 	return spec.Finalize(entity, id, encrypted, keyID), nil
-}
-
-// sealSecrets encrypts each secret under id, in order.
-func (l *Lifecycle[T]) sealSecrets(id int64, plain []Secret) ([]string, string, error) {
-	return Seal(l.keyring, id, plain)
 }
 
 // revokeOrphan revokes a just-minted key after a failed create, fail-closed: a
@@ -156,15 +145,14 @@ func revokeOrphan(ctx context.Context, minter KeyMinter, keyID int64, createErr 
 	return createErr
 }
 
-// UpdateSpec is the input to Lifecycle.Update. Get and Write are required; Hook,
+// UpdateSpec is the input to Lifecycle.Update. Get and Write are required;
 // Patch, Rotate/Apply and Touch are optional.
 type UpdateSpec[T any] struct {
-	// Get reads the current row inside the update transaction.
+	// Get reads the current row inside the update transaction. A caller whose
+	// update needs to validate something else against that same transaction does
+	// it here (appsync's sync-profile reference check), so the check cannot be
+	// raced by a concurrent write between the read and the write.
 	Get func(ctx context.Context, q dbinterface.Execer, id int64) (T, error)
-
-	// Hook runs after Get and before Patch. Optional — see the package doc's hook
-	// tripwire.
-	Hook func(ctx context.Context, q dbinterface.Execer, entity *T) error
 
 	// Patch mutates entity's non-secret fields from the caller's patch params
 	// (closed over), validating as it goes.
@@ -177,8 +165,8 @@ type UpdateSpec[T any] struct {
 	// read when Rotate is non-nil.
 	Apply func(entity *T, encrypted, keyID string)
 
-	// Touch stamps entity's updated-at field with now. Optional (present in all
-	// three adopters today, but not required by the shape).
+	// Touch stamps entity's updated-at field with now. Optional (present in every
+	// adopter today, but not required by the shape).
 	Touch func(entity *T, now time.Time)
 
 	// Write persists the full patched row.
@@ -205,7 +193,7 @@ func (l *Lifecycle[T]) Update(ctx context.Context, id int64, spec UpdateSpec[T])
 	if err != nil {
 		return fmt.Errorf("connresource: get: %w", err)
 	}
-	if err := l.applyUpdate(ctx, tx, id, &entity, spec); err != nil {
+	if err := l.applyUpdate(id, &entity, spec); err != nil {
 		return err
 	}
 	if err := spec.Write(ctx, tx, entity); err != nil {
@@ -220,13 +208,8 @@ func (l *Lifecycle[T]) Update(ctx context.Context, id int64, spec UpdateSpec[T])
 	return nil
 }
 
-// applyUpdate runs the hook/patch/rotate/touch steps between Get and Write.
-func (l *Lifecycle[T]) applyUpdate(ctx context.Context, q dbinterface.Execer, id int64, entity *T, spec UpdateSpec[T]) error {
-	if spec.Hook != nil {
-		if err := spec.Hook(ctx, q, entity); err != nil {
-			return err
-		}
-	}
+// applyUpdate runs the patch/rotate/touch steps between Get and Write.
+func (l *Lifecycle[T]) applyUpdate(id int64, entity *T, spec UpdateSpec[T]) error {
 	if spec.Patch != nil {
 		if err := spec.Patch(entity); err != nil {
 			return err
@@ -238,11 +221,11 @@ func (l *Lifecycle[T]) applyUpdate(ctx context.Context, q dbinterface.Execer, id
 			return err
 		}
 		if ok {
-			enc, err := l.keyring.Encrypt(id, sec.Discriminator, sec.Plaintext)
+			enc, keyID, err := Seal(l.keyring, id, sec)
 			if err != nil {
-				return fmt.Errorf("connresource: encrypt %s: %w", sec.Discriminator, err)
+				return err
 			}
-			spec.Apply(entity, enc, l.keyring.KeyID())
+			spec.Apply(entity, enc, keyID)
 		}
 	}
 	if spec.Touch != nil {
@@ -252,8 +235,8 @@ func (l *Lifecycle[T]) applyUpdate(ctx context.Context, q dbinterface.Execer, id
 }
 
 // DeleteSpec is the input to Lifecycle.Delete. Get and Delete are required;
-// Minter/MintedKeyID/RevokeFailMsg are optional (nil Minter means the resource
-// mints nothing and Delete never attempts a revoke — notify).
+// Minter/MintedKeyID are optional (nil Minter means the resource mints nothing
+// and Delete never attempts a revoke — notify, download).
 type DeleteSpec[T any] struct {
 	// Get reads the row before it is deleted, so MintedKeyID can find its minted
 	// key reference (if any).
@@ -268,10 +251,6 @@ type DeleteSpec[T any] struct {
 	// result skips the revoke (a resource whose key was already revoked out of
 	// band). Only read when Minter is non-nil.
 	MintedKeyID func(entity T) int64
-	// RevokeFailMsg formats the fail-closed error when the revoke fails, given
-	// the entity, the minted key id, and the revoke error. Nil falls back to a
-	// generic message.
-	RevokeFailMsg func(entity T, keyID int64, revokeErr error) error
 }
 
 // Delete removes the row, then revokes its minted key if it has one — fail
@@ -293,10 +272,8 @@ func (l *Lifecycle[T]) Delete(ctx context.Context, id int64, spec DeleteSpec[T])
 		return nil
 	}
 	if err := spec.Minter.RevokeAPIKey(ctx, keyID); err != nil {
-		if spec.RevokeFailMsg != nil {
-			return spec.RevokeFailMsg(entity, keyID, err)
-		}
-		return fmt.Errorf("connresource: revoke key %d: %w", keyID, err)
+		return fmt.Errorf("connresource: resource deleted but its harbrr key (%d) could not be revoked — revoke it manually: %w",
+			keyID, err)
 	}
 	return nil
 }

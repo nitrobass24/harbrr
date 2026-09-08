@@ -6,61 +6,45 @@ import (
 	"testing"
 )
 
-// TestSeal covers the three properties Lifecycle.Create and backup/restore both
-// rely on: secrets are encrypted in the given order, under the caller's id, and
-// the keyring's key id is passed through unchanged.
+// TestSeal covers the properties Lifecycle.Create and backup/restore both rely on:
+// the secret is encrypted under the caller's id and its own discriminator (and
+// decrypts under neither a different id nor a different discriminator), and the
+// keyring's key id is passed through unchanged.
 func TestSeal(t *testing.T) {
 	t.Parallel()
 	kr := newTestKeyring(t)
 
 	tests := []struct {
-		name  string
-		id    int64
-		plain []Secret
+		name string
+		id   int64
+		sec  Secret
 	}{
-		{
-			name:  "single secret",
-			id:    1,
-			plain: []Secret{{Discriminator: "url", Plaintext: "https://example.test/secret"}},
-		},
-		{
-			name: "multi secret ordering",
-			id:   2,
-			plain: []Secret{
-				{Discriminator: "app", Plaintext: "app-plaintext"},
-				{Discriminator: "harbrr", Plaintext: "harbrr-plaintext"},
-			},
-		},
-		{
-			name:  "no secrets",
-			id:    3,
-			plain: nil,
-		},
+		{name: "url secret", id: 1, sec: Secret{Discriminator: "url", Plaintext: "https://example.test/secret"}},
+		{name: "app secret", id: 2, sec: Secret{Discriminator: "app", Plaintext: "app-plaintext"}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			encrypted, keyID, err := Seal(kr, tt.id, tt.plain)
+			encrypted, keyID, err := Seal(kr, tt.id, tt.sec)
 			if err != nil {
 				t.Fatalf("Seal: %v", err)
 			}
 			if keyID != kr.KeyID() {
 				t.Errorf("keyID = %q, want %q (passthrough)", keyID, kr.KeyID())
 			}
-			if len(encrypted) != len(tt.plain) {
-				t.Fatalf("encrypted len = %d, want %d", len(encrypted), len(tt.plain))
+			dec, err := kr.Decrypt(tt.id, tt.sec.Discriminator, encrypted)
+			if err != nil {
+				t.Fatalf("decrypt under (%d, %s): %v", tt.id, tt.sec.Discriminator, err)
 			}
-			for i, sec := range tt.plain {
-				// Same order: encrypted[i] must decrypt under plain[i]'s own
-				// discriminator, not any other secret's.
-				dec, err := kr.Decrypt(tt.id, sec.Discriminator, encrypted[i])
-				if err != nil {
-					t.Fatalf("decrypt index %d (%s): %v", i, sec.Discriminator, err)
-				}
-				if dec != sec.Plaintext {
-					t.Errorf("index %d (%s): decrypted = %q, want %q", i, sec.Discriminator, dec, sec.Plaintext)
-				}
+			if dec != tt.sec.Plaintext {
+				t.Errorf("decrypted = %q, want %q", dec, tt.sec.Plaintext)
+			}
+			if _, err := kr.Decrypt(tt.id+1, tt.sec.Discriminator, encrypted); err == nil {
+				t.Error("decrypt under a different id should fail (AAD not bound to that id)")
+			}
+			if _, err := kr.Decrypt(tt.id, tt.sec.Discriminator+"-other", encrypted); err == nil {
+				t.Error("decrypt under a different discriminator should fail")
 			}
 		})
 	}
@@ -75,7 +59,7 @@ func (errReader) Read(_ []byte) (int, error) { return 0, errors.New("errReader: 
 
 // TestSealEncryptFailurePropagates forces the keyring's nonce read to fail so a
 // real Encrypt error surfaces, and checks Seal wraps it (never swallows it) and
-// returns zero values rather than a partial ciphertext list. It swaps the
+// returns zero values rather than a partial ciphertext. It swaps the
 // package-level crypto/rand.Reader for its duration, so — unlike every other test
 // in this file — it must not run in parallel with them.
 func TestSealEncryptFailurePropagates(t *testing.T) {
@@ -85,12 +69,12 @@ func TestSealEncryptFailurePropagates(t *testing.T) {
 	rand.Reader = errReader{}
 	t.Cleanup(func() { rand.Reader = orig })
 
-	encrypted, keyID, err := Seal(kr, 1, []Secret{{Discriminator: "url", Plaintext: "s3cret"}})
+	encrypted, keyID, err := Seal(kr, 1, Secret{Discriminator: "url", Plaintext: "s3cret"})
 	if err == nil {
 		t.Fatal("Seal did not propagate the Encrypt failure")
 	}
-	if encrypted != nil {
-		t.Errorf("encrypted = %v, want nil on failure", encrypted)
+	if encrypted != "" {
+		t.Errorf("encrypted = %q, want empty on failure", encrypted)
 	}
 	if keyID != "" {
 		t.Errorf("keyID = %q, want empty on failure", keyID)

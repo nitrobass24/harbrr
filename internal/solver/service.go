@@ -84,17 +84,13 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (domain.Solver, er
 		Build: func(now time.Time, _ int64) domain.Solver {
 			return domain.Solver{Name: p.Name, Type: p.Type, MaxTimeout: p.MaxTimeout, CreatedAt: now, UpdatedAt: now}
 		},
-		Insert: func(ctx context.Context, q dbinterface.Execer, row domain.Solver) (int64, error) {
-			return s.repo.InsertSolver(ctx, q, row)
+		Insert: s.repo.InsertSolver,
+		Secret: func(_ domain.Solver, _ string) connresource.Secret {
+			return connresource.Secret{Discriminator: domain.SolverSecretURL, Plaintext: p.URL}
 		},
-		Secrets: func(_ domain.Solver, _ string) []connresource.Secret {
-			return []connresource.Secret{{Discriminator: domain.SolverSecretURL, Plaintext: p.URL}}
-		},
-		SetSecrets: func(ctx context.Context, q dbinterface.Execer, id int64, encrypted []string, keyID string) error {
-			return s.repo.SetSolverSecret(ctx, q, id, encrypted[0], keyID)
-		},
-		Finalize: func(row domain.Solver, id int64, encrypted []string, keyID string) domain.Solver {
-			row.ID, row.URLEncrypted, row.KeyID = id, encrypted[0], keyID
+		SetSecret: s.repo.SetSolverSecret,
+		Finalize: func(row domain.Solver, id int64, encrypted, keyID string) domain.Solver {
+			row.ID, row.URLEncrypted, row.KeyID = id, encrypted, keyID
 			return row
 		},
 	})
@@ -113,9 +109,7 @@ type UpdateParams struct {
 // other's write.
 func (s *Service) Update(ctx context.Context, id int64, p UpdateParams) error {
 	return s.life.Update(ctx, id, connresource.UpdateSpec[domain.Solver]{
-		Get: func(ctx context.Context, q dbinterface.Execer, id int64) (domain.Solver, error) {
-			return s.repo.GetSolver(ctx, q, id)
-		},
+		Get: s.repo.GetSolver,
 		Patch: func(row *domain.Solver) error {
 			if p.Name != nil {
 				row.Name = strings.TrimSpace(*p.Name)
@@ -143,9 +137,7 @@ func (s *Service) Update(ctx context.Context, id int64, p UpdateParams) error {
 		},
 		Apply: func(row *domain.Solver, encrypted, keyID string) { row.URLEncrypted, row.KeyID = encrypted, keyID },
 		Touch: func(row *domain.Solver, now time.Time) { row.UpdatedAt = now },
-		Write: func(ctx context.Context, q dbinterface.Execer, row domain.Solver) error {
-			return s.repo.UpdateSolver(ctx, q, row)
-		},
+		Write: s.repo.UpdateSolver,
 	})
 }
 

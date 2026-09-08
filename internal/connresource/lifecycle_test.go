@@ -133,9 +133,9 @@ func deleteResource(ctx context.Context, q dbinterface.Execer, id int64) error {
 	return nil
 }
 
-func setResourceSecret(ctx context.Context, q dbinterface.Execer, id int64, encrypted []string, keyID string) error {
+func setResourceSecret(ctx context.Context, q dbinterface.Execer, id int64, encrypted, keyID string) error {
 	_, err := q.ExecContext(ctx, q.Rebind(`UPDATE resources SET secret_encrypted = ?, key_id = ? WHERE id = ?`),
-		encrypted[0], keyID, id)
+		encrypted, keyID, id)
 	return err
 }
 
@@ -195,12 +195,12 @@ func baseCreateSpec(name, plaintext string) CreateSpec[resource] {
 			return resource{Name: name, MintedKeyID: mintedKeyID, UpdatedAt: now}
 		},
 		Insert: insertResource,
-		Secrets: func(_ resource, _ string) []Secret {
-			return []Secret{{Discriminator: secretDiscriminator, Plaintext: plaintext}}
+		Secret: func(_ resource, _ string) Secret {
+			return Secret{Discriminator: secretDiscriminator, Plaintext: plaintext}
 		},
-		SetSecrets: setResourceSecret,
-		Finalize: func(r resource, id int64, encrypted []string, keyID string) resource {
-			r.ID, r.SecretEncrypted, r.KeyID = id, encrypted[0], keyID
+		SetSecret: setResourceSecret,
+		Finalize: func(r resource, id int64, encrypted, keyID string) resource {
+			r.ID, r.SecretEncrypted, r.KeyID = id, encrypted, keyID
 			return r
 		},
 		Conflict: func(r resource) error {
@@ -327,9 +327,6 @@ func TestDeleteRevokeFailureFailsClosed(t *testing.T) {
 		Delete:      deleteResource,
 		Minter:      minter,
 		MintedKeyID: func(r resource) int64 { return r.MintedKeyID },
-		RevokeFailMsg: func(r resource, keyID int64, revokeErr error) error {
-			return fmt.Errorf("resource %q deleted but its key (%d) could not be revoked: %w", r.Name, keyID, revokeErr)
-		},
 	}
 	err = life.Delete(ctx, created.ID, delSpec)
 	if err == nil || !strings.Contains(err.Error(), "could not be revoked") {

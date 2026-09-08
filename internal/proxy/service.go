@@ -94,17 +94,13 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (domain.Proxy, err
 		Build: func(now time.Time, _ int64) domain.Proxy {
 			return domain.Proxy{Name: p.Name, Type: p.Type, Host: p.Host, Port: p.Port, Username: p.Username, CreatedAt: now, UpdatedAt: now}
 		},
-		Insert: func(ctx context.Context, q dbinterface.Execer, row domain.Proxy) (int64, error) {
-			return s.repo.InsertProxy(ctx, q, row)
+		Insert: s.repo.InsertProxy,
+		Secret: func(_ domain.Proxy, _ string) connresource.Secret {
+			return connresource.Secret{Discriminator: domain.ProxySecretPassword, Plaintext: p.Password}
 		},
-		Secrets: func(_ domain.Proxy, _ string) []connresource.Secret {
-			return []connresource.Secret{{Discriminator: domain.ProxySecretPassword, Plaintext: p.Password}}
-		},
-		SetSecrets: func(ctx context.Context, q dbinterface.Execer, id int64, encrypted []string, keyID string) error {
-			return s.repo.SetProxySecret(ctx, q, id, encrypted[0], keyID)
-		},
-		Finalize: func(row domain.Proxy, id int64, encrypted []string, keyID string) domain.Proxy {
-			row.ID, row.PasswordEncrypted, row.KeyID = id, encrypted[0], keyID
+		SetSecret: s.repo.SetProxySecret,
+		Finalize: func(row domain.Proxy, id int64, encrypted, keyID string) domain.Proxy {
+			row.ID, row.PasswordEncrypted, row.KeyID = id, encrypted, keyID
 			return row
 		},
 	})
@@ -127,9 +123,7 @@ type UpdateParams struct {
 // each other's write.
 func (s *Service) Update(ctx context.Context, id int64, p UpdateParams) error {
 	return s.life.Update(ctx, id, connresource.UpdateSpec[domain.Proxy]{
-		Get: func(ctx context.Context, q dbinterface.Execer, id int64) (domain.Proxy, error) {
-			return s.repo.GetProxy(ctx, q, id)
-		},
+		Get: s.repo.GetProxy,
 		Patch: func(row *domain.Proxy) error {
 			if p.Name != nil {
 				row.Name = strings.TrimSpace(*p.Name)
@@ -156,9 +150,7 @@ func (s *Service) Update(ctx context.Context, id int64, p UpdateParams) error {
 		},
 		Apply: func(row *domain.Proxy, encrypted, keyID string) { row.PasswordEncrypted, row.KeyID = encrypted, keyID },
 		Touch: func(row *domain.Proxy, now time.Time) { row.UpdatedAt = now },
-		Write: func(ctx context.Context, q dbinterface.Execer, row domain.Proxy) error {
-			return s.repo.UpdateProxy(ctx, q, row)
-		},
+		Write: s.repo.UpdateProxy,
 	})
 }
 
