@@ -5,16 +5,13 @@ import (
 	"testing"
 )
 
-// TestUIRendersSpec asserts the embedded Swagger UI page is substituted to load the
-// management-API spec and pins its (SRI-protected) asset references.
+// TestUIRendersSpec asserts the embedded Swagger UI page loads the management-API
+// spec and pins its (SRI-protected) asset references.
 func TestUIRendersSpec(t *testing.T) {
 	t.Parallel()
 	page := string(UI())
 	if page == "" {
 		t.Fatal("UI() returned an empty page")
-	}
-	if strings.Contains(page, "{{OPENAPI_URL}}") {
-		t.Error("UI() left the {{OPENAPI_URL}} placeholder unsubstituted")
 	}
 	// The spec URL is relative (a sibling of /api/docs) so it works under any base path.
 	if !strings.Contains(page, `url: "openapi.yaml"`) {

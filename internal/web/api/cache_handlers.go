@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/autobrr/harbrr/internal/domain"
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 )
@@ -158,13 +159,13 @@ func (rt *router) cacheStatsByIndexer(ctx context.Context) ([]cacheIndexerStats,
 	if err != nil {
 		return nil, err //nolint:wrapcheck // surfaced to writeServiceError (the redaction sink); nothing secret to add.
 	}
-	names, slugs := rt.instanceLabels(ctx)
+	labels := rt.instanceLabels(ctx)
 	out := make([]cacheIndexerStats, 0, len(rows))
 	for _, s := range rows {
 		out = append(out, cacheIndexerStats{
 			InstanceID:        s.InstanceID,
-			Slug:              slugs[s.InstanceID],
-			Name:              names[s.InstanceID],
+			Slug:              labels[s.InstanceID].Slug,
+			Name:              labels[s.InstanceID].Name,
 			Entries:           s.Entries,
 			HitsSaved:         s.Hits,
 			Hits:              s.Hits,
@@ -178,20 +179,21 @@ func (rt *router) cacheStatsByIndexer(ctx context.Context) ([]cacheIndexerStats,
 	return out, nil
 }
 
-// instanceLabels maps instance id -> name and id -> slug from the registry. A list
-// failure leaves both maps empty (labels are cosmetic and must not fail stats).
-func (rt *router) instanceLabels(ctx context.Context) (names, slugs map[int64]string) {
-	names, slugs = map[int64]string{}, map[int64]string{}
+// instanceLabels maps instance id -> the configured instance, for the cosmetic
+// slug/name labels on the per-indexer stats rows. A list failure leaves the map empty
+// (labels are cosmetic and must not fail stats); a missing id reads as the zero
+// instance, i.e. empty labels.
+func (rt *router) instanceLabels(ctx context.Context) map[int64]domain.IndexerInstance {
+	out := map[int64]domain.IndexerInstance{}
 	list, err := rt.Registry.List(ctx)
 	if err != nil {
 		rt.Logger.Warn().Str("error", apphttp.RedactError(err)).Msg("cache stats: indexer label lookup failed")
-		return names, slugs
+		return out
 	}
 	for _, inst := range list {
-		names[inst.ID] = inst.Name
-		slugs[inst.ID] = inst.Slug
+		out[inst.ID] = inst
 	}
-	return names, slugs
+	return out
 }
 
 // cacheFlush purges every cache entry and reports the count. With caching
@@ -303,11 +305,11 @@ func (rt *router) cacheConfigPut(w http.ResponseWriter, r *http.Request) {
 		ThinThreshold:   req.ThinThreshold,
 		RefreshAheadPct: req.RefreshAheadPct,
 	}
-	if !parseDurPatch(w, req.RSSTTL, &patch.RSSTTL, "rssTtl") ||
-		!parseDurPatch(w, req.KeywordTTL, &patch.KeywordTTL, "keywordTtl") ||
-		!parseDurPatch(w, req.ThinTTL, &patch.ThinTTL, "thinTtl") ||
-		!parseDurPatch(w, req.CleanupInterval, &patch.CleanupInterval, "cleanupInterval") ||
-		!parseNonNegDurPatch(w, req.NegativeTTL, &patch.NegativeTTL, "negativeTtl") {
+	if !parseDurPatch(w, req.RSSTTL, &patch.RSSTTL, "rssTtl", durPositive) ||
+		!parseDurPatch(w, req.KeywordTTL, &patch.KeywordTTL, "keywordTtl", durPositive) ||
+		!parseDurPatch(w, req.ThinTTL, &patch.ThinTTL, "thinTtl", durPositive) ||
+		!parseDurPatch(w, req.CleanupInterval, &patch.CleanupInterval, "cleanupInterval", durPositive) ||
+		!parseDurPatch(w, req.NegativeTTL, &patch.NegativeTTL, "negativeTtl", durNonNeg) {
 		return
 	}
 	v, err := rt.Cache.UpdateConfig(r.Context(), patch)
@@ -322,35 +324,27 @@ func (rt *router) cacheConfigPut(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toCacheConfigResponse(v))
 }
 
-// parseDurPatch parses an optional positive duration string into a *time.Duration
-// patch field, writing a 400 and returning false on a malformed/non-positive value.
-// A nil input leaves the patch field nil (that knob is left unchanged).
-func parseDurPatch(w http.ResponseWriter, in *string, dst **time.Duration, name string) bool {
-	if in == nil {
-		return true
-	}
-	d, err := time.ParseDuration(*in)
-	if err != nil || d <= 0 {
-		writeError(w, http.StatusBadRequest,
-			fmt.Sprintf("invalid duration for %s: %q (want a positive duration like \"10m\")", name, *in))
-		return false
-	}
-	*dst = &d
-	return true
-}
+// durPositive/durNonNeg are parseDurPatch's two floors: strictly positive for the TTL
+// knobs, and zero-admitting for the negative-result breaker (where "0s" disables it).
+const (
+	durPositive = time.Nanosecond
+	durNonNeg   = 0
+)
 
-// parseNonNegDurPatch parses an optional NON-negative duration (unlike parseDurPatch,
-// it admits "0s") into a *time.Duration patch field, writing a 400 and returning false
-// on a malformed or negative value. The negative-result breaker uses it so "0s" can
-// disable the breaker at runtime. A nil input leaves the patch field nil (unchanged).
-func parseNonNegDurPatch(w http.ResponseWriter, in *string, dst **time.Duration, name string) bool {
+// parseDurPatch parses an optional duration string into a *time.Duration patch field,
+// writing a 400 and returning false on a malformed value or one below floor. A nil
+// input leaves the patch field nil (that knob is left unchanged).
+func parseDurPatch(w http.ResponseWriter, in *string, dst **time.Duration, name string, floor time.Duration) bool {
 	if in == nil {
 		return true
 	}
 	d, err := time.ParseDuration(*in)
-	if err != nil || d < 0 {
-		writeError(w, http.StatusBadRequest,
-			fmt.Sprintf("invalid duration for %s: %q (want a non-negative duration like \"1m\", or \"0s\" to disable)", name, *in))
+	if err != nil || d < floor {
+		want := `want a positive duration like "10m"`
+		if floor == durNonNeg {
+			want = `want a non-negative duration like "1m", or "0s" to disable`
+		}
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid duration for %s: %q (%s)", name, *in, want))
 		return false
 	}
 	*dst = &d

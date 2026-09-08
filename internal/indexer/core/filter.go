@@ -1,6 +1,8 @@
 package core
 
 import (
+	"slices"
+
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 )
@@ -25,27 +27,14 @@ func filterResults(releases []*normalizer.Release, requestedCats []int, caps *ma
 		return releases
 	}
 	expanded := caps.ExpandQueryCategories(requestedCats)
-	want := make(map[int]struct{}, len(expanded))
-	for _, id := range expanded {
-		want[id] = struct{}{}
-	}
+	wanted := func(c int) bool { return slices.Contains(expanded, c) }
 	out := make([]*normalizer.Release, 0, len(releases))
 	for _, r := range releases {
 		// r == nil short-circuits before r.Categories (kept; MarshalResults skips
 		// nil). A release with no categories is kept (Jackett's `!Any()` branch).
-		if r == nil || len(r.Categories) == 0 || intersectsCats(r.Categories, want) {
+		if r == nil || len(r.Categories) == 0 || slices.ContainsFunc(r.Categories, wanted) {
 			out = append(out, r)
 		}
 	}
 	return out
-}
-
-// intersectsCats reports whether any of cats appears in want.
-func intersectsCats(cats []int, want map[int]struct{}) bool {
-	for _, c := range cats {
-		if _, ok := want[c]; ok {
-			return true
-		}
-	}
-	return false
 }

@@ -127,7 +127,7 @@ func (rt *router) appQuiInstances(w http.ResponseWriter, r *http.Request) {
 	instances, err := rt.Apps.QuiInstances(r.Context(), id)
 	switch {
 	case err == nil:
-		writeJSON(w, http.StatusOK, toQuiInstancesResponse(instances))
+		writeJSON(w, http.StatusOK, quiInstancesResponse{OK: true, Instances: instances})
 	case errors.Is(err, database.ErrNotFound), errors.Is(err, domain.ErrInvalid):
 		rt.writeServiceError(w, "app qui instances", err)
 	default:
@@ -141,10 +141,6 @@ type quiInstancesResponse struct {
 	OK        bool               `json:"ok"`
 	Error     string             `json:"error,omitempty"`
 	Instances []apps.QuiInstance `json:"instances,omitempty"`
-}
-
-func toQuiInstancesResponse(instances []apps.QuiInstance) quiInstancesResponse {
-	return quiInstancesResponse{OK: true, Instances: instances}
 }
 
 // toAppResponse maps an app + its reference counts to the API view, redacting the

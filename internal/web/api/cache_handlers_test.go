@@ -345,7 +345,7 @@ func TestCacheStatsHappyPath(t *testing.T) {
 }
 
 // TestCacheConfigNegativeTTL covers the breaker knob: it round-trips on GET, accepts
-// "0s" to disable (which parseNonNegDurPatch admits where the TTL knobs reject it),
+// "0s" to disable (the durNonNeg floor, where the TTL knobs use durPositive),
 // and rejects a negative duration.
 func TestCacheConfigNegativeTTL(t *testing.T) {
 	t.Parallel()
