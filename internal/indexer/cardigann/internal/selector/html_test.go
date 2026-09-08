@@ -115,10 +115,10 @@ func TestEdgeCasesHTML(t *testing.T) {
 			name: "case uses has scoping",
 			block: loader.SelectorBlock{
 				Selector: "div.tags",
-				Case: loader.NewCaseBlock(
-					loader.CaseEntry{Key: "a.tag", Value: loader.Scalar{Value: "tagged", Set: true}},
-					loader.CaseEntry{Key: "*", Value: loader.Scalar{Value: "untagged", Set: true}},
-				),
+				Case: caseBlock(`
+a.tag: tagged
+"*": untagged
+`),
 			},
 			wantValue: "tagged",
 			wantFound: true,

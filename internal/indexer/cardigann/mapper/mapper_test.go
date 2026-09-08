@@ -7,6 +7,8 @@ import (
 	"sort"
 	"testing"
 
+	yaml "go.yaml.in/yaml/v3"
+
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 )
 
@@ -159,9 +161,7 @@ func TestBuildCategoriesObjectHasNoDefaults(t *testing.T) {
 	t.Parallel()
 	caps, err := Build(&loader.Definition{
 		ID: "o", Links: []string{"https://o.test/"},
-		Caps: loader.Caps{Categories: loader.NewCategoriesBlock(
-			loader.CategoryEntry{TrackerID: "1", Name: "Movies"},
-		)},
+		Caps: loader.Caps{Categories: categoriesBlock(`"1": Movies`)},
 	})
 	if err != nil {
 		t.Fatalf("Build: %v", err)
@@ -183,14 +183,14 @@ func TestBuildCategoriesObjectPreservesDefinitionOrder(t *testing.T) {
 	t.Parallel()
 	caps, err := Build(&loader.Definition{
 		ID: "ordered", Links: []string{"https://o.test/"},
-		Caps: loader.Caps{Categories: loader.NewCategoriesBlock(
-			loader.CategoryEntry{TrackerID: "z9", Name: "Movies/HD"},    // 2040
-			loader.CategoryEntry{TrackerID: "5", Name: "TV/SD"},         // 5030
-			loader.CategoryEntry{TrackerID: "a1", Name: "Audio/MP3"},    // 3010
-			loader.CategoryEntry{TrackerID: "42", Name: "Books/Comics"}, // 7030
-			loader.CategoryEntry{TrackerID: "m", Name: "PC/Games"},      // 4050
-			loader.CategoryEntry{TrackerID: "1", Name: "Movies/SD"},     // 2030
-		)},
+		Caps: loader.Caps{Categories: categoriesBlock(`
+z9: Movies/HD      # 2040
+"5": TV/SD         # 5030
+a1: Audio/MP3      # 3010
+"42": Books/Comics # 7030
+m: PC/Games        # 4050
+"1": Movies/SD     # 2030
+`)},
 	})
 	if err != nil {
 		t.Fatalf("Build: %v", err)
@@ -236,9 +236,7 @@ func TestBuildUnknownCategoryIsLoudError(t *testing.T) {
 	t.Run("categories object name", func(t *testing.T) {
 		t.Parallel()
 		def := &loader.Definition{ID: "bogus_obj"}
-		def.Caps.Categories = loader.NewCategoriesBlock(
-			loader.CategoryEntry{TrackerID: "7", Name: "Nope/Nope"},
-		)
+		def.Caps.Categories = categoriesBlock(`"7": Nope/Nope`)
 		_, err := Build(def)
 		if err == nil {
 			t.Fatal("Build should fail on unknown category name")
@@ -352,4 +350,15 @@ func contains(s, sub string) bool {
 		}
 	}
 	return false
+}
+
+// categoriesBlock parses a `caps.categories` YAML mapping into an order-preserving
+// CategoriesBlock, the same path the loader takes for a real definition — the block's
+// fields are unexported, so YAML is the only way to build one.
+func categoriesBlock(src string) loader.CategoriesBlock {
+	var cb loader.CategoriesBlock
+	if err := yaml.Unmarshal([]byte(src), &cb); err != nil {
+		panic("categoriesBlock: " + err.Error())
+	}
+	return cb
 }
