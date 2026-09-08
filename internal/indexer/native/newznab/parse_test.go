@@ -291,7 +291,7 @@ func TestToErrorScrubsAPIKey(t *testing.T) {
 	t.Parallel()
 	const apikey = "APIKEY-SECRET-1234"
 	e := &native.APIError{Code: "100", Description: "Incorrect credentials: invalid key " + apikey}
-	err := native.APIEnvelopeError("newznab", e, apikey)
+	err := native.APIEnvelopeError("newznab", e, apikey, errorCodeDailyQuota)
 	if !errors.Is(err, login.ErrLoginFailed) {
 		t.Fatalf("err = %v, want login.ErrLoginFailed", err)
 	}

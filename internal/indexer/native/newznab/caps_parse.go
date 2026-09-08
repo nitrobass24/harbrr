@@ -110,7 +110,7 @@ type capsSubcat struct {
 // the configured apikey as defense in depth (see native.APIEnvelopeError).
 func parseCaps(body []byte, apikey string) (*capsRoot, error) {
 	if apiErr, ok := capsError(body); ok {
-		return nil, native.APIEnvelopeError("newznab", apiErr, apikey)
+		return nil, native.APIEnvelopeError("newznab", apiErr, apikey, errorCodeDailyQuota)
 	}
 	var root capsRoot
 	if err := xml.Unmarshal(body, &root); err != nil {

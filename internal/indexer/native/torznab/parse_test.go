@@ -260,6 +260,25 @@ func TestParseErrorEnvelopeRateLimit(t *testing.T) {
 	}
 }
 
+// TestParseErrorEnvelopeNoQuotaCode proves the torznab family has NO documented
+// request-quota error code: 910 — the code dognzb documents, and which the newznab
+// sibling promotes to a *search.QuotaExceededError — stays an ordinary parse error
+// here. The classifier is shared (native.APIEnvelopeError) but the quota code is a
+// per-vendor fact passed in, and torznab passes 0. This pins that identity so sharing
+// the classifier can never silently widen torznab's behavior.
+func TestParseErrorEnvelopeNoQuotaCode(t *testing.T) {
+	t.Parallel()
+	d := parseDriver(t)
+	body := []byte(`<?xml version="1.0"?><error code="910" description="Daily API limit reached" />`)
+	_, err := d.parseReleases(body, d.Caps.CategoryMap)
+	if !errors.Is(err, search.ErrParseError) {
+		t.Fatalf("err = %v, want search.ErrParseError", err)
+	}
+	if errors.Is(err, search.ErrQuotaExceeded) {
+		t.Fatalf("err = %v, torznab documents no quota code — 910 must NOT be a quota error", err)
+	}
+}
+
 // TestParseErrorEnvelopeScrubsAPIKey proves a server-echoed <error description> that
 // reflects the submitted apikey as free text is value-scrubbed before it reaches the
 // error.

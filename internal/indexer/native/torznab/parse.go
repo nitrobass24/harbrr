@@ -54,7 +54,9 @@ func (d *driver) parseReleases(body []byte, catMap *mapper.CategoryMap) ([]*norm
 		return nil, fmt.Errorf("torznab: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
 	}
 	if apiErr := feed.FirstError(); apiErr != nil {
-		return nil, native.APIEnvelopeError("torznab", apiErr, d.apikey)
+		// quotaCode 0: no torznab-family site documents a request-quota error code,
+		// so every non-auth code stays the generic parse error.
+		return nil, native.APIEnvelopeError("torznab", apiErr, d.apikey, 0)
 	}
 	releases := make([]*normalizer.Release, 0, len(feed.Channel.Items))
 	for i := range feed.Channel.Items {

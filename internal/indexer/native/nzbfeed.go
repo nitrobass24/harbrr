@@ -108,32 +108,28 @@ const (
 	errorCodeAuthHigh = 199
 )
 
-// errorCodeDailyQuota is dognzb's documented newznab code for "Daily API limit
-// reached" — a tracker-declared request-quota cap, not an ordinary transient
-// rate-limit. Kept as a single exact code (not the whole 900-999 "generic/unknown"
-// band): only this code is documented as a quota cap by a vendor, so classifying the
-// rest of that band as quota-exceeded would be guessing at other trackers' unrelated
-// 9xx error meanings (autobrr/harbrr#251 asks to be conservative here). Extend this
-// with more codes only once another vendor's quota code is similarly documented.
-const errorCodeDailyQuota = 910
-
 // APIEnvelopeError maps a Newznab/Torznab <error> envelope to a Go error, prefixed with
 // the calling driver's family. A 100-199 code, or a "Request limit reached" /
 // apikey-related description, are classified for the registry's health recording: auth
-// failures unwrap to login.ErrLoginFailed, rate limits to a RateLimitedError, the
-// dognzb-style daily-quota code to a QuotaExceededError; every other code is a generic
-// parse error. The description is server-controlled free text that reaches a persisted
-// health event / webhook, so the configured apikey is value-scrubbed out of it as
-// defense in depth: a misbehaving server that echoes the submitted apikey back in its
-// description must not leak it (a bare "invalid key ABCD1234" would pass RedactError's
-// key[=:]value anchor untouched).
-func APIEnvelopeError(family string, e *APIError, apikey string) error {
+// failures unwrap to login.ErrLoginFailed, rate limits to a RateLimitedError; every
+// other code is a generic parse error. The description is server-controlled free text
+// that reaches a persisted health event / webhook, so the configured apikey is
+// value-scrubbed out of it as defense in depth: a misbehaving server that echoes the
+// submitted apikey back in its description must not leak it (a bare "invalid key
+// ABCD1234" would pass RedactError's key[=:]value anchor untouched).
+//
+// quotaCode is the family's own documented request-quota code, promoted to a
+// QuotaExceededError; 0 means the family documents none, which is not a real error code
+// and so disables the branch. It is a parameter, not a shared constant, because a quota
+// code is a per-vendor fact: newznab has dognzb's 910, and no torznab-family site
+// documents one, so a torznab 910 must stay the generic parse error it has always been.
+func APIEnvelopeError(family string, e *APIError, apikey string, quotaCode int) error {
 	desc := apphttp.ScrubValues(strings.TrimSpace(e.Description), []string{apikey})
 	if strings.EqualFold(desc, "Request limit reached") {
 		return &search.RateLimitedError{StatusCode: 0}
 	}
 	code, _ := strconv.Atoi(strings.TrimSpace(e.Code))
-	if code == errorCodeDailyQuota {
+	if quotaCode != 0 && code == quotaCode {
 		return &search.QuotaExceededError{Detail: fmt.Sprintf("%s: api error (code %d): %s", family, code, desc)}
 	}
 	if (code >= errorCodeAuthLow && code <= errorCodeAuthHigh) || MentionsAPIKey(desc) {

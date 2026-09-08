@@ -22,6 +22,17 @@ const newznabAttrNS = "http://www.newznab.com/DTD/2010/feeds/attributes/"
 // nzbEnclosureType is the MIME type a Newznab enclosure carries for the .nzb link.
 const nzbEnclosureType = "application/x-nzb"
 
+// errorCodeDailyQuota is dognzb's documented newznab code for "Daily API limit
+// reached" — a tracker-declared request-quota cap, not an ordinary transient
+// rate-limit. Kept as a single exact code (not the whole 900-999 "generic/unknown"
+// band): only this code is documented as a quota cap by a vendor, so classifying the
+// rest of that band as quota-exceeded would be guessing at other trackers' unrelated
+// 9xx error meanings (autobrr/harbrr#251 asks to be conservative here). Extend this
+// with more codes only once another vendor's quota code is similarly documented. It is
+// passed to native.APIEnvelopeError rather than living there: the torznab family
+// documents no quota code and passes 0.
+const errorCodeDailyQuota = 910
+
 // item is one RSS result row, carried by the shared native.Feed envelope. The attr
 // namespace is matched by URI in attr/attrAll so a torznab: feed parses identically.
 type item struct {
@@ -47,7 +58,7 @@ func (d *driver) parseReleases(body []byte, catMap *mapper.CategoryMap) ([]*norm
 		return nil, fmt.Errorf("newznab: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
 	}
 	if apiErr := feed.FirstError(); apiErr != nil {
-		return nil, native.APIEnvelopeError("newznab", apiErr, d.apikey)
+		return nil, native.APIEnvelopeError("newznab", apiErr, d.apikey, errorCodeDailyQuota)
 	}
 	releases := make([]*normalizer.Release, 0, len(feed.Channel.Items))
 	for i := range feed.Channel.Items {
