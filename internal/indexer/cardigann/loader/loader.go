@@ -4,10 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 
@@ -310,12 +311,7 @@ func (l *Loader) allIDs() ([]string, error) {
 		return nil, err
 	}
 
-	ids := make([]string, 0, len(set))
-	for id := range set {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	return ids, nil
+	return slices.Sorted(maps.Keys(set)), nil
 }
 
 func (l *Loader) collectDropinIDs(set map[string]struct{}) error {

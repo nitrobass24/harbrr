@@ -4,7 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 
@@ -22,24 +23,10 @@ const schemaResourceURL = "mem://harbrr/cardigann-schema.json"
 // vendored definitions tree.
 const schemaPath = "vendor/schema.json"
 
-var (
-	compiledSchema *jsonschema.Schema
-	compileOnce    sync.Once
-	errCompile     error
-)
-
 // schema lazily compiles the embedded Cardigann JSON-Schema exactly once and
 // returns the compiled validator. Compilation is deferred (no init() panic);
-// any failure is captured and returned to the caller.
-func schema() (*jsonschema.Schema, error) {
-	compileOnce.Do(func() {
-		compiledSchema, errCompile = compileSchema()
-	})
-	if errCompile != nil {
-		return nil, errCompile
-	}
-	return compiledSchema, nil
-}
+// any failure is captured and returned to every caller.
+var schema = sync.OnceValues(compileSchema)
 
 func compileSchema() (*jsonschema.Schema, error) {
 	raw, err := definitions.Vendored.ReadFile(schemaPath)
@@ -130,13 +117,7 @@ func validate(doc any) error {
 func failingLocations(ve *jsonschema.ValidationError) []string {
 	seen := map[string]struct{}{}
 	collectLocations(ve, seen)
-
-	locs := make([]string, 0, len(seen))
-	for loc := range seen {
-		locs = append(locs, loc)
-	}
-	sort.Strings(locs)
-	return locs
+	return slices.Sorted(maps.Keys(seen))
 }
 
 func collectLocations(ve *jsonschema.ValidationError, seen map[string]struct{}) {

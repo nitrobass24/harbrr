@@ -120,19 +120,22 @@ type atomLink struct {
 // <category> elements precede <enclosure>; the torznab:attr block (category
 // attrs first, then everything else) follows it.
 type rssItem struct {
-	Title       string         `xml:"title"`
-	GUID        string         `xml:"guid"`
-	Indexer     jackettIndexer `xml:"jackettindexer"`
-	Type        string         `xml:"type"`
-	Comments    string         `xml:"comments,omitempty"`
-	PubDate     string         `xml:"pubDate"`
-	Size        int64          `xml:"size"`
-	Files       *int64         `xml:"files,omitempty"`
-	Grabs       *int64         `xml:"grabs,omitempty"`
-	Description string         `xml:"description"`
-	Link        string         `xml:"link"`
-	Categories  []int          `xml:"category"`
-	Enclosure   enclosure      `xml:"enclosure"`
+	Title    string         `xml:"title"`
+	GUID     string         `xml:"guid"`
+	Indexer  jackettIndexer `xml:"jackettindexer"`
+	Type     string         `xml:"type"`
+	Comments string         `xml:"comments,omitempty"`
+	PubDate  string         `xml:"pubDate"`
+	Size     int64          `xml:"size"`
+	// Files/Grabs are omitempty: harbrr cannot distinguish an extracted 0 from
+	// an absent field, so 0 is treated as absent — an accepted divergence
+	// recorded in testdata/README.md.
+	Files       int64     `xml:"files,omitempty"`
+	Grabs       int64     `xml:"grabs,omitempty"`
+	Description string    `xml:"description"`
+	Link        string    `xml:"link"`
+	Categories  []int     `xml:"category"`
+	Enclosure   enclosure `xml:"enclosure"`
 	Attrs       []torznabAttr
 }
 
@@ -294,8 +297,8 @@ func buildItem(feed FeedInfo, r *normalizer.Release, now time.Time, rewrite Acqu
 		Comments:    r.Details,
 		PubDate:     formatPubDate(r.PublishDate, now),
 		Size:        r.Size,
-		Files:       positiveOrNil(r.Files),
-		Grabs:       positiveOrNil(r.Grabs),
+		Files:       r.Files,
+		Grabs:       r.Grabs,
 		Description: sanitizeXMLText(r.Description),
 		Link:        link,
 		Categories:  r.Categories,
@@ -449,16 +452,6 @@ func appendStringAttr(attrs []torznabAttr, name, value string) []torznabAttr {
 		return attrs
 	}
 	return appendAttr(attrs, name, value)
-}
-
-// positiveOrNil returns a pointer to v when v > 0, else nil. harbrr cannot
-// distinguish an extracted 0 from an absent files/grabs field, so 0 is treated
-// as absent (omitted) — recorded as an accepted divergence in testdata/README.md.
-func positiveOrNil(v int64) *int64 {
-	if v <= 0 {
-		return nil
-	}
-	return &v
 }
 
 // formatFloat renders a volume factor / ratio without a trailing decimal for

@@ -1,11 +1,13 @@
 package mapper
 
 import (
+	"cmp"
 	"crypto/sha1" //nolint:gosec // SHA1 here is a non-cryptographic id hash; it must match Jackett's BitConverter.ToUInt16(SHA1(id)) custom-category formula byte-for-byte.
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -150,20 +152,18 @@ func Build(def *loader.Definition) (*Capabilities, error) {
 	if def == nil {
 		return nil, errors.New("mapper: nil definition")
 	}
-	b := builder{def: def, catMap: &CategoryMap{}, advertised: map[int]Category{}, defaultCats: &[]string{}}
+	b := builder{def: def, catMap: &CategoryMap{}, advertised: map[int]Category{}, defaultCats: []string{}}
 	return b.build()
 }
 
 type builder struct {
-	def        *loader.Definition
-	catMap     *CategoryMap
-	advertised map[int]Category
-	// defaultCats is a pointer so appends survive the value-receiver methods
-	// (matching how catMap/advertised share state across them).
-	defaultCats *[]string
+	def         *loader.Definition
+	catMap      *CategoryMap
+	advertised  map[int]Category
+	defaultCats []string
 }
 
-func (b builder) build() (*Capabilities, error) {
+func (b *builder) build() (*Capabilities, error) {
 	if err := b.mapCategories(); err != nil {
 		return nil, err
 	}
@@ -176,7 +176,7 @@ func (b builder) build() (*Capabilities, error) {
 		AllowTVSearchIMDB: boolValue(b.def.Caps.AllowTVSearchIMDB),
 		Categories:        b.sortedAdvertised(),
 		CategoryMap:       b.catMap,
-		DefaultCategories: *b.defaultCats,
+		DefaultCategories: b.defaultCats,
 		// No definition (vendored or native) carries a Limits source yet — only Newznab's
 		// ?t=caps <limits> element does, and that is layered on after Build (see
 		// newznab.buildFromCaps). Default to Prowlarr's IndexerCapabilities default (100/100)
@@ -194,7 +194,7 @@ const defaultLimit = 100
 // — and hence the tracker-id order a multi-cat query renders into
 // {{ .Categories }} — reproduces Jackett's insertion-ordered _categoryMapping.
 // Per Jackett, these have no desc, so no custom category is synthesised.
-func (b builder) mapCategories() error {
+func (b *builder) mapCategories() error {
 	for _, e := range b.def.Caps.Categories.Ordered() {
 		cat, ok := GetByName(e.Name)
 		if !ok {
@@ -208,7 +208,7 @@ func (b builder) mapCategories() error {
 // mapCategoryMappings handles the caps.categorymappings list form. When a
 // mapping declares a desc, Jackett additionally synthesises a custom (1:1)
 // category at the CustomCategoryOffset.
-func (b builder) mapCategoryMappings() error {
+func (b *builder) mapCategoryMappings() error {
 	for _, cm := range b.def.Caps.CategoryMappings {
 		cat, ok := GetByName(cm.Cat)
 		if !ok {
@@ -222,7 +222,7 @@ func (b builder) mapCategoryMappings() error {
 		// Jackett: `if (Categorymapping.Default) DefaultCategories.Add(id)` — after
 		// AddCategoryMapping, in categorymapping order, no dedup.
 		if boolValue(cm.Default) {
-			*b.defaultCats = append(*b.defaultCats, cm.ID.String())
+			b.defaultCats = append(b.defaultCats, cm.ID.String())
 		}
 	}
 	return nil
@@ -230,13 +230,13 @@ func (b builder) mapCategoryMappings() error {
 
 // addMapping records the standard-category mapping and advertises the standard
 // category (and, in Jackett, its family root via the category tree).
-func (b builder) addMapping(trackerID, desc string, cat Category) {
+func (b *builder) addMapping(trackerID, desc string, cat Category) {
 	b.catMap.add(trackerID, desc, cat.ID)
 	b.advertise(cat)
 }
 
 // addCustom records the synthesised custom-category mapping and advertises it.
-func (b builder) addCustom(trackerID, desc string, custom Category) {
+func (b *builder) addCustom(trackerID, desc string, custom Category) {
 	b.catMap.add(trackerID, desc, custom.ID)
 	b.advertised[custom.ID] = custom
 }
@@ -244,7 +244,7 @@ func (b builder) addCustom(trackerID, desc string, custom Category) {
 // advertise adds a standard category and its family root to the advertised set,
 // mirroring Jackett's AddTorznabCategoryTree which attaches the category under
 // its parent family.
-func (b builder) advertise(cat Category) {
+func (b *builder) advertise(cat Category) {
 	b.advertised[cat.ID] = cat
 	if !cat.IsParent() {
 		if parent, ok := GetByName(cat.Parent()); ok {
@@ -253,13 +253,10 @@ func (b builder) advertise(cat Category) {
 	}
 }
 
-func (b builder) sortedAdvertised() []Category {
-	out := make([]Category, 0, len(b.advertised))
-	for _, c := range b.advertised {
-		out = append(out, c)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+func (b *builder) sortedAdvertised() []Category {
+	return slices.SortedFunc(maps.Values(b.advertised), func(x, y Category) int {
+		return cmp.Compare(x.ID, y.ID)
+	})
 }
 
 // customCategoryID reproduces Jackett's custom-category id formula
@@ -292,9 +289,7 @@ func addMode(out map[string][]string, name string, params []string) {
 	if params == nil {
 		return
 	}
-	cp := make([]string, len(params))
-	copy(cp, params)
-	out[name] = cp
+	out[name] = slices.Clone(params)
 }
 
 func boolValue(p *bool) bool {
