@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"maps"
@@ -330,5 +331,5 @@ func unionParams(dst, have []string) []string {
 // sortedCategories flattens the deduplicated category union into the ascending-id order
 // mapper.Capabilities.Categories documents (the serializer re-derives the tree from it).
 func sortedCategories(cats map[int]mapper.Category) []mapper.Category {
-	return slices.SortedFunc(maps.Values(cats), func(a, b mapper.Category) int { return a.ID - b.ID })
+	return slices.SortedFunc(maps.Values(cats), func(a, b mapper.Category) int { return cmp.Compare(a.ID, b.ID) })
 }
