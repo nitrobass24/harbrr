@@ -24,7 +24,7 @@ type proxyResponse struct {
 
 // listProxies returns all proxies (passwords omitted).
 func (rt *router) listProxies(w http.ResponseWriter, r *http.Request) {
-	list, err := rt.proxy.List(r.Context())
+	list, err := rt.Proxy.List(r.Context())
 	if err != nil {
 		rt.writeServiceError(w, "list proxies", err)
 		return
@@ -49,7 +49,7 @@ func (rt *router) createProxy(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	p, err := rt.proxy.Create(r.Context(), proxy.CreateParams{
+	p, err := rt.Proxy.Create(r.Context(), proxy.CreateParams{
 		Name: req.Name, Type: req.Type, Host: req.Host, Port: req.Port, Username: req.Username, Password: req.Password,
 	})
 	if err != nil {
@@ -65,7 +65,7 @@ func (rt *router) getProxy(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	p, err := rt.proxy.Get(r.Context(), id)
+	p, err := rt.Proxy.Get(r.Context(), id)
 	if err != nil {
 		rt.writeServiceError(w, "get proxy", err)
 		return
@@ -90,7 +90,7 @@ func (rt *router) updateProxy(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	err := rt.proxy.Update(r.Context(), id, proxy.UpdateParams{
+	err := rt.Proxy.Update(r.Context(), id, proxy.UpdateParams{
 		Name: req.Name, Type: req.Type, Host: req.Host, Port: req.Port, Username: req.Username, Password: req.Password,
 	})
 	if err != nil {
@@ -98,7 +98,7 @@ func (rt *router) updateProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// A cached engine bakes in the resolved proxy URL/transport, so evict them.
-	rt.registry.InvalidateAll()
+	rt.Registry.InvalidateAll()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -108,13 +108,13 @@ func (rt *router) deleteProxy(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := rt.proxy.Delete(r.Context(), id); err != nil {
+	if err := rt.Proxy.Delete(r.Context(), id); err != nil {
 		rt.writeServiceError(w, "delete proxy", err)
 		return
 	}
 	// The FK nulled proxy_id in the DB, but cached engines still tunnel through the
 	// deleted proxy until evicted.
-	rt.registry.InvalidateAll()
+	rt.Registry.InvalidateAll()
 	w.WriteHeader(http.StatusNoContent)
 }
 

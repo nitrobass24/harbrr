@@ -28,11 +28,11 @@ type crossSeedSnippetResponse struct {
 func (rt *router) crossSeedSnippet(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 	// Resolve the indexer so an unknown slug 404s rather than emitting a dead URL.
-	if _, _, err := rt.registry.Get(r.Context(), slug); err != nil {
+	if _, _, err := rt.Registry.Get(r.Context(), slug); err != nil {
 		rt.writeServiceError(w, "cross-seed snippet", err)
 		return
 	}
-	feedURL := torznabhttp.FeedURL(r, rt.urlCfg, slug, true)
+	feedURL := torznabhttp.FeedURL(r, rt.URLConfig, slug, true)
 	writeJSON(w, http.StatusOK, crossSeedSnippetResponse{
 		Indexer:  slug,
 		FeedURL:  feedURL,

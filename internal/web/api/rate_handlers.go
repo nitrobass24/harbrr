@@ -10,7 +10,7 @@ type rateLimitBody struct {
 
 // rateLimitGet returns the live global rate-limit default (a Go duration string).
 func (rt *router) rateLimitGet(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, rateLimitBody{DefaultInterval: rt.registry.RateDefault().String()})
+	writeJSON(w, http.StatusOK, rateLimitBody{DefaultInterval: rt.Registry.RateDefault().String()})
 }
 
 // rateLimitPut sets the global rate-limit default: persists it and applies it to
@@ -21,9 +21,9 @@ func (rt *router) rateLimitPut(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := rt.registry.SetRateDefault(r.Context(), req.DefaultInterval); err != nil {
+	if err := rt.Registry.SetRateDefault(r.Context(), req.DefaultInterval); err != nil {
 		rt.writeServiceError(w, "rate-limit.config", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, rateLimitBody{DefaultInterval: rt.registry.RateDefault().String()})
+	writeJSON(w, http.StatusOK, rateLimitBody{DefaultInterval: rt.Registry.RateDefault().String()})
 }

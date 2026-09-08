@@ -23,7 +23,7 @@ func (rt *router) getLogLevel(w http.ResponseWriter, _ *http.Request) {
 // process-wide apply belong to the composition root (internal/app); this handler owns
 // only the HTTP contract, including rejecting a level outside the enum with a 400.
 func (rt *router) putLogLevel(w http.ResponseWriter, r *http.Request) {
-	if rt.setLogLevel == nil {
+	if rt.SetLogLevel == nil {
 		writeError(w, http.StatusServiceUnavailable, "log level control is unavailable")
 		return
 	}
@@ -35,10 +35,10 @@ func (rt *router) putLogLevel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "log level must be one of: trace, debug, info, warn, error")
 		return
 	}
-	if err := rt.setLogLevel(r.Context(), req.Level); err != nil {
+	if err := rt.SetLogLevel(r.Context(), req.Level); err != nil {
 		rt.writeServiceError(w, "set log level", err)
 		return
 	}
-	rt.log.Info().Str("level", req.Level).Msg("api: log level changed")
+	rt.Logger.Info().Str("level", req.Level).Msg("api: log level changed")
 	writeJSON(w, http.StatusOK, logLevelBody{Level: logger.Level()})
 }

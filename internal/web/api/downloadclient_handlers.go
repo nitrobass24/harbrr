@@ -35,7 +35,7 @@ type downloadClientResponse struct {
 
 // listDownloadClients returns all download clients (secrets redacted).
 func (rt *router) listDownloadClients(w http.ResponseWriter, r *http.Request) {
-	list, err := rt.download.List(r.Context())
+	list, err := rt.Download.List(r.Context())
 	if err != nil {
 		rt.writeServiceError(w, "list download clients", err)
 		return
@@ -61,7 +61,7 @@ func (rt *router) createDownloadClient(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	c, err := rt.download.Create(r.Context(), download.CreateParams{
+	c, err := rt.Download.Create(r.Context(), download.CreateParams{
 		Name: req.Name, Kind: req.Kind, AppID: req.AppID, Host: req.Host, Username: req.Username,
 		Secret: req.Secret, Settings: req.Settings,
 	})
@@ -78,7 +78,7 @@ func (rt *router) getDownloadClient(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	c, err := rt.download.Get(r.Context(), id)
+	c, err := rt.Download.Get(r.Context(), id)
 	if err != nil {
 		rt.writeServiceError(w, "get download client", err)
 		return
@@ -100,7 +100,7 @@ func (rt *router) updateDownloadClient(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	err := rt.download.Update(r.Context(), id, download.UpdateParams{
+	err := rt.Download.Update(r.Context(), id, download.UpdateParams{
 		Name: req.Name, Settings: req.Settings,
 	})
 	if err != nil {
@@ -116,7 +116,7 @@ func (rt *router) deleteDownloadClient(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := rt.download.Delete(r.Context(), id); err != nil {
+	if err := rt.Download.Delete(r.Context(), id); err != nil {
 		rt.writeServiceError(w, "delete download client", err)
 		return
 	}
@@ -125,11 +125,11 @@ func (rt *router) deleteDownloadClient(w http.ResponseWriter, r *http.Request) {
 
 // enableDownloadClient / disableDownloadClient toggle a client.
 func (rt *router) enableDownloadClient(w http.ResponseWriter, r *http.Request) {
-	rt.setResourceEnabled(w, r, "download client", "set download client enabled", rt.download.SetEnabled, true)
+	rt.setResourceEnabled(w, r, "download client", "set download client enabled", rt.Download.SetEnabled, true)
 }
 
 func (rt *router) disableDownloadClient(w http.ResponseWriter, r *http.Request) {
-	rt.setResourceEnabled(w, r, "download client", "set download client enabled", rt.download.SetEnabled, false)
+	rt.setResourceEnabled(w, r, "download client", "set download client enabled", rt.Download.SetEnabled, false)
 }
 
 // testDownloadClient confirms the configured client is reachable with its
@@ -141,7 +141,7 @@ func (rt *router) testDownloadClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rt.testEndpoint(w, r, "test download client", func(ctx context.Context) error {
-		return rt.download.TestConnection(ctx, id)
+		return rt.Download.TestConnection(ctx, id)
 	})
 }
 
@@ -174,7 +174,7 @@ func (rt *router) grabToDownloadClient(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusBadRequest, "invalid", "indexer and link are required")
 		return
 	}
-	idx, ok := rt.registry.Indexer(r.Context(), req.Indexer)
+	idx, ok := rt.Registry.Indexer(r.Context(), req.Indexer)
 	if !ok {
 		writeError(w, http.StatusNotFound, "not found")
 		return
@@ -200,7 +200,7 @@ func (rt *router) grabPayload(w http.ResponseWriter, r *http.Request, idx core.I
 		p.URL = req.Link
 		return p, true
 	}
-	grabbed, err := grab.ResolveGrab(r.Context(), idx, rt.dlToken, token)
+	grabbed, err := grab.ResolveGrab(r.Context(), idx, rt.DLToken, token)
 	if err != nil {
 		rt.writeResolveGrabError(w, info.ID, err)
 		return download.Payload{}, false
@@ -242,7 +242,7 @@ func (rt *router) writeResolveGrabError(w http.ResponseWriter, indexerID string,
 	case errors.Is(err, grab.ErrProxyDisabled):
 		writeError(w, http.StatusServiceUnavailable, "download proxy is not enabled")
 	case errors.Is(err, grab.ErrNotTorrent):
-		rt.log.Warn().Str("stage", "grab").Str("indexer", indexerID).
+		rt.Logger.Warn().Str("stage", "grab").Str("indexer", indexerID).
 			Msg("api: grab produced a non-torrent body (likely an expired session); refusing to send it to a download client")
 		writeError(w, http.StatusNotFound, "requested torrent is not available")
 	default:
@@ -255,7 +255,7 @@ func (rt *router) writeResolveGrabError(w http.ResponseWriter, indexerID string,
 // (they picked an nzb client for a torrent), so its text is echoed as a 400 — those
 // sentinels carry no link.
 func (rt *router) sendToDownloadClient(w http.ResponseWriter, r *http.Request, id int64, p download.Payload) {
-	err := rt.download.Grab(r.Context(), id, p)
+	err := rt.Download.Grab(r.Context(), id, p)
 	switch {
 	case err == nil:
 		w.WriteHeader(http.StatusNoContent)

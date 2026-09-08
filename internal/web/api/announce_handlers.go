@@ -27,7 +27,7 @@ type announceConnectionResponse struct {
 
 // listAnnounceConnections returns all configured announce targets (tool keys redacted).
 func (rt *router) listAnnounceConnections(w http.ResponseWriter, r *http.Request) {
-	conns, err := rt.announce.ListConnections(r.Context())
+	conns, err := rt.Announce.ListConnections(r.Context())
 	if err != nil {
 		rt.writeServiceError(w, "list announce connections", err)
 		return
@@ -52,7 +52,7 @@ func (rt *router) createAnnounceConnection(w http.ResponseWriter, r *http.Reques
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	conn, err := rt.announce.CreateConnection(r.Context(), announce.CreateConnectionParams{
+	conn, err := rt.Announce.CreateConnection(r.Context(), announce.CreateConnectionParams{
 		Name: req.Name, Kind: req.Kind, AppID: req.AppID, BaseURL: req.BaseURL, APIKey: req.APIKey, HarbrrURL: req.HarbrrURL,
 	})
 	if err != nil {
@@ -68,7 +68,7 @@ func (rt *router) getAnnounceConnection(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	conn, err := rt.announce.GetConnection(r.Context(), id)
+	conn, err := rt.Announce.GetConnection(r.Context(), id)
 	if err != nil {
 		rt.writeServiceError(w, "get announce connection", err)
 		return
@@ -90,7 +90,7 @@ func (rt *router) updateAnnounceConnection(w http.ResponseWriter, r *http.Reques
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := rt.announce.UpdateConnection(r.Context(), id, announce.UpdateConnectionParams{
+	if err := rt.Announce.UpdateConnection(r.Context(), id, announce.UpdateConnectionParams{
 		Name: req.Name,
 	}); err != nil {
 		rt.writeServiceError(w, "update announce connection", err)
@@ -108,7 +108,7 @@ func (rt *router) testAnnounceConnection(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	rt.testEndpoint(w, r, "test announce connection", func(ctx context.Context) error {
-		return rt.announce.TestConnection(ctx, id)
+		return rt.Announce.TestConnection(ctx, id)
 	})
 }
 
@@ -118,7 +118,7 @@ func (rt *router) deleteAnnounceConnection(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	if err := rt.announce.DeleteConnection(r.Context(), id); err != nil {
+	if err := rt.Announce.DeleteConnection(r.Context(), id); err != nil {
 		rt.writeServiceError(w, "delete announce connection", err)
 		return
 	}
@@ -126,11 +126,11 @@ func (rt *router) deleteAnnounceConnection(w http.ResponseWriter, r *http.Reques
 }
 
 func (rt *router) enableAnnounceConnection(w http.ResponseWriter, r *http.Request) {
-	rt.setResourceEnabled(w, r, "connection", "set announce connection enabled", rt.announce.SetEnabled, true)
+	rt.setResourceEnabled(w, r, "connection", "set announce connection enabled", rt.Announce.SetEnabled, true)
 }
 
 func (rt *router) disableAnnounceConnection(w http.ResponseWriter, r *http.Request) {
-	rt.setResourceEnabled(w, r, "connection", "set announce connection enabled", rt.announce.SetEnabled, false)
+	rt.setResourceEnabled(w, r, "connection", "set announce connection enabled", rt.Announce.SetEnabled, false)
 }
 
 // toAnnounceResponse maps a connection to its API view, redacting the tool key.

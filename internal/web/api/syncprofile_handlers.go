@@ -21,7 +21,7 @@ type syncProfileResponse struct {
 
 // listSyncProfiles returns all sync profiles.
 func (rt *router) listSyncProfiles(w http.ResponseWriter, r *http.Request) {
-	list, err := rt.appsync.ListProfiles(r.Context())
+	list, err := rt.AppSync.ListProfiles(r.Context())
 	if err != nil {
 		rt.writeServiceError(w, "list sync profiles", err)
 		return
@@ -42,7 +42,7 @@ func (rt *router) createSyncProfile(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	p, err := rt.appsync.CreateProfile(r.Context(), appsync.CreateProfileParams{
+	p, err := rt.AppSync.CreateProfile(r.Context(), appsync.CreateProfileParams{
 		Name: req.Name, IndexerIDs: req.IndexerIDs,
 	})
 	if err != nil {
@@ -58,7 +58,7 @@ func (rt *router) getSyncProfile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	p, err := rt.appsync.GetProfile(r.Context(), id)
+	p, err := rt.AppSync.GetProfile(r.Context(), id)
 	if err != nil {
 		rt.writeServiceError(w, "get sync profile", err)
 		return
@@ -80,7 +80,7 @@ func (rt *router) updateSyncProfile(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := rt.appsync.UpdateProfile(r.Context(), id, appsync.UpdateProfileParams{
+	if err := rt.AppSync.UpdateProfile(r.Context(), id, appsync.UpdateProfileParams{
 		Name: req.Name, IndexerIDs: req.IndexerIDs,
 	}); err != nil {
 		rt.writeServiceError(w, "update sync profile", err)
@@ -96,7 +96,7 @@ func (rt *router) deleteSyncProfile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := rt.appsync.DeleteProfile(r.Context(), id); err != nil {
+	if err := rt.AppSync.DeleteProfile(r.Context(), id); err != nil {
 		rt.writeServiceError(w, "delete sync profile", err)
 		return
 	}

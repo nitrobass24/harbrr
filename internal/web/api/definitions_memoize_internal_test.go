@@ -16,7 +16,7 @@ import (
 // touches, with an injected load func. It bypasses NewRouter so the memoize
 // behavior can be exercised without wiring the full dependency graph.
 func newDefsRouter(load func() ([]definitionEntry, error)) *router {
-	return &router{log: zerolog.Nop(), loadDefs: load}
+	return &router{Logger: zerolog.Nop(), loadDefs: load}
 }
 
 func callListDefinitions(t *testing.T, rt *router) *httptest.ResponseRecorder {

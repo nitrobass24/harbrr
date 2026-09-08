@@ -54,7 +54,7 @@ func newSearchResponse(res core.SearchResult, results []*normalizer.Release) sea
 // a search failure is a redacted 500.
 func (rt *router) searchIndexer(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
-	idx, ok := rt.registry.Indexer(r.Context(), slug)
+	idx, ok := rt.Registry.Indexer(r.Context(), slug)
 	if !ok {
 		writeError(w, http.StatusNotFound, "not found")
 		return
@@ -107,7 +107,7 @@ func (rt *router) dropAdultReleases(res core.SearchResult, q url.Values) core.Se
 // hidesAdult reports whether this management search must drop adult-category
 // results: the operator hid them and the request named no categories of its own.
 func (rt *router) hidesAdult(q url.Values) bool {
-	return rt.adultCats.Hidden() && strings.TrimSpace(q.Get("cat")) == ""
+	return rt.AdultCategories.Hidden() && strings.TrimSpace(q.Get("cat")) == ""
 }
 
 // isAdultRelease reports whether rel declares an adult category. A nil release is
@@ -163,7 +163,7 @@ func (rt *router) searchAggregate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "indexers is required")
 		return
 	}
-	members, err := rt.registry.Members(r.Context(), slugs)
+	members, err := rt.Registry.Members(r.Context(), slugs)
 	if errors.Is(err, core.ErrNoSuchFeed) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -242,7 +242,7 @@ func (rt *router) logMemberFailures(members []core.MemberOutcome) {
 		if m.Err == nil {
 			continue
 		}
-		rt.log.Warn().
+		rt.Logger.Warn().
 			Str("stage", "search").
 			Str("indexer", m.ID).
 			Str("reason", m.Reason).
@@ -294,7 +294,7 @@ func (rt *router) dropAdultAggregateReleases(res core.AggregateResult, q url.Val
 // an X-API-Key caller of this JSON API) can fetch them. The feed's apikey /dl stays for
 // *arr.
 func (rt *router) resolveSearchLinks(r *http.Request, idx core.Indexer, releases []*normalizer.Release) []*normalizer.Release {
-	rw := grab.NewManagementDLRewriter(rt.dlToken, idx, grab.DownloadBaseURL(r, rt.urlCfg, idx.Info().ID))
+	rw := grab.NewManagementDLRewriter(rt.DLToken, idx, grab.DownloadBaseURL(r, rt.URLConfig, idx.Info().ID))
 	withhold := rw == nil && grab.NeedsDLProxy(idx)
 	out := make([]*normalizer.Release, len(releases))
 	for i, rel := range releases {
@@ -324,12 +324,12 @@ func (rt *router) resolveSearchLinks(r *http.Request, idx core.Indexer, releases
 // the passkey stays server-side. An unknown or disabled slug is a 404; an invalid token
 // is a 400; a resolve failure is a redacted 500.
 func (rt *router) downloadRelease(w http.ResponseWriter, r *http.Request) {
-	idx, ok := rt.registry.Indexer(r.Context(), chi.URLParam(r, "slug"))
+	idx, ok := rt.Registry.Indexer(r.Context(), chi.URLParam(r, "slug"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	// writeError keeps every failure in this route's JSON error envelope; the feed's
 	// /dl sibling renders the same failures as Torznab XML.
-	grab.ServeGrab(w, r, idx, rt.dlToken, rt.log, chi.URLParam(r, "token"), writeError)
+	grab.ServeGrab(w, r, idx, rt.DLToken, rt.Logger, chi.URLParam(r, "token"), writeError)
 }

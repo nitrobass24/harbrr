@@ -26,7 +26,7 @@ type notificationResponse struct {
 
 // listNotifications returns all notification targets (URLs redacted).
 func (rt *router) listNotifications(w http.ResponseWriter, r *http.Request) {
-	list, err := rt.notify.ListNotifications(r.Context())
+	list, err := rt.Notify.ListNotifications(r.Context())
 	if err != nil {
 		rt.writeServiceError(w, "list notifications", err)
 		return
@@ -50,7 +50,7 @@ func (rt *router) createNotification(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	n, err := rt.notify.CreateNotification(r.Context(), notify.CreateNotificationParams{
+	n, err := rt.Notify.CreateNotification(r.Context(), notify.CreateNotificationParams{
 		Name: req.Name, Type: req.Type, URL: req.URL,
 		OnHealthFailure: req.OnHealthFailure, OnExpiry: req.OnExpiry,
 	})
@@ -67,7 +67,7 @@ func (rt *router) getNotification(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	n, err := rt.notify.GetNotification(r.Context(), id)
+	n, err := rt.Notify.GetNotification(r.Context(), id)
 	if err != nil {
 		rt.writeServiceError(w, "get notification", err)
 		return
@@ -90,7 +90,7 @@ func (rt *router) updateNotification(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := rt.notify.UpdateNotification(r.Context(), id, notify.UpdateNotificationParams{
+	if err := rt.Notify.UpdateNotification(r.Context(), id, notify.UpdateNotificationParams{
 		Name: req.Name, URL: req.URL, OnHealthFailure: req.OnHealthFailure, OnExpiry: req.OnExpiry,
 	}); err != nil {
 		rt.writeServiceError(w, "update notification", err)
@@ -105,7 +105,7 @@ func (rt *router) deleteNotification(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := rt.notify.DeleteNotification(r.Context(), id); err != nil {
+	if err := rt.Notify.DeleteNotification(r.Context(), id); err != nil {
 		rt.writeServiceError(w, "delete notification", err)
 		return
 	}
@@ -114,11 +114,11 @@ func (rt *router) deleteNotification(w http.ResponseWriter, r *http.Request) {
 
 // enableNotification / disableNotification toggle a target.
 func (rt *router) enableNotification(w http.ResponseWriter, r *http.Request) {
-	rt.setResourceEnabled(w, r, "notification", "set notification enabled", rt.notify.SetEnabled, true)
+	rt.setResourceEnabled(w, r, "notification", "set notification enabled", rt.Notify.SetEnabled, true)
 }
 
 func (rt *router) disableNotification(w http.ResponseWriter, r *http.Request) {
-	rt.setResourceEnabled(w, r, "notification", "set notification enabled", rt.notify.SetEnabled, false)
+	rt.setResourceEnabled(w, r, "notification", "set notification enabled", rt.Notify.SetEnabled, false)
 }
 
 // testNotification sends a synthetic event to the target. A pass is {"ok":true}; a
@@ -129,7 +129,7 @@ func (rt *router) testNotification(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rt.testEndpoint(w, r, "test notification", func(ctx context.Context) error {
-		return rt.notify.TestNotification(ctx, id)
+		return rt.Notify.TestNotification(ctx, id)
 	})
 }
 

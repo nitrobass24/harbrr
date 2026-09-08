@@ -22,7 +22,7 @@ func (rt *router) exportBackup(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	bundle, err := rt.backup.Export(r.Context(), backup.ExportParams{Passphrase: req.Passphrase})
+	bundle, err := rt.Backup.Export(r.Context(), backup.ExportParams{Passphrase: req.Passphrase})
 	if err != nil {
 		rt.writeServiceError(w, "export backup", err)
 		return
@@ -55,8 +55,8 @@ func (rt *router) importBackup(w http.ResponseWriter, r *http.Request) {
 	// Capture the pre-restore ids best-effort: a failed listing must not block the
 	// restore (the ids are only an eviction nicety — InvalidateAll below is the
 	// load-bearing part).
-	insts, _ := rt.registry.List(r.Context())
-	if err := rt.backup.Import(r.Context(), backup.ImportParams{
+	insts, _ := rt.Registry.List(r.Context())
+	if err := rt.Backup.Import(r.Context(), backup.ImportParams{
 		Payload: payload, Passphrase: req.Passphrase, Force: req.Force,
 	}); err != nil {
 		rt.writeServiceError(w, "import backup", err)
@@ -66,11 +66,11 @@ func (rt *router) importBackup(w http.ResponseWriter, r *http.Request) {
 	// resolver still maps each slug to an adapter bound to the pre-restore config and
 	// a now-deleted id: without this, restored slugs keep serving stale engines and
 	// every write-back FK-fails until process restart.
-	rt.registry.InvalidateAll()
+	rt.Registry.InvalidateAll()
 	ids := make([]int64, 0, len(insts))
 	for _, inst := range insts {
 		ids = append(ids, inst.ID)
 	}
-	rt.registry.ForgetInstances(r.Context(), ids...)
+	rt.Registry.ForgetInstances(r.Context(), ids...)
 	w.WriteHeader(http.StatusNoContent)
 }

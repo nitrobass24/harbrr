@@ -81,13 +81,13 @@ type adultCategoriesBody struct {
 
 // getAdultCategories returns whether adult categories are currently hidden.
 func (rt *router) getAdultCategories(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, adultCategoriesBody{Hidden: rt.adultCats.Hidden()})
+	writeJSON(w, http.StatusOK, adultCategoriesBody{Hidden: rt.AdultCategories.Hidden()})
 }
 
 // putAdultCategories sets the global hide-adult-categories choice. It takes
 // effect on the next request and survives a restart.
 func (rt *router) putAdultCategories(w http.ResponseWriter, r *http.Request) {
-	if rt.adultCats == nil {
+	if rt.AdultCategories == nil {
 		writeError(w, http.StatusServiceUnavailable, "adult-category filtering is unavailable")
 		return
 	}
@@ -95,9 +95,9 @@ func (rt *router) putAdultCategories(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := rt.adultCats.Set(r.Context(), req.Hidden); err != nil {
+	if err := rt.AdultCategories.Set(r.Context(), req.Hidden); err != nil {
 		rt.writeServiceError(w, "hide-adult-categories", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, adultCategoriesBody{Hidden: rt.adultCats.Hidden()})
+	writeJSON(w, http.StatusOK, adultCategoriesBody{Hidden: rt.AdultCategories.Hidden()})
 }

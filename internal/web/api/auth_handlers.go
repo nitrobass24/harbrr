@@ -9,8 +9,8 @@ import "net/http"
 // any prior state/PKCE verifier, generates a fresh pair, and stashes them in
 // the session for the callback to validate.
 func (rt *router) oidcConfig(w http.ResponseWriter, r *http.Request) {
-	rt.sessions.Remove(r.Context(), sessionOIDCState)
-	rt.sessions.Remove(r.Context(), sessionOIDCPKCE)
+	rt.Sessions.Remove(r.Context(), sessionOIDCState)
+	rt.Sessions.Remove(r.Context(), sessionOIDCPKCE)
 	if rt.oidc == nil {
 		writeJSON(w, http.StatusOK, oidcConfigResponse{})
 		return
@@ -20,9 +20,9 @@ func (rt *router) oidcConfig(w http.ResponseWriter, r *http.Request) {
 		rt.writeServiceError(w, "oidc config", err)
 		return
 	}
-	rt.sessions.Put(r.Context(), sessionOIDCState, state)
+	rt.Sessions.Put(r.Context(), sessionOIDCState, state)
 	if verifier != "" {
-		rt.sessions.Put(r.Context(), sessionOIDCPKCE, verifier)
+		rt.Sessions.Put(r.Context(), sessionOIDCPKCE, verifier)
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -39,7 +39,7 @@ func (rt *router) oidcCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 
-	expectedState := rt.sessions.GetString(ctx, sessionOIDCState)
+	expectedState := rt.Sessions.GetString(ctx, sessionOIDCState)
 	if expectedState == "" {
 		writeError(w, http.StatusBadRequest, "invalid state: no state found in session")
 		return
@@ -48,9 +48,9 @@ func (rt *router) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid state: state mismatch")
 		return
 	}
-	rt.sessions.Remove(ctx, sessionOIDCState)
-	verifier := rt.sessions.GetString(ctx, sessionOIDCPKCE)
-	rt.sessions.Remove(ctx, sessionOIDCPKCE)
+	rt.Sessions.Remove(ctx, sessionOIDCState)
+	verifier := rt.Sessions.GetString(ctx, sessionOIDCPKCE)
+	rt.Sessions.Remove(ctx, sessionOIDCPKCE)
 
 	code := r.URL.Query().Get("code")
 	if code == "" {
@@ -71,24 +71,24 @@ func (rt *router) oidcCallback(w http.ResponseWriter, r *http.Request) {
 
 	// Renew the token on privilege change (session-fixation guard), then mark the
 	// session authenticated — same sequence as login (auth_handlers.go).
-	if err := rt.sessions.RenewToken(ctx); err != nil {
+	if err := rt.Sessions.RenewToken(ctx); err != nil {
 		rt.writeServiceError(w, "oidc callback session", err)
 		return
 	}
-	rt.sessions.Put(ctx, sessionAuthenticated, true)
-	rt.sessions.Put(ctx, sessionUsername, username)
+	rt.Sessions.Put(ctx, sessionAuthenticated, true)
+	rt.Sessions.Put(ctx, sessionUsername, username)
 	if err := rt.issueCSRFToken(ctx, w); err != nil {
 		rt.writeServiceError(w, "oidc callback session", err)
 		return
 	}
 
-	redirect := oidcPostLoginRedirect(rt.oidc.cfg.RedirectURL, rt.urlCfg.BasePath)
+	redirect := oidcPostLoginRedirect(rt.oidc.cfg.RedirectURL, rt.URLConfig.BasePath)
 	http.Redirect(w, r, redirect, http.StatusFound)
 }
 
 // getSetup reports whether first-run setup is complete (public).
 func (rt *router) getSetup(w http.ResponseWriter, r *http.Request) {
-	done, err := rt.auth.SetupComplete(r.Context())
+	done, err := rt.Auth.SetupComplete(r.Context())
 	if err != nil {
 		rt.writeServiceError(w, "setup status", err)
 		return
@@ -107,7 +107,7 @@ func (rt *router) postSetup(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	u, err := rt.auth.Setup(r.Context(), req.Username, req.Password)
+	u, err := rt.Auth.Setup(r.Context(), req.Username, req.Password)
 	if err != nil {
 		rt.writeServiceError(w, "setup", err)
 		return
@@ -121,19 +121,19 @@ func (rt *router) login(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	u, err := rt.auth.Login(r.Context(), req.Username, req.Password)
+	u, err := rt.Auth.Login(r.Context(), req.Username, req.Password)
 	if err != nil {
 		rt.writeServiceError(w, "login", err)
 		return
 	}
 	// Renew the token on privilege change (session-fixation guard), then mark the
 	// session authenticated.
-	if err := rt.sessions.RenewToken(r.Context()); err != nil {
+	if err := rt.Sessions.RenewToken(r.Context()); err != nil {
 		rt.writeServiceError(w, "login session", err)
 		return
 	}
-	rt.sessions.Put(r.Context(), sessionAuthenticated, true)
-	rt.sessions.Put(r.Context(), sessionUsername, u.Username)
+	rt.Sessions.Put(r.Context(), sessionAuthenticated, true)
+	rt.Sessions.Put(r.Context(), sessionUsername, u.Username)
 	// Bind a CSRF token to the new session and hand it to the client (companion
 	// cookie). A future OIDC callback must do the same after RenewToken.
 	if err := rt.issueCSRFToken(r.Context(), w); err != nil {
@@ -155,7 +155,7 @@ func (rt *router) changePassword(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if err := rt.auth.ChangePassword(r.Context(), req.CurrentPassword, req.NewPassword); err != nil {
+	if err := rt.Auth.ChangePassword(r.Context(), req.CurrentPassword, req.NewPassword); err != nil {
 		rt.writeServiceError(w, "change password", err)
 		return
 	}
@@ -164,8 +164,8 @@ func (rt *router) changePassword(w http.ResponseWriter, r *http.Request) {
 	// it has succeeded, which would invite a retry with the now-wrong old password (and
 	// an API-key caller has no session to rotate).
 	if authMethodFrom(r.Context()) == authSession {
-		if err := rt.sessions.RenewToken(r.Context()); err != nil {
-			rt.log.Warn().Str("op", "change password session").Err(err).Msg("api: session renew after password change failed")
+		if err := rt.Sessions.RenewToken(r.Context()); err != nil {
+			rt.Logger.Warn().Str("op", "change password session").Err(err).Msg("api: session renew after password change failed")
 		}
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -173,7 +173,7 @@ func (rt *router) changePassword(w http.ResponseWriter, r *http.Request) {
 
 // logout destroys the session.
 func (rt *router) logout(w http.ResponseWriter, r *http.Request) {
-	if err := rt.sessions.Destroy(r.Context()); err != nil {
+	if err := rt.Sessions.Destroy(r.Context()); err != nil {
 		rt.writeServiceError(w, "logout", err)
 		return
 	}
@@ -184,14 +184,14 @@ func (rt *router) logout(w http.ResponseWriter, r *http.Request) {
 // me returns the authenticated identity and how it was authenticated.
 func (rt *router) me(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	username := rt.sessions.GetString(ctx, sessionUsername)
+	username := rt.Sessions.GetString(ctx, sessionUsername)
 	if username == "" {
 		username = "admin" // API-key or auth-disabled mode has no session username
 	}
 	// csrfToken is the session's current token (empty for an apikey/auth-disabled
 	// caller, which needs no CSRF token) so a browser client can bootstrap it here as
 	// well as from the companion cookie.
-	csrfToken := rt.sessions.GetString(ctx, sessionCSRFToken)
+	csrfToken := rt.Sessions.GetString(ctx, sessionCSRFToken)
 	// Backfill a token for a session-authenticated caller that predates CSRF binding
 	// (sessions persist 30 days): without this it would 403 on every mutation with no
 	// recovery but a manual re-login. /me is the bootstrap the client always calls on
@@ -203,7 +203,7 @@ func (rt *router) me(w http.ResponseWriter, r *http.Request) {
 			rt.writeServiceError(w, "issue csrf token", err)
 			return
 		}
-		csrfToken = rt.sessions.GetString(ctx, sessionCSRFToken)
+		csrfToken = rt.Sessions.GetString(ctx, sessionCSRFToken)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{
 		"username":   username,
