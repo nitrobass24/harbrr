@@ -181,7 +181,7 @@ func TestRevalidateWrongVariantOrPageGuard(t *testing.T) {
 // request headers, returning the recorder.
 func feedDo(t *testing.T, idx *fakeIndexer, rawQuery string, hdr http.Header) *httptest.ResponseRecorder {
 	t.Helper()
-	h := NewHandler(fakeProvider{"rich": idx}, WithAPIKey(testAPIKey),
+	h := NewHandler(fakeProvider{"rich": idx}, withTestAPIKey(testAPIKey),
 		WithClock(func() time.Time { return feedClock }))
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
 		"/api/indexers/rich/results/torznab?"+rawQuery+"&apikey="+testAPIKey, nil)

@@ -8,6 +8,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/autobrr/harbrr/internal/database/dbtest"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -66,15 +67,20 @@ func (p *pagingDriver) SupportsOffsetPaging() bool { return true }
 // because liveSearch samples the clock and records a query unconditionally; cache stays nil
 // so Search takes the live branch, and info/health/db are only touched on a CLASSIFIED
 // error, which these fakes never return.
-func newFreeleechAdapter(inner native.Driver, freeleechOnly bool) *indexerAdapter {
+func newFreeleechAdapter(t *testing.T, inner native.Driver, freeleechOnly bool) *indexerAdapter {
+	t.Helper()
+	db := dbtest.OpenMigrated(t)
 	return &indexerAdapter{
-		info:     core.IndexerInfo{ID: "fake"},
-		inner:    inner,
-		settings: instanceSettings{Freeleech: freeleechOnly},
-		stats:    newIndexerStats(nil, time.Now, zerolog.Nop()),
-		budget:   newRequestBudget(nil, time.Now, zerolog.Nop()),
-		clock:    time.Now,
-		log:      zerolog.Nop(),
+		info:         core.IndexerInfo{ID: "fake"},
+		inner:        inner,
+		instanceID:   insertTestInstance(t, db),
+		db:           db,
+		settings:     instanceSettings{Freeleech: freeleechOnly},
+		circuitLocks: &circuitLocks{},
+		stats:        newIndexerStats(db, time.Now, zerolog.Nop()),
+		budget:       newRequestBudget(db, time.Now, zerolog.Nop()),
+		clock:        time.Now,
+		log:          zerolog.Nop(),
 	}
 }
 
@@ -114,7 +120,7 @@ func TestFreeleechAdapter_Search(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			inner := &fakeDriver{releases: relsFixture()}
-			idx := newFreeleechAdapter(inner, tt.freeleechOnly)
+			idx := newFreeleechAdapter(t, inner, tt.freeleechOnly)
 
 			got, err := idx.Search(context.Background(), search.Query{FreeleechBypass: tt.bypass})
 			if err != nil {
@@ -132,7 +138,7 @@ func TestFreeleechAdapter_Search(t *testing.T) {
 func TestFreeleechAdapter_DoesNotMutateInner(t *testing.T) {
 	t.Parallel()
 	inner := &fakeDriver{releases: relsFixture()}
-	idx := newFreeleechAdapter(inner, true)
+	idx := newFreeleechAdapter(t, inner, true)
 
 	if _, err := idx.Search(context.Background(), search.Query{}); err != nil {
 		t.Fatalf("Search: %v", err)
@@ -150,13 +156,13 @@ func TestFreeleechAdapter_DoesNotMutateInner(t *testing.T) {
 func TestFreeleechAdapter_OffsetPaging(t *testing.T) {
 	t.Parallel()
 
-	paging := newFreeleechAdapter(&pagingDriver{}, false)
+	paging := newFreeleechAdapter(t, &pagingDriver{}, false)
 	if !paging.SupportsOffsetPaging() {
 		t.Error("paging driver: SupportsOffsetPaging() = false, want true (promoted off the driver)")
 	}
 	var _ core.Indexer = paging
 
-	nonPaging := newFreeleechAdapter(&fakeDriver{}, false)
+	nonPaging := newFreeleechAdapter(t, &fakeDriver{}, false)
 	if nonPaging.SupportsOffsetPaging() {
 		t.Error("non-paging driver: SupportsOffsetPaging() = true, want false")
 	}

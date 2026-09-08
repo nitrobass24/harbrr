@@ -193,7 +193,7 @@ func newEnvFull(t *testing.T, cfg api.Config, buildCache func(db *database.DB) *
 		// handler tests need.
 		Cache: cache, Logger: logger,
 		SetLogLevel:     func(_ context.Context, level string) error { return applog.SetLevel(level) },
-		AdultCategories: api.NewAdultCategoriesStore(db, nil),
+		AdultCategories: api.NewAdultCategoriesStore(db),
 	}, cfg)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)

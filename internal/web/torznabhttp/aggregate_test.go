@@ -60,7 +60,7 @@ func doAll(t *testing.T, p core.Provider, rawQuery string, opts ...Option) *http
 func doFeed(t *testing.T, p core.Provider, slug, rawQuery string, opts ...Option) *httptest.ResponseRecorder {
 	t.Helper()
 	opts = append([]Option{
-		WithAPIKey(testAPIKey),
+		withTestAPIKey(testAPIKey),
 		WithClock(func() time.Time { return time.Date(2026, time.June, 13, 12, 0, 0, 0, time.UTC) }),
 	}, opts...)
 	h := NewHandler(p, opts...)
@@ -338,7 +338,7 @@ func TestAggregateGrabsBindToOrigin(t *testing.T) {
 		t.Fatal("no /dl token in the served feed")
 	}
 
-	h := NewHandler(p, WithAPIKey(testAPIKey), WithDLToken(kr),
+	h := NewHandler(p, withTestAPIKey(testAPIKey), WithDLToken(kr),
 		WithClock(func() time.Time { return time.Date(2026, time.June, 13, 12, 0, 0, 0, time.UTC) }))
 
 	// The token resolves through b, with b's own (passkey-bearing) link.
@@ -395,7 +395,7 @@ func TestAggregateInheritsFreeleechBypass(t *testing.T) {
 			t.Parallel()
 			a := aggIndexer(t, "a", searchOnly, "2024-01-02T03:04:05Z")
 			b := aggIndexer(t, "b", searchOnly, "2024-01-02T03:04:05Z")
-			h := NewHandler(fakeProvider{"a": a, "b": b}, WithAPIKey(testAPIKey),
+			h := NewHandler(fakeProvider{"a": a, "b": b}, withTestAPIKey(testAPIKey),
 				WithClock(func() time.Time { return time.Date(2026, time.June, 13, 12, 0, 0, 0, time.UTC) }))
 			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
 				tt.path+"?t=search&q=x&apikey="+testAPIKey, nil)
@@ -563,7 +563,7 @@ func TestProfileFeedUnknownAndDownload(t *testing.T) {
 		t.Fatal("no /dl token in the served feed")
 	}
 
-	h := NewHandler(p, WithAPIKey(testAPIKey), WithDLToken(kr),
+	h := NewHandler(p, withTestAPIKey(testAPIKey), WithDLToken(kr),
 		WithClock(func() time.Time { return time.Date(2026, time.June, 13, 12, 0, 0, 0, time.UTC) }))
 	if rec := doDL(t, h, "member", "token="+url.QueryEscape(token)); rec.Code != http.StatusOK {
 		t.Fatalf("grab through the origin member: status = %d, body = %s", rec.Code, rec.Body.String())

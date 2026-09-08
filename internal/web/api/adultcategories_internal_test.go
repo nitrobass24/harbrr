@@ -15,7 +15,7 @@ func TestAdultCategoriesSetPersistFailureKeepsLive(t *testing.T) {
 	t.Parallel()
 
 	wantErr := errors.New("write failed")
-	s := NewAdultCategoriesStore(failingExecer{err: wantErr}, nil)
+	s := NewAdultCategoriesStore(failingExecer{err: wantErr})
 
 	if err := s.Set(context.Background(), true); !errors.Is(err, wantErr) {
 		t.Fatalf("Set = %v, want it to wrap the persist error", err)

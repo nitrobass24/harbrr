@@ -28,6 +28,12 @@ import (
 
 const testAPIKey = "harbrr-test-key"
 
+// withTestAPIKey is the tests' stand-in for the production auth-service lookup:
+// a validator that accepts exactly one fixed key.
+func withTestAPIKey(key string) Option {
+	return WithAPIKeyValidator(func(k string) bool { return k == key })
+}
+
 // fakeIndexer is a core.Provider-backed core.Indexer for the handler tests: it serves
 // canned capabilities + releases and records the search query it received.
 type fakeIndexer struct {
@@ -138,7 +144,7 @@ func newTestHandler(t *testing.T, idx *fakeIndexer) http.Handler {
 	t.Helper()
 	return NewHandler(
 		fakeProvider{"demo": idx},
-		WithAPIKey(testAPIKey),
+		withTestAPIKey(testAPIKey),
 		WithClock(func() time.Time { return time.Date(2026, time.June, 13, 12, 0, 0, 0, time.UTC) }),
 	)
 }
@@ -189,7 +195,7 @@ func richIndexer(t *testing.T) *fakeIndexer {
 // richDo drives a request against the rich indexer at /indexers/rich/.
 func richDo(t *testing.T, idx *fakeIndexer, rawQuery string) *httptest.ResponseRecorder {
 	t.Helper()
-	h := NewHandler(fakeProvider{"rich": idx}, WithAPIKey(testAPIKey),
+	h := NewHandler(fakeProvider{"rich": idx}, withTestAPIKey(testAPIKey),
 		WithClock(func() time.Time { return time.Date(2026, time.June, 13, 12, 0, 0, 0, time.UTC) }))
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
 		"/api/indexers/rich/results/torznab?"+rawQuery+"&apikey="+testAPIKey, nil)
@@ -340,7 +346,7 @@ func newProxyHandler(t *testing.T, idx *fakeIndexer) (http.Handler, *secrets.Key
 	}
 	h := NewHandler(
 		fakeProvider{"demo": idx},
-		WithAPIKey(testAPIKey),
+		withTestAPIKey(testAPIKey),
 		WithClock(func() time.Time { return time.Date(2026, time.June, 13, 12, 0, 0, 0, time.UTC) }),
 		WithDLToken(kr),
 	)
@@ -547,7 +553,7 @@ func TestServeDL_PlaintextModeRejectsForgedHost(t *testing.T) {
 	idx := resolverDemoIndexer(t)
 	idx.downloadNeedsAuth = true
 	kr := plaintextKeyringForTest(t)
-	h := NewHandler(fakeProvider{"demo": idx}, WithAPIKey(testAPIKey), WithDLToken(kr))
+	h := NewHandler(fakeProvider{"demo": idx}, withTestAPIKey(testAPIKey), WithDLToken(kr))
 	attackerURL := "http://127.0.0.1/private"
 	forged := base64.RawURLEncoding.EncodeToString([]byte(attackerURL))
 	rec := doDL(t, h, "demo", "token="+url.QueryEscape(forged))
@@ -610,7 +616,7 @@ func TestServeDL_ProxyDisabled(t *testing.T) {
 	t.Parallel()
 	idx := resolverDemoIndexer(t)
 	// A handler WITHOUT WithDLToken: the proxy is disabled.
-	h := NewHandler(fakeProvider{"demo": idx}, WithAPIKey(testAPIKey))
+	h := NewHandler(fakeProvider{"demo": idx}, withTestAPIKey(testAPIKey))
 	rec := doDL(t, h, "demo", "token=whatever")
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("status = %d, want 503 when the proxy is disabled", rec.Code)

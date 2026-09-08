@@ -92,14 +92,13 @@ func TestNewBootsAndServesHandler(t *testing.T) {
 	}
 }
 
-// TestNewWithOptions exercises the two test-widening Option seams: WithDatabase
-// (New skips its own openDatabase and uses the caller's already-open one) and
-// WithHTTPClient (overrides the outbound client shared by notify/app-sync/
-// announce). Each case must still produce a fully working, servable App.
-func TestNewWithOptions(t *testing.T) {
+// TestNewWithInjectedDB exercises Deps.DB: New skips its own OpenDatabase and
+// builds on the caller's already-open one, still producing a fully working,
+// servable App.
+func TestNewWithInjectedDB(t *testing.T) {
 	t.Parallel()
 
-	t.Run("WithDatabase", func(t *testing.T) {
+	t.Run("Deps.DB", func(t *testing.T) {
 		t.Parallel()
 		cfg := testConfig(t)
 		db, err := database.Open(filepath.Join(t.TempDir(), "harbrr.db"))
@@ -111,9 +110,9 @@ func TestNewWithOptions(t *testing.T) {
 			t.Fatalf("migrate: %v", err)
 		}
 
-		a, err := New(context.Background(), Deps{Config: cfg, Logger: zerolog.Nop()}, WithDatabase(db))
+		a, err := New(context.Background(), Deps{Config: cfg, Logger: zerolog.Nop(), DB: db})
 		if err != nil {
-			t.Fatalf("New with WithDatabase: %v", err)
+			t.Fatalf("New with Deps.DB: %v", err)
 		}
 		if a.db != db {
 			t.Fatal("New built its own database instead of using the injected one")
@@ -300,7 +299,7 @@ func TestNewExpiresCacheOnLegacyDefsFingerprintUpgrade(t *testing.T) {
 		t.Fatalf("seed legacy fingerprint: %v", err)
 	}
 
-	if _, err := New(ctx, Deps{Config: cfg, Logger: zerolog.Nop()}, WithDatabase(db)); err != nil {
+	if _, err := New(ctx, Deps{Config: cfg, Logger: zerolog.Nop(), DB: db}); err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	// Read the cache back at a clock strictly at-or-after the boot that expired it,

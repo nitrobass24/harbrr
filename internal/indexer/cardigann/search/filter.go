@@ -123,14 +123,6 @@ func (r *FilterRegistry) apply(value string, filters []loader.FilterBlock) (stri
 	return out, nil
 }
 
-// known reports whether name is a registered FIELD filter. Validating a whole
-// definition requires BOTH this and rowFilterKnown (for RowsBlock.Filters) —
-// field and row chains are separate vocabularies; see rowFilterKnown.
-func (r *FilterRegistry) known(name string) bool {
-	_, ok := r.ops[name]
-	return ok
-}
-
 // firstArg returns args[0] or "" when the slice is empty, matching Jackett's
 // cast of an absent Filter.Args to a null/empty string.
 func firstArg(args []string) string {

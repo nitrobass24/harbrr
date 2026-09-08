@@ -78,7 +78,7 @@ func newE2EHandler(t *testing.T) http.Handler {
 	}
 	return NewHandler(
 		fakeProvider{def.ID: idx},
-		WithAPIKey(testAPIKey),
+		withTestAPIKey(testAPIKey),
 		WithClock(e2eFixedClock),
 	)
 }

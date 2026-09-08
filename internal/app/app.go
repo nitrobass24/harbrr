@@ -97,27 +97,23 @@ type App struct {
 // sink) -> registry -> app-sync -> announce -> the search cache's announce
 // sink (wired back after announce exists — see initSyncServices) -> the
 // persisted log level -> proxy/solver -> the mounted HTTP handlers.
-func New(ctx context.Context, deps Deps, opts ...Option) (*App, error) {
-	o := &options{}
-	for _, opt := range opts {
-		opt(o)
-	}
+func New(ctx context.Context, deps Deps) (*App, error) {
 	httpClient := appSyncClient()
 
 	a := &App{cfg: deps.Config, log: deps.Logger}
 
-	db, err := resolveDatabase(ctx, deps.Config, o.db)
+	db, err := resolveDatabase(ctx, deps.Config, deps.DB)
 	if err != nil {
 		return nil, err
 	}
 	a.db = db
-	ownsDB := o.db == nil // New opened it itself, vs. a test injecting an already-open one.
+	ownsDB := deps.DB == nil // New opened it itself, vs. a caller injecting an already-open one.
 
 	if err := a.build(ctx, httpClient); err != nil {
 		// New opened the DB itself, so New closes it on the way out too — the
-		// caller never got an *App to close it through. A WithDatabase-injected
-		// DB is left open on error: the injector owns its lifecycle either way
-		// (see the WithDatabase doc comment). On success, Run always closes it.
+		// caller never got an *App to close it through. A Deps.DB-injected
+		// database is left open on error: the injector owns its lifecycle either
+		// way (see the Deps.DB doc comment). On success, Run always closes it.
 		if ownsDB {
 			_ = a.db.Close()
 		}
@@ -153,8 +149,8 @@ func (a *App) build(ctx context.Context, httpClient *http.Client) error {
 	return nil
 }
 
-// resolveDatabase opens+migrates the database from cfg, unless a test injected
-// an already-open one via WithDatabase.
+// resolveDatabase opens+migrates the database from cfg, unless the caller injected
+// an already-open one via Deps.DB.
 func resolveDatabase(ctx context.Context, cfg *config.Config, injected *database.DB) (*database.DB, error) {
 	if injected != nil {
 		return injected, nil
@@ -360,7 +356,7 @@ func (a *App) initSyncServices(httpClient *http.Client) {
 // operator's persisted choice. An unreadable row is non-fatal: the setting stays
 // off (adult categories visible), which is the default behaviour anyway.
 func (a *App) initAdultCategories(ctx context.Context) {
-	a.adultCats = api.NewAdultCategoriesStore(a.db, time.Now)
+	a.adultCats = api.NewAdultCategoriesStore(a.db)
 	a.adultCats.LoadPersisted(ctx, a.log)
 }
 

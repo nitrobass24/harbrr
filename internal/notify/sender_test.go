@@ -225,7 +225,7 @@ func TestSenderErrorDoesNotLeakURL(t *testing.T) {
 	// A URL that carries a secret token, pointed at a dead port so the transport fails.
 	const hookURL = "http://127.0.0.1:0/hook?token=SUPERSECRET"
 
-	s, err := newSender(domain.NotifyTypeWebhook, hookURL, defaultHTTPClient())
+	s, err := newSender(domain.NotifyTypeWebhook, hookURL, http.DefaultClient)
 	if err != nil {
 		t.Fatalf("newSender: %v", err)
 	}
