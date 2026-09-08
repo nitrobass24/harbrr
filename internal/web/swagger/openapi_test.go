@@ -1,38 +1,37 @@
 package swagger_test
 
 import (
-	"context"
 	"strings"
 	"testing"
 
-	"github.com/getkin/kin-openapi/openapi3"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/autobrr/harbrr/internal/web/swagger"
 )
 
-// loadSpec parses and validates the embedded spec as an OpenAPI 3 document. It
-// is the shared entry point for the drift tests below: anything malformed (bad
-// YAML or an invalid OpenAPI 3 structure) fails here rather than in each test.
-func loadSpec(t *testing.T) *openapi3.T {
-	t.Helper()
-
-	loader := openapi3.NewLoader()
-	doc, err := loader.LoadFromData(swagger.Spec())
-	if err != nil {
-		t.Fatalf("load embedded openapi.yaml: %v", err)
-	}
-	if err := doc.Validate(context.Background()); err != nil {
-		t.Fatalf("embedded spec is not valid OpenAPI 3: %v", err)
-	}
-	return doc
+// specDoc is the slice of the OpenAPI document these tests assert on. Full
+// OpenAPI validation is the web CI job's concern: openapi-typescript
+// regenerates the client types from this same file and fails on a spec it
+// cannot read.
+type specDoc struct {
+	OpenAPI string `yaml:"openapi"`
+	Info    struct {
+		Title   string `yaml:"title"`
+		Version string `yaml:"version"`
+	} `yaml:"info"`
+	Paths map[string]map[string]struct{} `yaml:"paths"`
 }
 
-func TestSpecIsValidOpenAPI3(t *testing.T) {
-	t.Parallel()
+// loadSpec parses the embedded spec. It is the shared entry point for the
+// drift tests below: malformed YAML fails here rather than in each test.
+func loadSpec(t *testing.T) specDoc {
+	t.Helper()
 
-	// loadSpec does the parse + Validate; reaching here means the embedded
-	// spec is a structurally valid OpenAPI 3 document.
-	loadSpec(t)
+	var doc specDoc
+	if err := yaml.Unmarshal(swagger.Spec(), &doc); err != nil {
+		t.Fatalf("load embedded openapi.yaml: %v", err)
+	}
+	return doc
 }
 
 func TestSpecContract(t *testing.T) {
@@ -56,10 +55,6 @@ func TestSpecContract(t *testing.T) {
 		})
 	}
 
-	if doc.Info == nil {
-		t.Fatal("spec is missing the info block")
-		return
-	}
 	if doc.Info.Title == "" {
 		t.Error("info.title is empty")
 	}
@@ -67,12 +62,11 @@ func TestSpecContract(t *testing.T) {
 		t.Error("info.version is empty")
 	}
 
-	healthz := doc.Paths.Find("/healthz")
-	if healthz == nil {
+	healthz, ok := doc.Paths["/healthz"]
+	if !ok {
 		t.Fatal("spec does not document the /healthz path")
-		return
 	}
-	if healthz.Get == nil {
+	if _, ok := healthz["get"]; !ok {
 		t.Error("/healthz does not document a GET operation")
 	}
 }
