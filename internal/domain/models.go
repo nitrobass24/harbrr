@@ -7,6 +7,17 @@ package domain
 
 import "time"
 
+// RefUpdate is a tri-state PATCH field for a nullable resource reference: Present
+// false leaves the stored reference unchanged; Present true with a nil Value clears
+// it; Present true with a value sets it. This keeps a partial PATCH (e.g. renaming
+// an indexer) from silently clearing its proxy/solver/sync-profile reference. It
+// lives here because the registry, app-sync and the API layer all patch references
+// the same way — one shape, not one per service.
+type RefUpdate struct {
+	Present bool
+	Value   *int64
+}
+
 // IndexerInstance is a configured tracker: a definition id plus user-chosen
 // identity and base URL. The integer ID is internal and stable (it backs the
 // encryption AAD of its secret settings); Slug is the stable user-facing

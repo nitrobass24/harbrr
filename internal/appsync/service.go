@@ -150,25 +150,15 @@ func (s *Service) CreateConnection(ctx context.Context, p CreateConnectionParams
 	})
 }
 
-// RefUpdate is a tri-state PATCH field for a nullable resource reference: Present false
-// leaves the stored reference unchanged; Present true with a nil Value clears it; Present
-// true with a value sets it. It mirrors registry.RefUpdate (the same tri-state the
-// indexer PATCH uses for proxy/solver), redeclared here so appsync does not import
-// registry — the web layer maps its optionalRef into this.
-type RefUpdate struct {
-	Present bool
-	Value   *int64
-}
-
 // UpdateConnectionParams patches a connection's surface fields; nil fields are left
 // unchanged. Identity + credential (base URL, api key, harbrr URL) are App-level now —
-// rotated via the App, not here. SyncProfileID is tri-state (RefUpdate): only an
+// rotated via the App, not here. SyncProfileID is tri-state (domain.RefUpdate): only an
 // explicitly-present field changes the reference.
 type UpdateConnectionParams struct {
 	Name          *string
 	SyncLevel     *string
 	FreeleechMode *string
-	SyncProfileID RefUpdate
+	SyncProfileID domain.RefUpdate
 }
 
 // UpdateConnection applies a surface-field patch. The read, profile-ref-validate, and

@@ -36,7 +36,7 @@ func TestOptionalRefDecode(t *testing.T) {
 			if err := json.Unmarshal([]byte(tt.body), &p); err != nil {
 				t.Fatalf("Unmarshal(%s): %v", tt.body, err)
 			}
-			got := p.ProxyID.toRegistry()
+			got := p.ProxyID.toDomain()
 			if got.Present != tt.wantPresent {
 				t.Fatalf("present = %v, want %v", got.Present, tt.wantPresent)
 			}

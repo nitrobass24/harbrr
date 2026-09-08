@@ -264,27 +264,18 @@ func resolveExpiry(inst domain.IndexerInstance, p UpdateParams) (expiry, error) 
 	return normalizeExpiry(date, kind, lifetime)
 }
 
-// RefUpdate is a tri-state PATCH field for a nullable resource reference: Present
-// false leaves the stored reference unchanged; Present true with a nil Value clears
-// it; Present true with a value sets it. This keeps a partial PATCH (e.g. renaming
-// an indexer) from silently clearing its proxy/solver reference.
-type RefUpdate struct {
-	Present bool
-	Value   *int64
-}
-
 // UpdateParams is the input to Update. Nil Name/BaseURL leave those unchanged;
 // Settings is merged into the existing set (a value of secrets.Redacted keeps the
 // stored value; omitted settings are kept). ProxyID/SolverID are tri-state
-// (RefUpdate): only an explicitly-present field changes the reference. Nil
+// (domain.RefUpdate): only an explicitly-present field changes the reference. Nil
 // Priority/MinSeeders/toggle fields leave those unchanged; SyncCategories is a
 // *[]int so a present-but-empty slice clears the narrowing (distinct from omitted).
 type UpdateParams struct {
 	Name                    *string
 	BaseURL                 *string
 	Settings                map[string]string
-	ProxyID                 RefUpdate
-	SolverID                RefUpdate
+	ProxyID                 domain.RefUpdate
+	SolverID                domain.RefUpdate
 	Priority                *int
 	MinSeeders              *int
 	SyncCategories          *[]int
@@ -1285,7 +1276,7 @@ func resolveSyncCategories(update *[]int, current []int) ([]int, error) {
 
 // resolveRef applies a tri-state reference update: a present update wins (its
 // value, nil to clear); an absent one keeps the instance's current reference.
-func resolveRef(update RefUpdate, current *int64) *int64 {
+func resolveRef(update domain.RefUpdate, current *int64) *int64 {
 	if update.Present {
 		return update.Value
 	}
