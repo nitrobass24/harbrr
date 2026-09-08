@@ -118,7 +118,7 @@ func (p *Parser) ParseDate(value, layout string) (string, error) {
 // there. It activates only for a letterless, yearless layout (e.g. a bare
 // "MMM"), matching Jackett's ParseDateTimeGoLangTest.
 func rollbackFutureYearless(t time.Time, netLayout, goLayout string, ref time.Time) time.Time {
-	if containsAnyFold(netLayout, "y", "h", "d") {
+	if strings.ContainsAny(strings.ToLower(netLayout), "yhd") {
 		return t // Jackett's commonStandardFormats early return: no rollback.
 	}
 	if strings.Contains(goLayout, "2006") || strings.Contains(goLayout, "06") {
@@ -133,19 +133,6 @@ func rollbackFutureYearless(t time.Time, netLayout, goLayout string, ref time.Ti
 		return t.AddDate(-1, 0, 0)
 	}
 	return t
-}
-
-// containsAnyFold reports whether s contains any of the (already-lowercase)
-// substrings, case-insensitively — matching .NET string.ContainsIgnoreCase
-// (InvariantCulture) for the ASCII format letters checked here.
-func containsAnyFold(s string, lowerSubs ...string) bool {
-	lower := strings.ToLower(s)
-	for _, sub := range lowerSubs {
-		if strings.Contains(lower, sub) {
-			return true
-		}
-	}
-	return false
 }
 
 // ampmRe matches an AM/PM designator in any case, standalone or attached to a

@@ -1,6 +1,7 @@
 package normalizer
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -51,40 +52,27 @@ func coerceDouble(s string) float64 {
 // Used for the external-id fields (imdb, tmdbid, tvdbid, ...). No digits -> 0,
 // mirroring GetValueOrDefault() on the nullable result.
 func firstIntRun(s string) int64 {
-	start, end := -1, -1
-	for i := 0; i < len(s); i++ {
-		if s[i] >= '0' && s[i] <= '9' {
-			if start < 0 {
-				start = i
-			}
-			end = i + 1
-			continue
-		}
-		if start >= 0 {
-			break
-		}
-	}
-	if start < 0 {
-		return 0
-	}
-	n, err := strconv.ParseInt(s[start:end], 10, 64)
+	n, err := strconv.ParseInt(digitRun.FindString(s), 10, 64)
 	if err != nil {
 		return 0
 	}
 	return n
 }
 
-// keepNumeric retains only digits, '.' and ',' then strips '-' (Jackett maps it
-// to '0' before parsing; for our integer/float extraction dropping it yields the
-// same magnitude, and the all-separator case is handled by the callers).
+// digitRun matches a contiguous run of ASCII digits.
+var digitRun = regexp.MustCompile(`[0-9]+`)
+
+// keepNumeric retains only digits, '.' and ','. A '-' is therefore dropped like
+// any other character (Jackett maps it to '0' before parsing; for our
+// integer/float extraction that yields the same magnitude, and the
+// all-separator case is handled by the callers).
 func keepNumeric(s string) string {
-	var b strings.Builder
-	for _, r := range s {
+	return strings.Map(func(r rune) rune {
 		if (r >= '0' && r <= '9') || r == '.' || r == ',' {
-			b.WriteRune(r)
+			return r
 		}
-	}
-	return strings.ReplaceAll(b.String(), "-", "")
+		return -1
+	}, s)
 }
 
 // stripSeparators drops every '.'/',' grouping separator, leaving bare digits.

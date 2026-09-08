@@ -2,6 +2,7 @@ package regexadapter
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/dlclark/regexp2"
@@ -68,22 +69,7 @@ func (m matchView) groupByName(name string) (string, bool) {
 			return m.groups[i], true
 		}
 	}
-	if isAllDigits(name) {
-		return m.group(atoiDigits(name))
-	}
-	return "", false
-}
-
-func isAllDigits(s string) bool {
-	if s == "" {
-		return false
-	}
-	for i := 0; i < len(s); i++ {
-		if s[i] < '0' || s[i] > '9' {
-			return false
-		}
-	}
-	return true
+	return groupNumber(m, name)
 }
 
 // expandDotNetReplacement renders repl for one match per .NET Regex.Replace.
@@ -176,7 +162,7 @@ func writeNumberedGroup(b *strings.Builder, repl string, i int, m matchView) int
 	for j < len(repl) && repl[j] >= '0' && repl[j] <= '9' {
 		j++
 	}
-	if val, ok := m.group(atoiDigits(repl[i+1 : j])); ok {
+	if val, ok := groupNumber(m, repl[i+1:j]); ok {
 		b.WriteString(val)
 		return j
 	}
@@ -185,17 +171,15 @@ func writeNumberedGroup(b *strings.Builder, repl string, i int, m matchView) int
 	return j
 }
 
-// atoiDigits parses an all-digit string to int. Overlong runs (beyond any real
-// group count) saturate to a sentinel that group() rejects.
-func atoiDigits(s string) int {
-	n := 0
-	for k := 0; k < len(s); k++ {
-		n = n*10 + int(s[k]-'0')
-		if n > 1<<20 { // far beyond any real group count; avoid overflow
-			return 1 << 20
-		}
+// groupNumber resolves an all-digit group reference. A run too long to be a real
+// group count overflows ParseUint and is reported as "not a group", which is what
+// .NET does with it too.
+func groupNumber(m matchView, digits string) (string, bool) {
+	n, err := strconv.ParseUint(digits, 10, 32)
+	if err != nil {
+		return "", false
 	}
-	return n
+	return m.group(int(n))
 }
 
 // regexp2MatchView builds a matchView from a regexp2 *Match. Groups are indexed
