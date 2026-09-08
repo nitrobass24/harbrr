@@ -24,7 +24,7 @@ type webhook struct {
 
 // newWebhook builds a generic-webhook sender for a destination URL.
 func newWebhook(url string, client *http.Client) *webhook {
-	return &webhook{p: poster{kind: "webhook", url: url, client: client}}
+	return &webhook{p: newPoster("webhook", url, client)}
 }
 
 // Send posts the event as a flat JSON object to the configured URL. webhookPayload is

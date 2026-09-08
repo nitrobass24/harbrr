@@ -238,6 +238,29 @@ func TestSenderErrorDoesNotLeakURL(t *testing.T) {
 	}
 }
 
+// TestSenderNon2xxDoesNotLeakURL covers the status path of the same guard. The
+// destination rides as the request PATH, so it lands in the client's own error text and
+// is removed only by the value-scrub newPoster arms with Secret; a regression there
+// would put the whole webhook URL — token and all — into a persisted health-event
+// detail.
+func TestSenderNon2xxDoesNotLeakURL(t *testing.T) {
+	t.Parallel()
+	srv, _ := captureServer(t, http.StatusInternalServerError)
+	hookURL := srv.URL + "/hook?token=SUPERSECRET"
+
+	s, err := newSender(domain.NotifyTypeWebhook, hookURL, srv.Client())
+	if err != nil {
+		t.Fatalf("newSender: %v", err)
+	}
+	err = s.Send(context.Background(), sampleEvent())
+	if err == nil {
+		t.Fatal("Send to a 500 endpoint returned nil, want error")
+	}
+	if strings.Contains(err.Error(), "SUPERSECRET") || strings.Contains(err.Error(), srv.URL) {
+		t.Errorf("error leaks the destination URL: %q", err)
+	}
+}
+
 func TestNewSenderUnknownType(t *testing.T) {
 	t.Parallel()
 	if _, err := newSender("carrier-pigeon", "http://x.invalid", nil); err == nil {
