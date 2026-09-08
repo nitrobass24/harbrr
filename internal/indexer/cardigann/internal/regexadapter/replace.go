@@ -175,7 +175,7 @@ func writeNumberedGroup(b *strings.Builder, repl string, i int, m matchView) int
 // group count overflows ParseUint and is reported as "not a group", which is what
 // .NET does with it too.
 func groupNumber(m matchView, digits string) (string, bool) {
-	n, err := strconv.ParseUint(digits, 10, 32)
+	n, err := strconv.ParseUint(digits, 10, 31) // 31 bits: fits int on every target, so int(n) cannot wrap
 	if err != nil {
 		return "", false
 	}
