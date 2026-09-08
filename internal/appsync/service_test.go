@@ -90,7 +90,7 @@ func newSyncFixture(t *testing.T) *syncFixture {
 	t.Cleanup(srv.Close)
 
 	authSvc := auth.NewService(db)
-	appsSvc := apps.NewService(db, kr, srv.Client(), zerolog.Nop())
+	appsSvc := apps.NewService(db, kr, srv.Client())
 	svc := NewService(db, source, appsSvc, authSvc, kr, srv.Client(), zerolog.Nop())
 
 	conn, err := svc.CreateConnection(ctx, CreateConnectionParams{

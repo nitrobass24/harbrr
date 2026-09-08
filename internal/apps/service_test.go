@@ -29,7 +29,7 @@ func newService(t *testing.T) (*apps.Service, *database.DB) {
 	if err != nil {
 		t.Fatalf("keyring: %v", err)
 	}
-	return apps.NewService(db, kr, http.DefaultClient, zerolog.Nop()), db
+	return apps.NewService(db, kr, http.DefaultClient), db
 }
 
 // TestResolveCreateReuseRotate exercises the three identity-driven outcomes of

@@ -10,7 +10,7 @@ import (
 
 func TestRetroFlixDefinition(t *testing.T) {
 	t.Parallel()
-	def := Definition()
+	def := retroFlixDefinition()
 	if def.ID != "retroflix" || def.Name != "RetroFlix" || def.Type != "private" {
 		t.Errorf("identity = %q/%q/%q", def.ID, def.Name, def.Type)
 	}

@@ -118,7 +118,7 @@ func TestParseResponse_HTMLScrape(t *testing.T) {
 	t.Parallel()
 	eng := newFixtureEngine(t, "html_scrape.yml")
 
-	releases, err := eng.ParseResponse(readBody(t, "html_scrape.html"), "")
+	releases, err := eng.ParseResponseQuery(readBody(t, "html_scrape.html"), "", Query{})
 	if err != nil {
 		t.Fatalf("ParseResponse: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestParseResponse_JSONAPI(t *testing.T) {
 	t.Parallel()
 	eng := newFixtureEngine(t, "json_api.yml")
 
-	releases, err := eng.ParseResponse(readBody(t, "json_api.json"), "json")
+	releases, err := eng.ParseResponseQuery(readBody(t, "json_api.json"), "json", Query{})
 	if err != nil {
 		t.Fatalf("ParseResponse: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestParseResponse_MagnetSynth(t *testing.T) {
 	t.Parallel()
 	eng := newFixtureEngine(t, "magnet_synth.yml")
 
-	releases, err := eng.ParseResponse(readBody(t, "magnet_synth.html"), "")
+	releases, err := eng.ParseResponseQuery(readBody(t, "magnet_synth.html"), "", Query{})
 	if err != nil {
 		t.Fatalf("ParseResponse: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestParseResponse_ResultOrder(t *testing.T) {
 	t.Parallel()
 	eng := newFixtureEngine(t, "result_order.yml")
 
-	releases, err := eng.ParseResponse(readBody(t, "result_order.html"), "")
+	releases, err := eng.ParseResponseQuery(readBody(t, "result_order.html"), "", Query{})
 	if err != nil {
 		t.Fatalf("ParseResponse: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestParseResponse_TodayDefault(t *testing.T) {
 	t.Parallel()
 	eng := newFixtureEngine(t, "today_default.yml")
 
-	releases, err := eng.ParseResponse(readBody(t, "today_default.html"), "")
+	releases, err := eng.ParseResponseQuery(readBody(t, "today_default.html"), "", Query{})
 	if err != nil {
 		t.Fatalf("ParseResponse: %v", err)
 	}
@@ -247,7 +247,7 @@ func TestParseResponse_ImplicitDate(t *testing.T) {
 	t.Parallel()
 	eng := newFixtureEngine(t, "implicit_date.yml")
 
-	releases, err := eng.ParseResponse(readBody(t, "implicit_date.html"), "")
+	releases, err := eng.ParseResponseQuery(readBody(t, "implicit_date.html"), "", Query{})
 	if err != nil {
 		t.Fatalf("ParseResponse: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestResultsJSON_Deterministic(t *testing.T) {
 	t.Parallel()
 	eng := newFixtureEngine(t, "html_scrape.yml")
 
-	releases, err := eng.ParseResponse(readBody(t, "html_scrape.html"), "")
+	releases, err := eng.ParseResponseQuery(readBody(t, "html_scrape.html"), "", Query{})
 	if err != nil {
 		t.Fatalf("ParseResponse: %v", err)
 	}

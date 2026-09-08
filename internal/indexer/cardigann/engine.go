@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/dateparse"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/httpx"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/selector"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
@@ -29,15 +28,6 @@ type (
 	// Release is the canonical normalized release the engine produces.
 	Release = normalizer.Release
 )
-
-// Doer is the narrow HTTP seam the engine drives for login and search. It is
-// satisfied by *http.Client in production and a replay transport in tests, so no
-// live network call ever happens in the engine or its tests.
-//
-// Aliased to httpx.Doer, the one definition shared with the login and search
-// stages (see httpx.Doer's doc); nothing outside this package references
-// cardigann.Doer today, but the alias keeps the exported symbol stable.
-type Doer = httpx.Doer
 
 // Engine assembles every pipeline stage for one definition and runs them
 // end-to-end. NewEngine wires the per-def seams the stages left open (the mapper
@@ -83,7 +73,7 @@ type options struct {
 type Option func(*options)
 
 // WithDoer injects the HTTP seam used for login and search. Required for any
-// Search call; ParseResponse needs no Doer (offline extraction).
+// Search call; ParseResponseQuery needs no Doer (offline extraction).
 func WithDoer(d search.Doer) Option {
 	return func(o *options) { o.doer = d }
 }
@@ -322,7 +312,7 @@ func (e *Engine) SkipsQuery(query Query) bool {
 // WithDoer.
 func (e *Engine) Search(ctx context.Context, query Query) ([]*Release, error) {
 	if e.doer == nil {
-		return nil, fmt.Errorf("cardigann: Search for %q requires WithDoer (use ParseResponse for offline extraction)", e.def.ID)
+		return nil, fmt.Errorf("cardigann: Search for %q requires WithDoer (use ParseResponseQuery for offline extraction)", e.def.ID)
 	}
 	if err := e.ensureSession(ctx); err != nil {
 		return nil, fmt.Errorf("cardigann: login for %q: %w", e.def.ID, err)
@@ -479,21 +469,15 @@ func (e *Engine) Grab(ctx context.Context, link string) (*search.GrabResult, err
 	return result, nil
 }
 
-// ParseResponse is the offline extraction half: parse a saved response body into
-// normalized releases without any HTTP, for the parity harness and regression
-// snapshots. responseType selects the JSON parser when "json"; anything else
-// parses as HTML. A zero Query is used (raw RSS), which the row-filter stage
-// treats as "no andmatch keyword constraint".
-func (e *Engine) ParseResponse(body []byte, responseType string) ([]*Release, error) {
-	return e.ParseResponseQuery(body, responseType, Query{})
-}
-
-// ParseResponseQuery is ParseResponse with an explicit query, so the andmatch row
-// filter and any .Query.* field templates see the real search terms when
-// replaying a saved response. responseType overrides the definition's response
-// type when non-empty; when empty, the def's leading path type applies (a saved
-// single body carries no path identity, so the offline replay defaults to the
-// first declared type — the live search parses each response per-path instead).
+// ParseResponseQuery is the offline extraction half: parse a saved response body
+// into normalized releases without any HTTP, for the parity harness and regression
+// snapshots. The query is explicit, so the andmatch row filter and any .Query.*
+// field templates see the real search terms when replaying a saved response (a zero
+// Query means raw RSS: no andmatch keyword constraint). responseType overrides the
+// definition's response type when non-empty; when empty, the def's leading path type
+// applies (a saved single body carries no path identity, so the offline replay
+// defaults to the first declared type — the live search parses each response per-path
+// instead).
 func (e *Engine) ParseResponseQuery(body []byte, responseType string, query Query) ([]*Release, error) {
 	if responseType == "" {
 		responseType = search.DefaultResponseType(e.def)

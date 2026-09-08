@@ -14,8 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rs/zerolog"
-
 	"github.com/autobrr/harbrr/internal/connresource"
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
@@ -38,17 +36,16 @@ type Service struct {
 	client  *http.Client
 	clock   func() time.Time
 	life    *connresource.Lifecycle[domain.App]
-	log     zerolog.Logger
 }
 
 // NewService wires the apps service. client is used only by the qui-instance proxy
 // (nil installs a timeout-bounded default); clock is injectable for deterministic
 // tests (assigning to the returned Service's clock field also retunes its Lifecycle).
-func NewService(db dbinterface.Querier, keyring *secrets.Keyring, client *http.Client, log zerolog.Logger) *Service {
+func NewService(db dbinterface.Querier, keyring *secrets.Keyring, client *http.Client) *Service {
 	if client == nil {
 		client = &http.Client{Timeout: httpClientTimeout}
 	}
-	s := &Service{db: db, keyring: keyring, client: client, clock: time.Now, log: log}
+	s := &Service{db: db, keyring: keyring, client: client, clock: time.Now}
 	s.life = connresource.New[domain.App](db, keyring, func() time.Time { return s.clock() })
 	return s
 }

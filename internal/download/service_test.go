@@ -31,8 +31,8 @@ func newService(t *testing.T) (*Service, *apps.Service) {
 	if err != nil {
 		t.Fatalf("keyring: %v", err)
 	}
-	appsSvc := apps.NewService(db, kr, newTestHTTPClient(), zerolog.Nop())
-	svc := NewService(db, appsSvc, kr, newTestHTTPClient(), zerolog.Nop())
+	appsSvc := apps.NewService(db, kr, newTestHTTPClient())
+	svc := NewService(db, appsSvc, kr, newTestHTTPClient())
 	svc.clock = func() time.Time { return time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC) }
 	return svc, appsSvc
 }

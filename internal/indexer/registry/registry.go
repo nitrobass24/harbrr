@@ -200,8 +200,7 @@ func WithHealthSink(sink HealthSink) Option {
 // client shape); this struct is the widening, so adding fields later (proxy, rate)
 // never re-breaks the WithDoerFactory Option.
 type ClientParams struct {
-	Instance domain.IndexerInstance
-	Cfg      map[string]string
+	Cfg map[string]string
 	// Timeout is the per-instance request timeout (resolved in build() from a
 	// per-instance "timeout" setting, else the registry default); newDoer clamps
 	// <=0 to defaultHTTPTimeout.
@@ -592,7 +591,6 @@ func (r *Resolver) buildAdapterAt(ctx context.Context, slug, probeHost string) (
 	}
 
 	doer, err := r.doerFactory(ClientParams{
-		Instance:     inst,
 		Cfg:          is.engineCfg,
 		Timeout:      is.Timeout,
 		RateInterval: is.RateInterval,

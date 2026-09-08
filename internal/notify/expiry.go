@@ -31,14 +31,6 @@ const ExpiryThresholdsKey = "expiry.thresholds"
 // prevent, so it is not something a bad thresholds value can switch off.
 var defaultExpiryThresholds = []int{30, 14, 7, 1, 0}
 
-// DefaultExpiryThresholds returns a copy of the default lead times for the settings
-// endpoint to report when the operator has set none. A copy, not the slice: the
-// package-level defaults are the fallback every scan reads, and a caller that sorted
-// or appended to them in place would silently retune the feature.
-func DefaultExpiryThresholds() []int {
-	return append([]int(nil), defaultExpiryThresholds...)
-}
-
 // expiryThresholds is the persisted lead-time list. A missing row, or one holding
 // nothing usable, reads back as defaultExpiryThresholds.
 var expiryThresholds = database.Setting[[]int]{

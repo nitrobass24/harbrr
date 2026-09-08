@@ -87,11 +87,6 @@ web-ci:
 test:
 	go test -race -count=1 $(PKG)
 
-## test-short: run tests without the race detector (faster inner loop)
-.PHONY: test-short
-test-short:
-	go test -count=1 $(PKG)
-
 ## test-openapi: validate the embedded management-API OpenAPI spec + handler drift
 .PHONY: test-openapi
 test-openapi:
@@ -116,11 +111,6 @@ lint:
 .PHONY: lint-fix
 lint-fix:
 	golangci-lint run --fix
-
-## lint-json: write lint-report.json
-.PHONY: lint-json
-lint-json:
-	golangci-lint run --output.json.path lint-report.json || true
 
 ## fmt: format with the configured formatters (gofumpt + goimports)
 .PHONY: fmt

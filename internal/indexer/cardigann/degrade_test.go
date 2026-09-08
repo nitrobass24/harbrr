@@ -50,7 +50,7 @@ func TestParseResponse_DegradesOnGarbage(t *testing.T) {
 	t.Run("invalid json errors", func(t *testing.T) {
 		t.Parallel()
 		eng := newFixtureEngine(t, "json_api.yml")
-		_, err := eng.ParseResponse([]byte("{not valid json"), "json")
+		_, err := eng.ParseResponseQuery([]byte("{not valid json"), "json", Query{})
 		if err == nil {
 			t.Fatal("ParseResponse of invalid JSON = nil error, want a loud error")
 		}
@@ -59,7 +59,7 @@ func TestParseResponse_DegradesOnGarbage(t *testing.T) {
 	t.Run("html without rows yields no releases", func(t *testing.T) {
 		t.Parallel()
 		eng := newFixtureEngine(t, "html_scrape.yml")
-		releases, err := eng.ParseResponse([]byte("<html><body><p>no results</p></body></html>"), "")
+		releases, err := eng.ParseResponseQuery([]byte("<html><body><p>no results</p></body></html>"), "", Query{})
 		if err != nil {
 			t.Fatalf("ParseResponse of row-less HTML errored: %v", err)
 		}

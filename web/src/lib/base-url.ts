@@ -9,11 +9,6 @@ export function getBaseUrl(): string {
   return raw.endsWith("/") ? raw.slice(0, -1) : raw
 }
 
-// getApiBaseUrl returns the prefix every management-API call goes through.
-export function getApiBaseUrl(): string {
-  return `${getBaseUrl()}/api`
-}
-
 // defaultHarbrrUrl is the best-effort prefill for a form's "harbrr URL" field. When the
 // operator configured server.external_url, it is authoritative (it's what the server
 // itself uses for feed/announce links, cutting connection drift); otherwise how this

@@ -124,7 +124,7 @@ func TestServicePushSlowQuiCountsAsSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("keyring: %v", err)
 	}
-	appsSvc := apps.NewService(db, kr, http.DefaultClient, zerolog.Nop())
+	appsSvc := apps.NewService(db, kr, http.DefaultClient)
 	// needs is comfortably above the old 10s cap and below qui's 120s ceiling.
 	tgt := &slowQuiTarget{timeout: 120 * time.Second, needs: 45 * time.Second}
 	svc := announce.NewService(db, appsSvc, auth.NewService(db), kr,

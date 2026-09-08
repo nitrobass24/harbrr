@@ -206,9 +206,6 @@ func (db *DB) BeginTx(ctx context.Context, opts *sql.TxOptions) (dbinterface.TxQ
 	return txQuerier{Tx: tx, dialect: db.dialect}, nil
 }
 
-// Dialect reports the active backend (always SQLite for now).
-func (db *DB) Dialect() dbinterface.Dialect { return db.dialect }
-
 // Checkpoint flushes the WAL into the main database (TRUNCATE) and re-applies file
 // permissions so any side file created since Open is also owner-only. It is a
 // no-op (beyond re-securing) for an in-memory database.
