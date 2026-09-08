@@ -86,22 +86,6 @@ type CategoriesBlock struct {
 	names map[string]string
 }
 
-// NewCategoriesBlock builds a CategoriesBlock from ordered entries, preserving
-// the given order (first position, last value on a duplicate key). The loader
-// builds these via UnmarshalYAML; this constructor is for assembling
-// definitions directly (e.g. in tests) without losing order to a Go map
-// literal.
-func NewCategoriesBlock(entries ...CategoryEntry) CategoriesBlock {
-	cb := CategoriesBlock{names: make(map[string]string, len(entries))}
-	for _, e := range entries {
-		if _, seen := cb.names[e.TrackerID]; !seen {
-			cb.keys = append(cb.keys, e.TrackerID)
-		}
-		cb.names[e.TrackerID] = e.Name
-	}
-	return cb
-}
-
 // UnmarshalYAML decodes a mapping node into an order-preserving
 // CategoriesBlock, keeping a duplicate key's FIRST position but LAST value
 // (go-yaml map semantics), exactly as InputsBlock and FieldsBlock do.
@@ -319,21 +303,6 @@ type CaseBlock struct {
 	values map[string]Scalar
 }
 
-// NewCaseBlock builds a CaseBlock from ordered arms, preserving the given order
-// (first position, last value on a duplicate key). The loader builds these via
-// UnmarshalYAML; this constructor is for assembling blocks directly (e.g. in
-// tests) without losing order to a Go map literal.
-func NewCaseBlock(entries ...CaseEntry) CaseBlock {
-	cb := CaseBlock{values: make(map[string]Scalar, len(entries))}
-	for _, e := range entries {
-		if _, seen := cb.values[e.Key]; !seen {
-			cb.keys = append(cb.keys, e.Key)
-		}
-		cb.values[e.Key] = e.Value
-	}
-	return cb
-}
-
 // UnmarshalYAML decodes a mapping node into an order-preserving CaseBlock,
 // keeping a duplicate key's FIRST position but LAST value (go-yaml map
 // semantics), exactly as FieldsBlock/InputsBlock do.
@@ -479,21 +448,6 @@ type InputsBlock struct {
 	values map[string]Scalar
 }
 
-// NewInputsBlock builds an InputsBlock from ordered entries, preserving the
-// given order (first position, last value on a duplicate key). The loader builds
-// these via UnmarshalYAML; this constructor is for assembling definitions
-// directly (e.g. in tests) without losing order to a Go map literal.
-func NewInputsBlock(entries ...InputEntry) InputsBlock {
-	ib := InputsBlock{values: make(map[string]Scalar, len(entries))}
-	for _, e := range entries {
-		if _, seen := ib.values[e.Key]; !seen {
-			ib.keys = append(ib.keys, e.Key)
-		}
-		ib.values[e.Key] = e.Value
-	}
-	return ib
-}
-
 // UnmarshalYAML decodes a mapping node into an order-preserving InputsBlock,
 // keeping a duplicate key's FIRST position but LAST value (go-yaml map
 // semantics), exactly as FieldsBlock does.
@@ -557,11 +511,10 @@ type FilterBlock struct {
 	Args FilterArgs `yaml:"args,omitempty"`
 }
 
-// RowFilterBlock mirrors RowFilterBlock (row-level filters: andmatch, strdump).
-type RowFilterBlock struct {
-	Name string     `yaml:"name"`
-	Args FilterArgs `yaml:"args,omitempty"`
-}
+// RowFilterBlock is the row-level filter block (andmatch, strdump). The schema
+// declares it separately from FilterBlock but with an identical shape, so it is
+// an alias rather than a second, drift-prone copy of the same struct.
+type RowFilterBlock = FilterBlock
 
 // Scalar is a oneOf scalar union (string|number|boolean) normalized to its
 // string form, mirroring how Jackett's deserializer coerces these values to

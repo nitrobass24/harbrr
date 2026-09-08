@@ -12,9 +12,6 @@ func Families() []native.Family {
 	return []native.Family{{Definition: retroFlixDefinition(), Factory: New}}
 }
 
-// Definition returns RetroFlix's static settings and capabilities definition.
-func Definition() *loader.Definition { return retroFlixDefinition() }
-
 // retroFlixDefinition is hand-built rather than native.Site{}.Definition(): Site
 // carries a single Link and RetroFlix serves two alternate domains, and the
 // credential fields carry Required, which the kit's Field* constants deliberately

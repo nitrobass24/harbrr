@@ -54,7 +54,7 @@ func newService(t *testing.T, factory announce.TargetFactory) (*announce.Service
 	if err != nil {
 		t.Fatalf("keyring: %v", err)
 	}
-	appsSvc := apps.NewService(db, kr, http.DefaultClient, zerolog.Nop())
+	appsSvc := apps.NewService(db, kr, http.DefaultClient)
 	return announce.NewService(db, appsSvc, auth.NewService(db), kr, factory, zerolog.Nop()), db, appsSvc
 }
 
@@ -458,7 +458,7 @@ func TestServicePushFailureRedactsGUID(t *testing.T) {
 		t.Fatalf("keyring: %v", err)
 	}
 	var buf bytes.Buffer
-	appsSvc := apps.NewService(db, kr, http.DefaultClient, zerolog.Nop())
+	appsSvc := apps.NewService(db, kr, http.DefaultClient)
 	svc := announce.NewService(db, appsSvc, auth.NewService(db), kr, func(domain.AnnounceConnection, string) (announce.Target, error) {
 		return &fakeTarget{err: errors.New("boom")}, nil
 	}, zerolog.New(&buf))
@@ -551,7 +551,7 @@ func TestServicePushBatchSummaryLogsOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("keyring: %v", err)
 	}
-	appsSvc := apps.NewService(db, kr, http.DefaultClient, zerolog.Nop())
+	appsSvc := apps.NewService(db, kr, http.DefaultClient)
 	svc := announce.NewService(db, appsSvc, auth.NewService(db), kr, func(domain.AnnounceConnection, string) (announce.Target, error) {
 		return &fakeTarget{err: errors.New("boom")}, nil
 	}, zerolog.New(&buf))

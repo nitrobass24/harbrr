@@ -551,9 +551,8 @@ type DownloadClientSettings struct {
 
 // DownloadClient is a configured download client harbrr can send grabbed releases to.
 // A networked kind's host/username/credential live on the referenced App (AppID); this
-// row seals no credential of its own (KeyID is unused going forward — kept only because
-// nothing forces its removal, see #269). Settings holds kind-specific options (see
-// DownloadClientSettings).
+// row seals no credential of its own (its dead key_id column went with #592). Settings
+// holds kind-specific options (see DownloadClientSettings).
 type DownloadClient struct {
 	ID   int64
 	Name string
@@ -566,7 +565,6 @@ type DownloadClient struct {
 	Enabled   bool
 	Host      string
 	Username  string
-	KeyID     string
 	Settings  DownloadClientSettings
 	CreatedAt time.Time
 	UpdatedAt time.Time

@@ -36,18 +36,13 @@ var hideAdultCategories = database.Setting[bool]{
 // already carries its own category selection.
 type AdultCategoriesStore struct {
 	db     dbinterface.Execer
-	now    func() time.Time
 	hidden atomic.Bool
 }
 
 // NewAdultCategoriesStore builds a store over db, defaulting to "not hidden"
-// until LoadPersisted reads the stored value. now supplies the persisted-at
-// timestamp (injectable for tests); nil uses time.Now.
-func NewAdultCategoriesStore(db dbinterface.Execer, now func() time.Time) *AdultCategoriesStore {
-	if now == nil {
-		now = time.Now
-	}
-	return &AdultCategoriesStore{db: db, now: now}
+// until LoadPersisted reads the stored value.
+func NewAdultCategoriesStore(db dbinterface.Execer) *AdultCategoriesStore {
+	return &AdultCategoriesStore{db: db}
 }
 
 // Hidden reports whether adult categories are currently hidden. A nil store
@@ -61,7 +56,7 @@ func (s *AdultCategoriesStore) Hidden() bool {
 // write failure leaves the running value untouched rather than desynchronizing
 // runtime and stored state.
 func (s *AdultCategoriesStore) Set(ctx context.Context, hidden bool) error {
-	if err := hideAdultCategories.Write(ctx, s.db, hidden, s.now()); err != nil {
+	if err := hideAdultCategories.Write(ctx, s.db, hidden, time.Now()); err != nil {
 		return fmt.Errorf("api: persist hide-adult-categories: %w", err)
 	}
 	s.hidden.Store(hidden)

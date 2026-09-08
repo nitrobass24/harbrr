@@ -41,9 +41,11 @@ make smoke-test                                 # go test -tags smoke ./internal
   grab and both runners record the grab as **skipped** — a distinct state, never a pass and never
   a failure; rows that yield no resolvable link still fail.
 
-Per-tracker evidence is written to `testdata/smoke-<slug>.json` — **gitignored and
-secret-scrubbed** (counts and a few titles, never a passkey/apikey/cookie). It is scratch
-output for the current run, not a committed ledger — don't add run results to this repo.
+Both runners execute the same suite (`smoke.RunSuite`) and report the same findings: `harbrr
+smoke` writes a **secret-scrubbed markdown report** (counts, a few titles, never a
+passkey/apikey/cookie), and `make smoke-test` surfaces each finding as a `<slug>/<check>`
+subtest. That output is scratch for the current run, not a committed ledger — don't add run
+results to this repo.
 
 ## What counts as a failure
 
@@ -115,10 +117,10 @@ something to record in this repo. To report it:
 2. **Open an issue** at [autobrr/harbrr](https://github.com/autobrr/harbrr/issues/new) with:
    - the tracker **slug** and its definition/driver **id**,
    - the **harbrr vs Prowlarr counts** and the **query** used,
-   - the **`testdata/smoke-<slug>.json`** evidence file — it's already secret-free, so attach it
-     as-is.
+   - the **markdown report** `harbrr smoke` wrote (or the failing subtest's output) — it's
+     already secret-free, so attach it as-is.
 3. **Never** paste raw request URLs, `.torrent`/`.nzb` bytes, cookies, or API keys — those embed
-   passkeys. The scrubbed evidence JSON is the safe thing to share.
+   passkeys. The markdown report (or the failing subtest output) is the safe thing to share.
 
 Fixes land in the **engine** (or a native driver), never in a vendored definition — a definition
 is consumed byte-for-byte from Jackett.

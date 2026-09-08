@@ -17,13 +17,6 @@ import (
 	"github.com/autobrr/harbrr/internal/secrets"
 )
 
-// httpClientTimeout bounds a single app call so an unresponsive Sonarr/Radarr/qui
-// cannot hang the sync worker.
-const httpClientTimeout = 30 * time.Second
-
-// defaultHTTPClient is the fallback client the drivers use when none is injected.
-func defaultHTTPClient() *http.Client { return &http.Client{Timeout: httpClientTimeout} }
-
 // StatusSkipped is the sync status for a disabled connection (no remote calls).
 const StatusSkipped = "skipped"
 
@@ -63,9 +56,6 @@ type Service struct {
 // deterministic tests (assigning to the returned Service's clock field also retunes
 // its Lifecycle, which reads clock through an indirection).
 func NewService(db dbinterface.Querier, source IndexerSource, appsSvc *apps.Service, minter connresource.KeyMinter, keyring *secrets.Keyring, client *http.Client, log zerolog.Logger) *Service {
-	if client == nil {
-		client = defaultHTTPClient()
-	}
 	s := &Service{
 		db: db, source: source, apps: appsSvc, minter: minter, keyring: keyring,
 		client: client, clock: time.Now, log: log,

@@ -51,7 +51,7 @@ func openKeyring(t *testing.T, key string) *secrets.Keyring {
 // over the same db+keyring (App-sourced collect, Resolve-based restore — see internal/
 // backup/collect.go and restore.go).
 func newBackupService(db *database.DB, kr *secrets.Keyring) *backup.Service {
-	return backup.NewService(db, kr, apps.NewService(db, kr, nil, zerolog.Nop()), zerolog.Nop())
+	return backup.NewService(db, kr, apps.NewService(db, kr, nil), zerolog.Nop())
 }
 
 // seed inserts one row of every backed-up table with representative secrets + FKs, sealed

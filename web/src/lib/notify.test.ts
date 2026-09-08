@@ -1,17 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { notifyError, notifyInfo, notifySuccess, notifyWarn } from "./notify"
-import { api, type ApiClient } from "@/lib/api"
+import { notifyError, notifySuccess, notifyWarn } from "./notify"
 import { stubApi } from "@/test/stubApi"
 
-const { toastError, toastWarning, toastSuccess, toastInfo } = vi.hoisted(() => ({
+const { toastError, toastWarning, toastSuccess } = vi.hoisted(() => ({
   toastError: vi.fn(),
   toastWarning: vi.fn(),
   toastSuccess: vi.fn(),
-  toastInfo: vi.fn(),
 }))
 
 vi.mock("sonner", () => ({
-  toast: { error: toastError, warning: toastWarning, success: toastSuccess, info: toastInfo },
+  toast: { error: toastError, warning: toastWarning, success: toastSuccess },
 }))
 
 const SHIP = "POST /api/logs/frontend"
@@ -27,7 +25,6 @@ describe("notify", () => {
     toastError.mockClear()
     toastWarning.mockClear()
     toastSuccess.mockClear()
-    toastInfo.mockClear()
   })
 
   it("notifyError shows the toast and ships error level with the error's message as context", async () => {
@@ -69,14 +66,6 @@ describe("notify", () => {
     expect(stub.calls(SHIP)).toHaveLength(0)
   })
 
-  it("notifyInfo shows the toast and never ships", async () => {
-    const stub = stubApi({ [SHIP]: null })
-    notifyInfo("Sync scheduled")
-    expect(toastInfo).toHaveBeenCalledWith("Sync scheduled")
-    await settle()
-    expect(stub.calls(SHIP)).toHaveLength(0)
-  })
-
   it("swallows a shipping failure without throwing or surfacing a second toast", async () => {
     const stub = stubApi({ [SHIP]: () => Response.json({ error: "logging endpoint unreachable", code: "internal" }, { status: 500 }) })
     expect(() => notifyError("Save failed")).not.toThrow()
@@ -84,17 +73,5 @@ describe("notify", () => {
     await settle()
     // No follow-up error toast from the failed shipment — exactly one toast.error call.
     expect(toastError).toHaveBeenCalledTimes(1)
-  })
-
-  it("no-ops instead of throwing when the api client is missing http (partial test mock)", () => {
-    const mutableApi = api as unknown as { http?: ApiClient["http"] }
-    const original = mutableApi.http
-    mutableApi.http = undefined
-    try {
-      expect(() => notifyError("Save failed")).not.toThrow()
-      expect(toastError).toHaveBeenCalledWith("Save failed")
-    } finally {
-      mutableApi.http = original
-    }
   })
 })

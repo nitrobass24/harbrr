@@ -21,7 +21,7 @@ var update = flag.Bool("update", false, "regenerate golden files")
 
 // servarrStub is an in-memory Sonarr/Radarr v3 indexer API for driver tests. It
 // records the last request body and auth header, assigns ids on create, and serves
-// list/update/delete/test with the real status codes.
+// list/update/delete with the real status codes.
 type servarrStub struct {
 	t          *testing.T
 	mu         sync.Mutex
@@ -30,7 +30,6 @@ type servarrStub struct {
 	lastBody   []byte
 	lastAuth   string
 	lastQuery  string
-	testFail   bool
 	createFail any // when non-nil, create returns 400 with this JSON body
 }
 
@@ -43,7 +42,6 @@ func (s *servarrStub) handler(base string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+base, s.list)
 	mux.HandleFunc("POST "+base, s.create)
-	mux.HandleFunc("POST "+base+"/test", s.test)
 	mux.HandleFunc("PUT "+base+"/{id}", s.put)
 	mux.HandleFunc("DELETE "+base+"/{id}", s.delete)
 	return mux
@@ -102,15 +100,6 @@ func (s *servarrStub) delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (s *servarrStub) test(w http.ResponseWriter, r *http.Request) {
-	s.record(r)
-	if s.testFail {
-		writeJSONTest(w, http.StatusBadRequest, map[string]string{"message": "Unable to connect to indexer"})
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-}
-
 func TestServarrLifecycle(t *testing.T) {
 	t.Parallel()
 	stub := newServarrStub(t)
@@ -151,15 +140,6 @@ func TestServarrLifecycle(t *testing.T) {
 	}
 	if sent.ID != 1 || sent.EnableRss {
 		t.Errorf("Update body id=%d enableRss=%v, want id=1 disabled", sent.ID, sent.EnableRss)
-	}
-
-	// Test posts to /test and reports success.
-	if err := drv.Test(ctx, desired("show-tracker", true)); err != nil {
-		t.Fatalf("Test: %v", err)
-	}
-	stub.testFail = true
-	if err := drv.Test(ctx, desired("show-tracker", true)); err == nil {
-		t.Error("Test should surface a 4xx as an error")
 	}
 
 	// Delete.
@@ -447,10 +427,6 @@ func TestServarrLifecycleV1(t *testing.T) {
 	}
 	if sent.ID != 1 || sent.EnableRss {
 		t.Errorf("Update body id=%d enableRss=%v, want id=1 disabled", sent.ID, sent.EnableRss)
-	}
-
-	if err := drv.Test(ctx, desired("music-tracker", true)); err != nil {
-		t.Fatalf("Test: %v", err)
 	}
 
 	if err := drv.Delete(ctx, "1"); err != nil {

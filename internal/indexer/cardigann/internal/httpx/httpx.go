@@ -11,8 +11,10 @@
 package httpx
 
 import (
+	"maps"
 	stdhttp "net/http"
 	"net/url"
+	"strings"
 )
 
 // Doer is the narrow HTTP seam every cardigann stage drives: satisfied by
@@ -72,4 +74,20 @@ func ResolveLocation(resp *stdhttp.Response, reqURL string) string {
 		return ""
 	}
 	return base.ResolveReference(ref).String()
+}
+
+// WithFormContentType returns a copy of in with a form-urlencoded Content-Type
+// added when the caller did not already set one (matched case-insensitively,
+// since definition-authored header names are free-form). The input map is never
+// mutated; login and search both post form bodies and need the same behavior.
+func WithFormContentType(in map[string][]string) map[string][]string {
+	out := make(map[string][]string, len(in)+1)
+	maps.Copy(out, in)
+	for k := range out {
+		if strings.EqualFold(k, "Content-Type") {
+			return out
+		}
+	}
+	out["Content-Type"] = []string{"application/x-www-form-urlencoded"}
+	return out
 }

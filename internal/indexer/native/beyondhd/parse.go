@@ -110,7 +110,10 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 		return nil, fmt.Errorf("beyondhd: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
 	}
 	if resp.StatusCode == statusFailure {
-		return nil, d.statusError(resp.StatusMessage)
+		// An invalid key was already answered above (containsInvalidKey reads the raw
+		// body, status_message included), so every failure left here is generic. The
+		// message could echo the api_key/rsskey, so it is scrubbed.
+		return nil, fmt.Errorf("beyondhd: api error: %s: %w", d.Scrub(resp.StatusMessage), search.ErrParseError)
 	}
 
 	releases := make([]*normalizer.Release, 0, len(resp.Results))
@@ -127,17 +130,6 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 // bare text/html body), which maps to a login failure rather than a generic parse error.
 func containsInvalidKey(body []byte) bool {
 	return strings.Contains(string(body), invalidKeyMarker)
-}
-
-// statusError maps a status_code==0 failure to a sentinel with the message scrubbed: a
-// message naming an invalid key is a login failure; any other failure is a generic indexer
-// parse error (search.ErrParseError).
-func (d *driver) statusError(message string) error {
-	msg := d.Scrub(message)
-	if strings.Contains(message, invalidKeyMarker) {
-		return fmt.Errorf("beyondhd: %s: %w", msg, login.ErrLoginFailed)
-	}
-	return fmt.Errorf("beyondhd: api error: %s: %w", msg, search.ErrParseError)
 }
 
 // toRelease maps one row to a normalized release. Title=name verbatim (Prowlarr does not

@@ -21,7 +21,6 @@ import (
 // core.Provider.
 type handler struct {
 	provider        core.Provider
-	apiKey          string
 	apiKeyValidator func(string) bool
 	urlCfg          grab.URLConfig
 	clock           func() time.Time
@@ -32,16 +31,11 @@ type handler struct {
 // Option configures the handler at construction.
 type Option func(*handler)
 
-// WithAPIKey sets the API key requests must present (apikey or passkey query
-// param). When empty, the handler fails closed: every request is rejected with
-// error 100, never silently unauthenticated.
-func WithAPIKey(key string) Option { return func(h *handler) { h.apiKey = key } }
-
-// WithAPIKeyValidator sets a validator for the apikey/passkey query param,
-// replacing the fixed-key comparison. The production server wires this to the auth
-// service so any minted API key (stored only as a hash) authorizes the feed,
-// without holding a plaintext key in memory (docs/security.md). When set, it takes
-// precedence over WithAPIKey.
+// WithAPIKeyValidator sets the validator for the apikey/passkey query param. The
+// production server wires this to the auth service so any minted API key (stored
+// only as a hash) authorizes the feed, without holding a plaintext key in memory
+// (docs/security.md). Unset, the handler fails closed: every request is rejected
+// with error 100, never silently unauthenticated.
 func WithAPIKeyValidator(fn func(string) bool) Option {
 	return func(h *handler) { h.apiKeyValidator = fn }
 }
@@ -273,18 +267,12 @@ func (h *handler) serveIndexer(w http.ResponseWriter, r *http.Request, idx core.
 	h.writeResults(w, r, idx, q)
 }
 
-// authorized validates the apikey (or its passkey alias). A validator (the
-// production hash-lookup) takes precedence; otherwise a fixed key is compared. It
-// fails closed when neither a validator nor a key is configured.
+// authorized validates the apikey (or its passkey alias) against the configured
+// validator (the production hash-lookup). It fails closed when no validator is
+// configured.
 func (h *handler) authorized(q url.Values) bool {
 	key := apiKeyParam(q)
-	if h.apiKeyValidator != nil {
-		return key != "" && h.apiKeyValidator(key)
-	}
-	if h.apiKey == "" {
-		return false
-	}
-	return key == h.apiKey
+	return h.apiKeyValidator != nil && key != "" && h.apiKeyValidator(key)
 }
 
 // writeCapsDoc serializes a capabilities document under an explicit feed id, so the

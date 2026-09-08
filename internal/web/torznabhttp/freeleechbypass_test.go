@@ -105,7 +105,7 @@ func TestFreeleechBypassETagDistinct(t *testing.T) {
 		return idx
 	}
 	mk := func(idx *fakeIndexer) http.Handler {
-		return NewHandler(fakeProvider{"demo": idx}, WithAPIKey(testAPIKey),
+		return NewHandler(fakeProvider{"demo": idx}, withTestAPIKey(testAPIKey),
 			WithClock(func() time.Time { return feedClock }))
 	}
 

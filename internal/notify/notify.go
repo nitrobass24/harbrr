@@ -16,13 +16,6 @@ import (
 	"github.com/autobrr/harbrr/internal/domain"
 )
 
-// httpClientTimeout bounds a single send so an unresponsive webhook endpoint cannot
-// hang the dispatcher goroutine.
-const httpClientTimeout = 15 * time.Second
-
-// defaultHTTPClient is the fallback client the senders use when none is injected.
-func defaultHTTPClient() *http.Client { return &http.Client{Timeout: httpClientTimeout} }
-
 // Event kinds — the operational triggers a notification fires on. Stored nowhere
 // (they are dispatch-time labels), carried in the sent payload's `event` field.
 const (
@@ -76,9 +69,6 @@ var senders = map[string]func(url string, client *http.Client) Sender{
 // newSender builds the per-type Sender for a decrypted destination URL. It is the
 // single factory both dispatch and the test action route through.
 func newSender(typ, url string, client *http.Client) (Sender, error) {
-	if client == nil {
-		client = defaultHTTPClient()
-	}
 	build, ok := senders[typ]
 	if !ok {
 		return nil, fmt.Errorf("%w: unknown notification type %q", domain.ErrInvalid, typ)

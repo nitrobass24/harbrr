@@ -729,35 +729,16 @@ func truthy(s string) bool {
 	}
 }
 
-// --- evidence ---------------------------------------------------------------
+// --- grab classification ----------------------------------------------------
 
-// EvidenceRecord is the per-tracker smoke result written under testdata/ (which is
-// gitignored). It carries titles/counts but NEVER credentials or raw feeds.
-type EvidenceRecord struct {
-	Tracker              string   `json:"tracker"`
-	Pattern              string   `json:"pattern,omitempty"`
-	TestOK               bool     `json:"testOk"`
-	Query                string   `json:"query"`
-	HarbrrCount          int      `json:"harbrrCount"`
-	ProwlarrCount        int      `json:"prowlarrCount"`
-	HarbrrTitles         []string `json:"harbrrTitles"`
-	ProwlarrTitles       []string `json:"prowlarrTitles"`
-	DownloadLinksPresent bool     `json:"downloadLinksPresent"`
-	Grab                 string   `json:"grab,omitempty"`
-	Pass                 bool     `json:"pass"`
-	Notes                string   `json:"notes"`
-}
-
-// GrabSucceeded reports whether an EvidenceRecord.Grab result means the grab path
-// actually resolved to something a download client could take. The empty string means
-// the grab was not attempted (SMOKE_GRAB unset) and is NOT a failure; every other
-// non-payload result ("no download link", "not a torrent/magnet", "download HTTP 500")
-// is. The skipped state (GrabSkipped) is deliberately NOT a success here — skipped must
-// never render as a pass; callers consult GrabSkipped separately. Lives here, untagged,
-// so normal CI covers it — the //go:build smoke front-end only calls it.
+// GrabSucceeded reports whether a grab result means the download path actually
+// resolved to something a download client could take. Every non-payload result ("no
+// download link", "not a torrent/magnet", "download HTTP 500") is a failure. The
+// skipped state (GrabSkipped) is deliberately NOT a success here — skipped must never
+// render as a pass; callers consult GrabSkipped separately.
 func GrabSucceeded(result string) bool {
 	switch result {
-	case "", grabTorrent, grabMagnet, grabNZB:
+	case grabTorrent, grabMagnet, grabNZB:
 		return true
 	default:
 		return false
@@ -892,13 +873,6 @@ func firstDownloadLink(ctx context.Context, c *http.Client, cfg Config, slug, qu
 	return "", hasItems, nil
 }
 
-// harbrrHasDownloadLinks reports whether the harbrr feed carries a non-empty
-// <link>/<enclosure> for at least one item (confirms a grabbable release).
-func harbrrHasDownloadLinks(ctx context.Context, c *http.Client, cfg Config, slug, query string) (bool, error) {
-	link, _, err := firstDownloadLink(ctx, c, cfg, slug, query)
-	return link != "", err
-}
-
 // harbrrFeed fetches and decodes the raw Torznab feed for a slug+query — the
 // download-link probes need the item <link>/<enclosure> the parsed Result set discards.
 func harbrrFeed(ctx context.Context, c *http.Client, cfg Config, slug, query string) (torznabFeed, error) {
@@ -936,40 +910,7 @@ func harbrrFeed(ctx context.Context, c *http.Client, cfg Config, slug, query str
 	}
 }
 
-// secretTokens are the credential-shaped substrings that must never appear in
-// evidence or in a rendered report: their presence in free text (a title, a note) is
-// treated as a leak. Shared by ValidateNoSecrets and the report's final scrub.
+// secretTokens are the credential-shaped substrings that must never appear in a
+// rendered report: their presence in free text (a title, a note, a finding detail) is
+// treated as a leak. Consumed by the report's final scrub (report.go).
 var secretTokens = []string{"passkey", "apikey", "api_key", "rsskey", "torrent_pass", "cf_clearance", "authkey"}
-
-// ValidateNoSecrets returns an error if any free-text field of the record looks like
-// it carries a credential, so an evidence file can never leak a secret even if a
-// tracker echoes one into a title. rec.Pattern is a fixed enum label (apikey/form/
-// cookie/…) that would always false-positive, so it is not scanned.
-func ValidateNoSecrets(rec EvidenceRecord) error {
-	check := func(field, v string) error {
-		low := strings.ToLower(v)
-		for _, tok := range secretTokens {
-			if strings.Contains(low, tok) {
-				return fmt.Errorf("evidence %s for %s looks like it contains a secret token %q; refusing to write", field, rec.Tracker, tok)
-			}
-		}
-		return nil
-	}
-	if err := check("notes", rec.Notes); err != nil {
-		return err
-	}
-	if err := check("grab", rec.Grab); err != nil {
-		return err
-	}
-	for _, s := range rec.HarbrrTitles {
-		if err := check("harbrrTitle", s); err != nil {
-			return err
-		}
-	}
-	for _, s := range rec.ProwlarrTitles {
-		if err := check("prowlarrTitle", s); err != nil {
-			return err
-		}
-	}
-	return nil
-}

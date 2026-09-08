@@ -412,16 +412,15 @@ func TestRowFilters(t *testing.T) {
 			}
 		})
 	}
+}
 
-	if !strDump("anything") {
-		t.Fatal("strDump should always retain the row")
-	}
-	if !rowFilterKnown("andmatch") || !rowFilterKnown("strdump") {
-		t.Fatal("row filter names must be known")
-	}
-	if rowFilterKnown("bogus") {
-		t.Fatal("bogus row filter must not be known")
-	}
+// rowFilterNames is the bounded set of row-filter names from the schema
+// vocabulary. Row filters operate on the row SET (RowsBlock.Filters), not on a
+// single field value, so they never enter the FilterRegistry; the corpus gate
+// below needs their vocabulary to tell an unknown name from a known one.
+var rowFilterNames = map[string]struct{}{
+	"andmatch": {},
+	"strdump":  {},
 }
 
 // TestCorpusFilterCompleteness is the headline gate: every field filter and row
@@ -448,13 +447,13 @@ func TestCorpusFilterCompleteness(t *testing.T) {
 		walkDefFilters(def, func(name string, isRow bool) {
 			if isRow {
 				rowCounts[name]++
-				if !rowFilterKnown(name) {
+				if _, ok := rowFilterNames[name]; !ok {
 					unknown = append(unknown, "row:"+name+" in "+def.ID)
 				}
 				return
 			}
 			fieldCounts[name]++
-			if !r.known(name) {
+			if _, ok := r.ops[name]; !ok {
 				unknown = append(unknown, "field:"+name+" in "+def.ID)
 			}
 		})

@@ -15,11 +15,7 @@ func (rt *router) oidcConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, oidcConfigResponse{})
 		return
 	}
-	resp, state, verifier, err := rt.oidc.configResponse()
-	if err != nil {
-		rt.writeServiceError(w, "oidc config", err)
-		return
-	}
+	resp, state, verifier := rt.oidc.configResponse()
 	rt.Sessions.Put(r.Context(), sessionOIDCState, state)
 	if verifier != "" {
 		rt.Sessions.Put(r.Context(), sessionOIDCPKCE, verifier)

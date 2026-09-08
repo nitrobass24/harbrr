@@ -224,10 +224,10 @@ func TestContainsCaseBlockArm(t *testing.T) {
 
 	block := loader.SelectorBlock{
 		Selector: "div#row",
-		Case: loader.NewCaseBlock(
-			loader.CaseEntry{Key: `a:contains("Films"):contains("Bluray Remux")`, Value: loader.Scalar{Value: "hd-remux", Set: true}},
-			loader.CaseEntry{Key: `a:contains("Films"):contains("Bluray remux 4K")`, Value: loader.Scalar{Value: "uhd-remux", Set: true}},
-		),
+		Case: caseBlock(`
+'a:contains("Films"):contains("Bluray Remux")': hd-remux
+'a:contains("Films"):contains("Bluray remux 4K")': uhd-remux
+`),
 	}
 	v, found, err := New().Field(rows[0], block, nil)
 	if err != nil || !found {
@@ -261,10 +261,10 @@ func TestCaseBlockDeclaredOrderFirstMatchWins(t *testing.T) {
 
 	block := loader.SelectorBlock{
 		Selector: "div#row",
-		Case: loader.NewCaseBlock(
-			loader.CaseEntry{Key: `a:contains("Films"):contains("Bluray Remux")`, Value: loader.Scalar{Value: "movies-hd", Set: true}},
-			loader.CaseEntry{Key: `a:contains("Films"):contains("Bluray Remux 4K")`, Value: loader.Scalar{Value: "movies-uhd", Set: true}},
-		),
+		Case: caseBlock(`
+'a:contains("Films"):contains("Bluray Remux")': movies-hd
+'a:contains("Films"):contains("Bluray Remux 4K")': movies-uhd
+`),
 	}
 	v, found, err := New().Field(rows[0], block, nil)
 	if err != nil || !found {
@@ -295,10 +295,10 @@ func TestCaseBlockStarIsPositional(t *testing.T) {
 
 	block := loader.SelectorBlock{
 		Selector: "div#row",
-		Case: loader.NewCaseBlock(
-			loader.CaseEntry{Key: "*", Value: loader.Scalar{Value: "star", Set: true}},
-			loader.CaseEntry{Key: "span.freeleech", Value: loader.Scalar{Value: "specific", Set: true}},
-		),
+		Case: caseBlock(`
+"*": star
+span.freeleech: specific
+`),
 	}
 	v, found, err := New().Field(rows[0], block, nil)
 	if err != nil || !found {

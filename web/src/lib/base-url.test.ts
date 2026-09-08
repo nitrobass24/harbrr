@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest"
-import { defaultHarbrrUrl, explicitUrlPort, getApiBaseUrl, getBaseUrl, withPort } from "./base-url"
+import { defaultHarbrrUrl, explicitUrlPort, getBaseUrl, withPort } from "./base-url"
 
 describe("getBaseUrl", () => {
   afterEach(() => {
@@ -18,7 +18,6 @@ describe("getBaseUrl", () => {
     it(c.name, () => {
       if (c.injected !== undefined) window.__HARBRR_BASE_URL__ = c.injected
       expect(getBaseUrl()).toBe(c.want)
-      expect(getApiBaseUrl()).toBe(`${c.want}/api`)
     })
   }
 })

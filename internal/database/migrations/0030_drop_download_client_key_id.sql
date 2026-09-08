@@ -1,0 +1,17 @@
+-- 0030_drop_download_client_key_id.sql — drop download_clients.key_id (#592).
+--
+-- 0017 gave every download client its own sealed secret plus the key_id that sealed
+-- it. ADR 0004 (#269) moved host/username/credential onto the referenced App and
+-- 0021's rebuild dropped secret_encrypted, but left key_id behind: since then the
+-- INSERT has hardcoded '' and nothing has ever read the scanned value back. It is a
+-- dead column, not a dormant one — there is no secret on this row for a key id to
+-- identify.
+--
+-- Plain DROP COLUMN, the 0022/0028 precedent rather than 0021's rebuild: key_id
+-- carries no CHECK, no index and no FK. The only index on download_clients is the
+-- implicit one behind UNIQUE(name) (0021's rebuild kept exactly that), and no other
+-- table REFERENCES download_clients, so there is no FK child to stage and no cascade
+-- to defuse. No statement anywhere does `SELECT *` on the table — the repo's
+-- downloadClientColumns names its columns, and #592 removed key_id from that list in
+-- the same change — so there is no positional scan to shift either.
+ALTER TABLE download_clients DROP COLUMN key_id;

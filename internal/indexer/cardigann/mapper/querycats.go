@@ -14,25 +14,17 @@ func (c *Capabilities) MapTorznabCapsToTrackers(newznabCats []int) []string {
 	if len(newznabCats) == 0 {
 		return nil
 	}
-	return c.CategoryMap.trackersForNewznab(c.expandQueryCategories(newznabCats))
+	return c.CategoryMap.trackersForNewznab(c.ExpandQueryCategories(newznabCats))
 }
 
-// ExpandQueryCategories is the exported form of expandQueryCategories, used by
-// the response-side category filter. Jackett's BaseIndexer.FilterResults expands
-// the query categories with the same ExpandTorznabQueryCategories logic before
-// intersecting them with each release's categories.
-func (c *Capabilities) ExpandQueryCategories(newznabCats []int) []int {
-	return c.expandQueryCategories(newznabCats)
-}
-
-// expandQueryCategories reproduces ExpandTorznabQueryCategories: each queried id
+// ExpandQueryCategories reproduces ExpandTorznabQueryCategories: each queried id
 // is kept, and a queried id that is an advertised PARENT family additionally
 // pulls in that family's advertised child categories (the same subcats the caps
 // tree node carries — NOT the full standard table). Custom ids (>= the offset)
 // and child ids are not expanded. mapChildrenCatsToParent is fixed false (the
 // Cardigann path), so a queried child never adds its parent. The result is
 // de-duplicated, first-seen order preserved.
-func (c *Capabilities) expandQueryCategories(newznabCats []int) []int {
+func (c *Capabilities) ExpandQueryCategories(newznabCats []int) []int {
 	seen := make(map[int]struct{}, len(newznabCats))
 	out := make([]int, 0, len(newznabCats))
 	add := func(id int) {

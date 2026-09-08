@@ -80,7 +80,7 @@ func TestAnnounceSinkSkipsUsenet(t *testing.T) {
 	}
 
 	var announced atomic.Int64
-	appsSvc := apps.NewService(db, kr, http.DefaultClient, zerolog.Nop())
+	appsSvc := apps.NewService(db, kr, http.DefaultClient)
 	svc := announce.NewService(db, appsSvc, auth.NewService(db), kr, func(domain.AnnounceConnection, string) (announce.Target, error) {
 		return countingTarget{n: &announced}, nil
 	}, zerolog.Nop())
@@ -186,7 +186,7 @@ func newSinkTestEnv(t *testing.T, log zerolog.Logger, factory announce.TargetFac
 	if err != nil {
 		t.Fatalf("keyring: %v", err)
 	}
-	appsSvc := apps.NewService(db, kr, http.DefaultClient, zerolog.Nop())
+	appsSvc := apps.NewService(db, kr, http.DefaultClient)
 	svc := announce.NewService(db, appsSvc, auth.NewService(db), kr, factory, zerolog.Nop())
 	if _, err := svc.CreateConnection(ctx, announce.CreateConnectionParams{
 		Name: "qui", Kind: domain.AnnounceKindQui, BaseURL: "http://qui:7476", APIKey: "k", HarbrrURL: "http://h:8787",

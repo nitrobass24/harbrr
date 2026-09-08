@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	yaml "go.yaml.in/yaml/v3"
+
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 )
@@ -32,7 +34,7 @@ func TestBuildRequests_GET(t *testing.T) {
 		Links: []string{"https://get.invalid/"},
 		Search: loader.Search{
 			Path:   "/browse.php",
-			Inputs: loader.NewInputsBlock(loader.InputEntry{Key: "q", Value: loader.Scalar{Value: "{{ .Keywords }}", Set: true}}),
+			Inputs: inputsBlock(`q: "{{ .Keywords }}"`),
 			Paths:  nil,
 		},
 	}
@@ -117,7 +119,7 @@ func TestBuildRequests_POST(t *testing.T) {
 	def := &loader.Definition{
 		Links: []string{"https://post.invalid/"},
 		Search: loader.Search{
-			Inputs: loader.NewInputsBlock(loader.InputEntry{Key: "search", Value: loader.Scalar{Value: "{{ .Keywords }}", Set: true}}),
+			Inputs: inputsBlock(`search: "{{ .Keywords }}"`),
 			Paths: []loader.SearchPathBlock{{
 				Path:   "/api/search",
 				Method: "post",
@@ -159,7 +161,7 @@ func TestBuildRequests_ConfigInput(t *testing.T) {
 	def := &loader.Definition{
 		Links: []string{"https://cfg.invalid/"},
 		Search: loader.Search{
-			Inputs: loader.NewInputsBlock(loader.InputEntry{Key: "passkey", Value: loader.Scalar{Value: "{{ .Config.passkey }}", Set: true}}),
+			Inputs: inputsBlock(`passkey: "{{ .Config.passkey }}"`),
 			Paths:  []loader.SearchPathBlock{{Path: "/t"}},
 		},
 	}
@@ -186,11 +188,11 @@ func TestBuildRequests_InputOrder(t *testing.T) {
 	def := &loader.Definition{
 		Links: []string{"https://order.invalid/"},
 		Search: loader.Search{
-			Inputs: loader.NewInputsBlock(
-				loader.InputEntry{Key: "zeta", Value: loader.Scalar{Value: "1", Set: true}},
-				loader.InputEntry{Key: "alpha", Value: loader.Scalar{Value: "2", Set: true}},
-				loader.InputEntry{Key: "mu", Value: loader.Scalar{Value: "3", Set: true}},
-			),
+			Inputs: inputsBlock(`
+zeta: "1"
+alpha: "2"
+mu: "3"
+`),
 			Paths: []loader.SearchPathBlock{{Path: "/s", InheritInputs: &inherit}},
 		},
 	}
@@ -227,9 +229,7 @@ func TestBuildRequests_PathCategoryGate(t *testing.T) {
 	}
 	// Each path echoes its narrowed {{ .Categories }} into the query string so
 	// the test can assert both WHICH paths ran and WHAT categories they saw.
-	catsInput := loader.NewInputsBlock(loader.InputEntry{
-		Key: "cats", Value: loader.Scalar{Value: "{{ range .Categories }}{{ . }};{{ end }}", Set: true},
-	})
+	catsInput := inputsBlock(`cats: "{{ range .Categories }}{{ . }};{{ end }}"`)
 	def := &loader.Definition{
 		Links: []string{"https://gate.invalid/"},
 		Search: loader.Search{
@@ -421,7 +421,7 @@ func TestNewRequest_AttachesSearchHeaders(t *testing.T) {
 				Links: []string{"https://hdr.invalid/"},
 				Search: loader.Search{
 					Headers: headers,
-					Inputs:  loader.NewInputsBlock(loader.InputEntry{Key: "q", Value: loader.Scalar{Value: "{{ .Keywords }}", Set: true}}),
+					Inputs:  inputsBlock(`q: "{{ .Keywords }}"`),
 					Paths:   []loader.SearchPathBlock{{Path: "/search", Method: tt.method}},
 				},
 			}
@@ -600,3 +600,14 @@ func TestDoRequest_NonRegistryDoerStillGetsHostFallback(t *testing.T) {
 type plainErrDoer struct{ err error }
 
 func (d plainErrDoer) Do(*stdhttp.Request) (*stdhttp.Response, error) { return nil, d.err }
+
+// inputsBlock parses an `inputs:` YAML mapping into an order-preserving InputsBlock, the
+// same path the loader takes for a real definition — the block's fields are unexported,
+// so YAML is the only way to build one.
+func inputsBlock(src string) loader.InputsBlock {
+	var ib loader.InputsBlock
+	if err := yaml.Unmarshal([]byte(src), &ib); err != nil {
+		panic("inputsBlock: " + err.Error())
+	}
+	return ib
+}

@@ -101,9 +101,7 @@ func TestResolveDownload_BeforeInputsPost(t *testing.T) {
 			Before: &loader.BeforeBlock{
 				Path:   "/takethanks.php",
 				Method: "post",
-				Inputs: loader.NewInputsBlock(loader.InputEntry{
-					Key: "torrentid", Value: loader.Scalar{Value: "{{ .DownloadUri.Query.id }}", Set: true},
-				}),
+				Inputs: inputsBlock(`torrentid: "{{ .DownloadUri.Query.id }}"`),
 			},
 			Selectors: []loader.SelectorField{sel(`a[href*="download.php?id="]`, "href")},
 		},
@@ -148,10 +146,8 @@ func TestResolveDownload_InfoHashMagnet(t *testing.T) {
 	def := &loader.Definition{
 		Download: &loader.DownloadBlock{
 			Before: &loader.BeforeBlock{
-				Path: "/api/json_info",
-				Inputs: loader.NewInputsBlock(loader.InputEntry{
-					Key: "hashes", Value: loader.Scalar{Value: `{{ re_replace .DownloadUri.AbsolutePath "/info/" "" }}`, Set: true},
-				}),
+				Path:   "/api/json_info",
+				Inputs: inputsBlock(`hashes: '{{ re_replace .DownloadUri.AbsolutePath "/info/" "" }}'`),
 			},
 			InfoHash: &loader.InfoHashBlock{
 				UseBeforeResponse: boolPtr(true),

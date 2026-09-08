@@ -167,11 +167,11 @@ func newEnvFull(t *testing.T, cfg api.Config, buildCache func(db *database.DB) *
 	authSvc := auth.NewServiceWithPasswordHasher(db, fastPasswordHasher{})
 	reg := registry.New(db, ldr, keyring, catalog.All(), registryOpts...)
 	source := &fakeAppSource{}
-	appsSvc := apps.NewService(db, keyring, http.DefaultClient, zerolog.Nop())
+	appsSvc := apps.NewService(db, keyring, http.DefaultClient)
 	appSync := appsync.NewService(db, source, appsSvc, authSvc, keyring, http.DefaultClient, zerolog.Nop())
 	announceSvc := announce.NewService(db, appsSvc, authSvc, keyring,
 		announce.DefaultTargetFactory(http.DefaultClient, nil, nil), zerolog.Nop())
-	downloadSvc := download.NewService(db, appsSvc, keyring, http.DefaultClient, zerolog.Nop())
+	downloadSvc := download.NewService(db, appsSvc, keyring, http.DefaultClient)
 	notifySvc := notify.NewService(db, keyring, http.DefaultClient, zerolog.Nop())
 	proxySvc := proxy.NewService(db, keyring)
 	solverSvc := solver.NewService(db, keyring)
@@ -193,7 +193,7 @@ func newEnvFull(t *testing.T, cfg api.Config, buildCache func(db *database.DB) *
 		// handler tests need.
 		Cache: cache, Logger: logger,
 		SetLogLevel:     func(_ context.Context, level string) error { return applog.SetLevel(level) },
-		AdultCategories: api.NewAdultCategoriesStore(db, nil),
+		AdultCategories: api.NewAdultCategoriesStore(db),
 	}, cfg)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
