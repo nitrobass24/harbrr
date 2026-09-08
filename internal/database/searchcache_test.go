@@ -159,7 +159,7 @@ func TestSearchCacheDelete(t *testing.T) {
 	}
 }
 
-func TestSearchCacheTouchIncrements(t *testing.T) {
+func TestSearchCacheBumpHitsIncrements(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	db := dbtest.OpenMigrated(t)
@@ -172,15 +172,15 @@ func TestSearchCacheTouchIncrements(t *testing.T) {
 	}
 
 	for i := int64(1); i <= 3; i++ {
-		if err := store.Touch(ctx, db, "key-1", now.Add(time.Duration(i)*time.Minute)); err != nil {
-			t.Fatalf("Touch: %v", err)
+		if err := store.BumpHits(ctx, db, "key-1", 1, now.Add(time.Duration(i)*time.Minute)); err != nil {
+			t.Fatalf("BumpHits: %v", err)
 		}
 		got, _, err := store.Fetch(ctx, db, "key-1", now.Add(time.Hour/2))
 		if err != nil {
 			t.Fatalf("Fetch: %v", err)
 		}
 		if got.HitCount != i {
-			t.Errorf("after %d touches HitCount=%d, want %d", i, got.HitCount, i)
+			t.Errorf("after %d bumps HitCount=%d, want %d", i, got.HitCount, i)
 		}
 	}
 }
@@ -196,8 +196,8 @@ func TestSearchCacheReStorePreservesHitCount(t *testing.T) {
 	if err := store.Store(ctx, db, sampleEntry("key-1", instID, now, time.Hour)); err != nil {
 		t.Fatalf("Store: %v", err)
 	}
-	if err := store.Touch(ctx, db, "key-1", now.Add(time.Minute)); err != nil {
-		t.Fatalf("Touch: %v", err)
+	if err := store.BumpHits(ctx, db, "key-1", 1, now.Add(time.Minute)); err != nil {
+		t.Fatalf("BumpHits: %v", err)
 	}
 
 	// A SWR refresh write-back: re-Store with fresh payload/timestamps.
@@ -384,8 +384,8 @@ func TestSearchCacheStats(t *testing.T) {
 	if err := store.Store(ctx, db, newer); err != nil {
 		t.Fatalf("Store new: %v", err)
 	}
-	if err := store.Touch(ctx, db, "old", now); err != nil {
-		t.Fatalf("Touch: %v", err)
+	if err := store.BumpHits(ctx, db, "old", 1, now); err != nil {
+		t.Fatalf("BumpHits: %v", err)
 	}
 
 	s, err := store.Stats(ctx, db)

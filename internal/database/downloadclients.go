@@ -20,8 +20,9 @@ type DownloadClients struct{}
 
 // downloadClientColumns is the full select list, in scan order. app_id is the App
 // reference (ADR 0004; NULL for host-less kinds like blackhole) — the sole identity
-// source for a networked client; host/username/secret_encrypted were dropped by #269.
-const downloadClientColumns = `id, name, kind, app_id, enabled, key_id, settings_json, created_at, updated_at`
+// source for a networked client; host/username/secret_encrypted were dropped by #269
+// and the leftover key_id by #592.
+const downloadClientColumns = `id, name, kind, app_id, enabled, settings_json, created_at, updated_at`
 
 // InsertDownloadClient writes a row and returns the new id.
 func (DownloadClients) InsertDownloadClient(ctx context.Context, q dbinterface.Execer, c domain.DownloadClient) (int64, error) {
@@ -31,8 +32,8 @@ func (DownloadClients) InsertDownloadClient(ctx context.Context, q dbinterface.E
 	}
 	res, err := q.ExecContext(ctx,
 		q.Rebind(`INSERT INTO download_clients
-			(name, kind, app_id, enabled, key_id, settings_json, created_at, updated_at)
-			VALUES (?, ?, ?, ?, '', ?, ?, ?)`),
+			(name, kind, app_id, enabled, settings_json, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`),
 		c.Name, c.Kind, nullInt64(c.AppID), boolToInt(c.Enabled), settingsJSON,
 		c.CreatedAt.UTC().Format(timeLayout), c.UpdatedAt.UTC().Format(timeLayout))
 	if err != nil {
@@ -80,10 +81,9 @@ func (DownloadClients) ListDownloadClients(ctx context.Context, q dbinterface.Ex
 	return out, nil
 }
 
-// UpdateDownloadClient writes a client's mutable fields (name, enabled, host,
-// username, settings, the re-encrypted secret, key_id) by id. Kind is immutable
-// and deliberately excluded from the SET list. Returns ErrNotFound when no row
-// matches.
+// UpdateDownloadClient writes a client's mutable fields (name, enabled, settings)
+// by id. Kind is immutable and deliberately excluded from the SET list. Returns
+// ErrNotFound when no row matches.
 func (DownloadClients) UpdateDownloadClient(ctx context.Context, q dbinterface.Execer, c domain.DownloadClient) error {
 	settingsJSON, err := marshalDownloadClientSettings(c.Settings)
 	if err != nil {
@@ -91,9 +91,9 @@ func (DownloadClients) UpdateDownloadClient(ctx context.Context, q dbinterface.E
 	}
 	res, err := q.ExecContext(ctx,
 		q.Rebind(`UPDATE download_clients SET name = ?, enabled = ?,
-			key_id = ?, settings_json = ?, updated_at = ?
+			settings_json = ?, updated_at = ?
 			WHERE id = ?`),
-		c.Name, boolToInt(c.Enabled), c.KeyID, settingsJSON,
+		c.Name, boolToInt(c.Enabled), settingsJSON,
 		c.UpdatedAt.UTC().Format(timeLayout), c.ID)
 	if err != nil {
 		return fmt.Errorf("database: update download client: %w", err)
@@ -140,7 +140,7 @@ func scanDownloadClient(s interface{ Scan(...any) error }) (domain.DownloadClien
 		createdAt, updatedAt string
 	)
 	if err := s.Scan(&c.ID, &c.Name, &c.Kind, &appID, &enabled,
-		&c.KeyID, &settingsJSON, &createdAt, &updatedAt); err != nil {
+		&settingsJSON, &createdAt, &updatedAt); err != nil {
 		return domain.DownloadClient{}, err //nolint:wrapcheck // sql.ErrNoRows matched by caller; others wrapped there.
 	}
 	c.AppID = nullableToPtr(appID)

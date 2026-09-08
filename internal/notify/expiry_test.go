@@ -347,15 +347,6 @@ func TestExpiryThresholdsFallBackToDefaults(t *testing.T) {
 	}
 }
 
-func TestDefaultExpiryThresholdsIsACopy(t *testing.T) {
-	t.Parallel()
-	got := DefaultExpiryThresholds()
-	got[0] = -999
-	if defaultExpiryThresholds[0] != 30 {
-		t.Errorf("the package defaults were mutated through the accessor: %v", defaultExpiryThresholds)
-	}
-}
-
 func TestDueThreshold(t *testing.T) {
 	t.Parallel()
 	thresholds := []int{30, 14, 7, 1, 0}

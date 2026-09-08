@@ -36,19 +36,14 @@ func (f *fakeTarget) Create(_ context.Context, d DesiredIndexer) (string, error)
 	}
 	f.nextID++
 	id := strconv.Itoa(f.nextID)
-	f.remote = append(f.remote, RemoteIndexer{RemoteID: id, Name: d.Name, FeedURL: d.FeedURL, ManagedBySlug: d.Slug})
+	f.remote = append(f.remote, RemoteIndexer{RemoteID: id, FeedURL: d.FeedURL, ManagedBySlug: d.Slug})
 	f.creates++
 	return id, nil
 }
 
-func (f *fakeTarget) Update(_ context.Context, remoteID string, d DesiredIndexer) error {
+func (f *fakeTarget) Update(_ context.Context, _ string, d DesiredIndexer) error {
 	if f.failUpdate[d.Slug] {
 		return errBoom
-	}
-	for i := range f.remote {
-		if f.remote[i].RemoteID == remoteID {
-			f.remote[i].Name = d.Name
-		}
 	}
 	f.updates++
 	return nil
@@ -68,8 +63,6 @@ func (f *fakeTarget) Delete(_ context.Context, remoteID string) error {
 	f.deletes++
 	return nil
 }
-
-func (f *fakeTarget) Test(context.Context, DesiredIndexer) error { return nil }
 
 func desired(slug string, enabled bool) DesiredIndexer {
 	return DesiredIndexer{
@@ -155,7 +148,7 @@ func TestReconcileRecoversBySlugWhenLedgerMissing(t *testing.T) {
 	// Remote already has a harbrr-owned row, but harbrr's ledger is empty (lost
 	// state / first sync after a restore). It must recover and update, not duplicate.
 	f := &fakeTarget{remote: []RemoteIndexer{
-		{RemoteID: "42", Name: "old", ManagedBySlug: "a", FeedURL: "http://harbrr/api/indexers/a/results/torznab"},
+		{RemoteID: "42", ManagedBySlug: "a", FeedURL: "http://harbrr/api/indexers/a/results/torznab"},
 	}, nextID: 42}
 	out, _ := Reconcile(context.Background(), f, domain.SyncLevelFull, []DesiredIndexer{desired("a", true)}, nil)
 	if actionOf(out, "a") != ActionUpdated || f.creates != 0 {
@@ -202,7 +195,7 @@ func TestReconcilePrunesOrphansOnlyInFull(t *testing.T) {
 func TestReconcileNeverDeletesUnmanaged(t *testing.T) {
 	t.Parallel()
 	f := &fakeTarget{remote: []RemoteIndexer{
-		{RemoteID: "1", Name: "hand-added", ManagedBySlug: ""}, // not harbrr's
+		{RemoteID: "1", ManagedBySlug: ""}, // not harbrr's
 	}, nextID: 1}
 	out, _ := Reconcile(context.Background(), f, domain.SyncLevelFull, nil, nil)
 	if len(out) != 0 || f.deletes != 0 {
@@ -266,4 +259,3 @@ func (listErrTarget) List(context.Context) ([]RemoteIndexer, error)          { r
 func (listErrTarget) Create(context.Context, DesiredIndexer) (string, error) { return "", nil }
 func (listErrTarget) Update(context.Context, string, DesiredIndexer) error   { return nil }
 func (listErrTarget) Delete(context.Context, string) error                   { return nil }
-func (listErrTarget) Test(context.Context, DesiredIndexer) error             { return nil }

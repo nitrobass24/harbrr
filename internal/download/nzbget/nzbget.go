@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"time"
@@ -21,8 +20,6 @@ type Client struct {
 	username string
 	password string
 
-	log *log.Logger
-
 	http *http.Client
 }
 
@@ -30,8 +27,6 @@ type Options struct {
 	Host     string
 	Username string
 	Password string
-
-	Log *log.Logger
 
 	// HTTPClient, when set, is used instead of the package default (harbrr injects
 	// its shared *http.Client here rather than porting pkg/sharedhttp's Transport).
@@ -43,14 +38,9 @@ func New(opts Options) *Client {
 		host:     opts.Host,
 		username: opts.Username,
 		password: opts.Password,
-		log:      log.New(io.Discard, "", log.LstdFlags),
 		http: &http.Client{
 			Timeout: time.Second * 60,
 		},
-	}
-
-	if opts.Log != nil {
-		c.log = opts.Log
 	}
 
 	if opts.HTTPClient != nil {
@@ -146,11 +136,7 @@ type AddNzbRequest struct {
 	Category string
 }
 
-type AddNzbResponse struct {
-	NzbID int
-}
-
-func (c *Client) AddFromURL(ctx context.Context, r AddNzbRequest) (*AddNzbResponse, error) {
+func (c *Client) AddFromURL(ctx context.Context, r AddNzbRequest) error {
 	return c.appendNzb(ctx, "", r.URL, r.Category)
 }
 
@@ -167,13 +153,13 @@ type AddNzbContentRequest struct {
 // AddFromContent adds an nzb by its BYTES. NZBGet's append takes the nzb content
 // base64-encoded in the very slot a URL otherwise rides in, so this is AddFromURL with
 // the content encoded and a filename naming the job.
-func (c *Client) AddFromContent(ctx context.Context, r AddNzbContentRequest) (*AddNzbResponse, error) {
+func (c *Client) AddFromContent(ctx context.Context, r AddNzbContentRequest) error {
 	return c.appendNzb(ctx, r.Filename, base64.StdEncoding.EncodeToString(r.Content), r.Category)
 }
 
 // appendNzb is the shared "append" RPC. content is either a URL NZBGet fetches itself
 // or the base64-encoded nzb file — NZBGet reads both from the same parameter.
-func (c *Client) appendNzb(ctx context.Context, filename, content, category string) (*AddNzbResponse, error) {
+func (c *Client) appendNzb(ctx context.Context, filename, content, category string) error {
 	// NZBGet append params: Filename, Content, Category, Priority, AddToTop,
 	// AddPaused, DupeKey, DupeScore, DupeMode, PPParameters
 	params := []any{
@@ -191,12 +177,12 @@ func (c *Client) appendNzb(ctx context.Context, filename, content, category stri
 
 	var nzbID int
 	if err := c.call(ctx, "append", params, &nzbID); err != nil {
-		return nil, fmt.Errorf("could not add nzb to nzbget: %w", err)
+		return fmt.Errorf("could not add nzb to nzbget: %w", err)
 	}
 
 	if nzbID <= 0 {
-		return nil, fmt.Errorf("nzbget returned invalid nzb id: %d", nzbID)
+		return fmt.Errorf("nzbget returned invalid nzb id: %d", nzbID)
 	}
 
-	return &AddNzbResponse{NzbID: nzbID}, nil
+	return nil
 }

@@ -26,7 +26,7 @@ func newLegacyTestService(t *testing.T) (*Service, *database.DB) {
 	if err != nil {
 		t.Fatalf("keyring: %v", err)
 	}
-	return &Service{db: db, apps: apps.NewService(db, kr, nil, zerolog.Nop()), keyring: kr}, db
+	return &Service{db: db, apps: apps.NewService(db, kr, nil), keyring: kr}, db
 }
 
 // TestRestoreLegacySelectedConnectionMintsRoutingProfile proves a pre-#365 bundle's

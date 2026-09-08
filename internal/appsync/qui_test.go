@@ -16,7 +16,6 @@ type quiStub struct {
 	nextID   int
 	lastBody []byte
 	lastAuth string
-	tested   []string
 }
 
 func newQuiStub() *quiStub { return &quiStub{indexers: map[int]quiIndexer{}} }
@@ -27,7 +26,6 @@ func (s *quiStub) handler() http.Handler {
 	mux.HandleFunc("POST /api/torznab/indexers", s.create)
 	mux.HandleFunc("PUT /api/torznab/indexers/{id}", s.put)
 	mux.HandleFunc("DELETE /api/torznab/indexers/{id}", s.delete)
-	mux.HandleFunc("POST /api/torznab/indexers/{id}/test", s.test)
 	return mux
 }
 
@@ -78,13 +76,6 @@ func (s *quiStub) delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *quiStub) test(w http.ResponseWriter, r *http.Request) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.tested = append(s.tested, r.PathValue("id"))
-	writeJSONTest(w, http.StatusOK, map[string]string{"status": "ok"})
-}
-
 func TestQuiLifecycle(t *testing.T) {
 	t.Parallel()
 	stub := newQuiStub()
@@ -118,13 +109,6 @@ func TestQuiLifecycle(t *testing.T) {
 	if err := drv.Update(ctx, "1", desired("native-tracker", false)); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
-	if err := drv.Test(ctx, desired("native-tracker", true)); err != nil {
-		t.Fatalf("Test: %v", err)
-	}
-	if len(stub.tested) != 1 || stub.tested[0] != "1" {
-		t.Errorf("Test hit ids %v, want [1] (resolved from slug)", stub.tested)
-	}
-
 	if err := drv.Delete(ctx, "1"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}

@@ -112,7 +112,6 @@ func (d DesiredIndexer) hash() string {
 // feed URL) — orphan removal touches only those rows, never human-added indexers.
 type RemoteIndexer struct {
 	RemoteID      string
-	Name          string
 	FeedURL       string
 	ManagedBySlug string
 }
@@ -157,13 +156,11 @@ func slugFromFeedURL(feedURL string) string {
 
 // Target is one app's sync driver: it marshals a DesiredIndexer into the app's REST
 // dialect and performs the lifecycle calls. The reconciler drives it; drivers hold no
-// reconciliation logic of their own. Create returns the id the app assigned. Kept to
-// five methods (the repo's interface-size rule); the per-app kind is carried by the
-// connection, not the driver.
+// reconciliation logic of their own. Create returns the id the app assigned. The
+// per-app kind is carried by the connection, not the driver.
 type Target interface {
 	List(ctx context.Context) ([]RemoteIndexer, error)
 	Create(ctx context.Context, d DesiredIndexer) (remoteID string, err error)
 	Update(ctx context.Context, remoteID string, d DesiredIndexer) error
 	Delete(ctx context.Context, remoteID string) error
-	Test(ctx context.Context, d DesiredIndexer) error
 }

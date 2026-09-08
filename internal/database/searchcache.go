@@ -49,7 +49,7 @@ type SearchCacheStats struct {
 }
 
 // Fetch returns the unexpired entry for cacheKey, or found=false when absent or
-// expired. It bumps nothing — the caller Touches a live hit separately so the
+// expired. It bumps nothing — the caller records a live hit separately so the
 // read path stays a pure lookup.
 func (SearchCacheStore) Fetch(ctx context.Context, q dbinterface.Execer, cacheKey string, now time.Time) (SearchCacheEntry, bool, error) {
 	row := q.QueryRowContext(ctx,
@@ -91,7 +91,7 @@ func (SearchCacheStore) FetchAny(ctx context.Context, q dbinterface.Execer, cach
 
 // Store upserts an entry keyed on cache_key. The DO UPDATE writes everything
 // EXCEPT hit_count, so a SWR refresh-write-back preserves the served-hit counter
-// (Touch is its only writer). expires_at must be strictly after cached_at — a
+// (BumpHits is its only writer). expires_at must be strictly after cached_at — a
 // non-positive TTL is a caller bug and is rejected before any write.
 func (SearchCacheStore) Store(ctx context.Context, q dbinterface.Execer, e SearchCacheEntry) error {
 	if !e.ExpiresAt.After(e.CachedAt) {
@@ -128,22 +128,11 @@ func (SearchCacheStore) Delete(ctx context.Context, q dbinterface.Execer, cacheK
 	return nil
 }
 
-// Touch records a served hit: it bumps last_used_at and increments hit_count. It
-// is the sole writer of hit_count, so the counter survives refresh write-backs.
-func (SearchCacheStore) Touch(ctx context.Context, q dbinterface.Execer, cacheKey string, now time.Time) error {
-	_, err := q.ExecContext(ctx,
-		q.Rebind(`UPDATE search_cache SET last_used_at = ?, hit_count = hit_count + 1 WHERE cache_key = ?`),
-		now.UTC().Format(timeLayout), cacheKey)
-	if err != nil {
-		return fmt.Errorf("database: touch search cache %q: %w", cacheKey, err)
-	}
-	return nil
-}
-
 // BumpHits applies a coalesced hit bump: it adds delta to hit_count and sets
 // last_used_at in one UPDATE. The cache buffers per-hit touches in memory and
-// flushes them here so N hits on a key collapse to a single write (vs Touch, which
-// adds exactly one). A delta <= 0 is a no-op.
+// flushes them here so N hits on a key collapse to a single write. It is the sole
+// writer of hit_count, so the counter survives refresh write-backs. A delta <= 0 is
+// a no-op.
 func (SearchCacheStore) BumpHits(ctx context.Context, q dbinterface.Execer, cacheKey string, delta int64, lastUsed time.Time) error {
 	if delta <= 0 {
 		return nil

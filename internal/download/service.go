@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rs/zerolog"
-
 	"github.com/autobrr/harbrr/internal/apps"
 	"github.com/autobrr/harbrr/internal/connresource"
 	"github.com/autobrr/harbrr/internal/database"
@@ -32,18 +30,17 @@ type Service struct {
 	client *http.Client
 	clock  func() time.Time
 	life   *connresource.Lifecycle[domain.DownloadClient]
-	log    zerolog.Logger
 }
 
 // NewService wires the download service. client is shared by drivers thin enough
 // to use one (nil installs a timeout-bounded default); clock is injectable for
 // deterministic tests (assigning to the returned Service's clock field also
 // retunes its Lifecycle, which reads clock through an indirection).
-func NewService(db dbinterface.Querier, appsSvc *apps.Service, keyring *secrets.Keyring, client *http.Client, log zerolog.Logger) *Service {
+func NewService(db dbinterface.Querier, appsSvc *apps.Service, keyring *secrets.Keyring, client *http.Client) *Service {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
-	s := &Service{db: db, apps: appsSvc, client: client, clock: time.Now, log: log}
+	s := &Service{db: db, apps: appsSvc, client: client, clock: time.Now}
 	s.life = connresource.New[domain.DownloadClient](db, keyring, func() time.Time { return s.clock() })
 	return s
 }
