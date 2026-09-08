@@ -6,6 +6,7 @@ import (
 	"html"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"golang.org/x/text/unicode/norm"
 
@@ -283,7 +284,8 @@ func filterDiacritics(value string, args []string) (string, error) {
 	var sb strings.Builder
 	sb.Grow(len(decomposed))
 	for _, r := range decomposed {
-		if isNonSpacingMark(r) {
+		// Mn is .NET's UnicodeCategory.NonSpacingMark, the class Jackett strips.
+		if unicode.Is(unicode.Mn, r) {
 			continue
 		}
 		sb.WriteRune(r)

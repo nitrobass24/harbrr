@@ -66,9 +66,9 @@ func TestExpandQueryCategoriesUsesAdvertisedChildren(t *testing.T) {
 	}
 	// Movies advertises only HD(2040) + SD(2030); querying the Movies parent must
 	// expand to exactly those, never the other standard Movies children.
-	got := caps.expandQueryCategories([]int{2000})
+	got := caps.ExpandQueryCategories([]int{2000})
 	want := []int{2000, 2030, 2040} // advertised children in ascending-id order
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("expandQueryCategories([2000]) = %v, want %v (advertised children only)", got, want)
+		t.Errorf("ExpandQueryCategories([2000]) = %v, want %v (advertised children only)", got, want)
 	}
 }

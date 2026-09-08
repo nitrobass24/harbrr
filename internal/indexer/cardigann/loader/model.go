@@ -557,11 +557,10 @@ type FilterBlock struct {
 	Args FilterArgs `yaml:"args,omitempty"`
 }
 
-// RowFilterBlock mirrors RowFilterBlock (row-level filters: andmatch, strdump).
-type RowFilterBlock struct {
-	Name string     `yaml:"name"`
-	Args FilterArgs `yaml:"args,omitempty"`
-}
+// RowFilterBlock is the row-level filter block (andmatch, strdump). The schema
+// declares it separately from FilterBlock but with an identical shape, so it is
+// an alias rather than a second, drift-prone copy of the same struct.
+type RowFilterBlock = FilterBlock
 
 // Scalar is a oneOf scalar union (string|number|boolean) normalized to its
 // string form, mirroring how Jackett's deserializer coerces these values to

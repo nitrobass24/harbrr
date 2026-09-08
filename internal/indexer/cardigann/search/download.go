@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/httpx"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/selector"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/template"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
@@ -179,7 +180,7 @@ func buildBeforeRequest(before *loader.BeforeBlock, absURL string, pairs []kv, h
 			method:  stdhttp.MethodPost,
 			url:     absURL,
 			body:    encodeOrderedSep(pairs, "&"),
-			headers: withFormContentType(headers),
+			headers: httpx.WithFormContentType(headers),
 		}, nil
 	}
 	full, err := appendQuerySep(absURL, pairs, before.QuerySeparator)

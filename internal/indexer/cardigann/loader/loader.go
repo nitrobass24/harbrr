@@ -429,14 +429,8 @@ func buildVendorContentIndex() (map[string]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("reading vendored definition %q: %w", e.Name(), err)
 		}
-		var head struct {
-			ID string `yaml:"id"`
-		}
-		if err := unmarshalYAML(data, &head); err != nil {
-			continue
-		}
-		if head.ID != "" && head.ID != fileID {
-			idx[head.ID] = path
+		if id := ProbeID(data); id != "" && id != fileID {
+			idx[id] = path
 		}
 	}
 	return idx, nil
