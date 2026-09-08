@@ -468,7 +468,7 @@ jobs:
     name: web-e2e
     runs-on: self-hosted
     container:
-      image: mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
       # Host-disk Go caches, same rationale as backend-test: this job sits on the
       # run's critical path (web -> web-e2e -> docker-merge), and the actions/cache
       # pair it replaced spent ~30s SAVING at job end plus a cold `go build` (~28s)
