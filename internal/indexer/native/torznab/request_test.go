@@ -214,7 +214,7 @@ func TestBuildSearchURLGeneric(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			d, err := New(native.Params{
-				Def:     GenericDefinition(),
+				Def:     genericDefinition(),
 				Cfg:     map[string]string{"apikey": c.apikey, "apiPath": c.apiCfg},
 				BaseURL: "https://tz.example.test",
 			})

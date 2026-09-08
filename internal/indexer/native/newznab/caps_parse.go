@@ -9,6 +9,7 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // capsRoot is the <caps> document a Newznab server returns for ?t=caps. The parts harbrr
@@ -106,10 +107,10 @@ type capsSubcat struct {
 // description=".." />, returned even with HTTP 200) is detected first and classified exactly
 // like a search error (auth -> login.ErrLoginFailed, rate limit -> RateLimitedError); a
 // malformed body is an ErrParseError. The server-controlled description is value-scrubbed of
-// the configured apikey as defense in depth (see toError).
+// the configured apikey as defense in depth (see native.APIEnvelopeError).
 func parseCaps(body []byte, apikey string) (*capsRoot, error) {
 	if apiErr, ok := capsError(body); ok {
-		return nil, toError(apiErr, apikey)
+		return nil, native.APIEnvelopeError("newznab", apiErr, apikey)
 	}
 	var root capsRoot
 	if err := xml.Unmarshal(body, &root); err != nil {
@@ -124,12 +125,12 @@ func parseCaps(body []byte, apikey string) (*capsRoot, error) {
 // capsError detects a Newznab <error> envelope in a caps response (which may be the document
 // root). It reuses the search-side error structs so caps and search classify errors
 // identically.
-func capsError(body []byte) (*apiError, bool) {
-	var feed rss
+func capsError(body []byte) (*native.APIError, bool) {
+	var feed native.Feed[item]
 	if err := xml.Unmarshal(body, &feed); err != nil {
 		return nil, false
 	}
-	if apiErr := feed.firstError(); apiErr != nil {
+	if apiErr := feed.FirstError(); apiErr != nil {
 		return apiErr, true
 	}
 	return nil, false

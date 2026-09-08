@@ -1,13 +1,13 @@
 package newznab
 
 import (
+	"cmp"
 	"encoding/xml"
 	"fmt"
 	"strconv"
 	"strings"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -22,59 +22,18 @@ const newznabAttrNS = "http://www.newznab.com/DTD/2010/feeds/attributes/"
 // nzbEnclosureType is the MIME type a Newznab enclosure carries for the .nzb link.
 const nzbEnclosureType = "application/x-nzb"
 
-// rss is the top-level <rss><channel><item>* envelope plus any descendant <error>. The
-// error element is decoded greedily (it can appear at channel or rss level), and items live
-// under channel. No XMLName constraint is set so the same struct also decodes a bare
-// <error> root (some servers return the error envelope as the document root, not nested in
-// rss).
-type rss struct {
-	XMLName xml.Name
-	Attrs   []xml.Attr `xml:",any,attr"`
-	Error   *apiError  `xml:"error"`
-	Channel channel    `xml:"channel"`
-}
-
-// channel holds the result items and a channel-level error (some servers place <error>
-// inside <channel>).
-type channel struct {
-	Error *apiError `xml:"error"`
-	Items []item    `xml:"item"`
-}
-
-// apiError is the Newznab error envelope: <error code=".." description=".." />. Both are
-// attributes. Aliased to native.APIError so the decode/lookup logic (FirstError,
-// APIErrorFromAttrs, MentionsAPIKey) is shared with the torznab sibling while this struct
-// stays package-private per docs/native-indexer-pattern.md.
-type apiError = native.APIError
-
-// item is one RSS result row. Enclosure and the newznab:attr set are decoded; the attr
-// namespace is matched by URI in attrValue so a torznab: feed parses identically.
+// item is one RSS result row, carried by the shared native.Feed envelope. The attr
+// namespace is matched by URI in attr/attrAll so a torznab: feed parses identically.
 type item struct {
-	Title       string      `xml:"title"`
-	GUID        string      `xml:"guid"`
-	Link        string      `xml:"link"`
-	Comments    string      `xml:"comments"`
-	Description string      `xml:"description"`
-	PubDate     string      `xml:"pubDate"`
-	Categories  []string    `xml:"category"`
-	Enclosures  []enclosure `xml:"enclosure"`
-	Attrs       []nzbAttr   `xml:"attr"`
-}
-
-// enclosure is the <enclosure url length type/> element. The url of the application/x-nzb
-// enclosure is the download link; length is the size fallback.
-type enclosure struct {
-	URL    string `xml:"url,attr"`
-	Length string `xml:"length,attr"`
-	Type   string `xml:"type,attr"`
-}
-
-// nzbAttr is a <newznab:attr name=".." value=".."/> element. Name carries the namespace via
-// XMLName.Space so the parser can verify it is the newznab attribute namespace.
-type nzbAttr struct {
-	XMLName xml.Name
-	Name    string `xml:"name,attr"`
-	Value   string `xml:"value,attr"`
+	Title       string                 `xml:"title"`
+	GUID        string                 `xml:"guid"`
+	Link        string                 `xml:"link"`
+	Comments    string                 `xml:"comments"`
+	Description string                 `xml:"description"`
+	PubDate     string                 `xml:"pubDate"`
+	Categories  []string               `xml:"category"`
+	Enclosures  []native.FeedEnclosure `xml:"enclosure"`
+	Attrs       []native.FeedAttr      `xml:"attr"`
 }
 
 // parseReleases decodes a Newznab RSS/XML search response into normalized releases. It
@@ -83,12 +42,12 @@ type nzbAttr struct {
 // application/x-nzb enclosure to a *normalizer.Release. Items without an nzb enclosure are
 // skipped (Prowlarr's ProcessItem returns null). A malformed body is an ErrParseError.
 func (d *driver) parseReleases(body []byte, catMap *mapper.CategoryMap) ([]*normalizer.Release, error) {
-	var feed rss
+	var feed native.Feed[item]
 	if err := xml.Unmarshal(body, &feed); err != nil {
 		return nil, fmt.Errorf("newznab: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
 	}
-	if apiErr := feed.firstError(); apiErr != nil {
-		return nil, toError(apiErr, d.apikey)
+	if apiErr := feed.FirstError(); apiErr != nil {
+		return nil, native.APIEnvelopeError("newznab", apiErr, d.apikey)
 	}
 	releases := make([]*normalizer.Release, 0, len(feed.Channel.Items))
 	for i := range feed.Channel.Items {
@@ -98,58 +57,6 @@ func (d *driver) parseReleases(body []byte, catMap *mapper.CategoryMap) ([]*norm
 	}
 	native.TraceReleases(d.Log, d.Def.ID, releases)
 	return releases, nil
-}
-
-// firstError returns the first <error> found: a bare <error> document root, then a child
-// <error> at rss or channel level. A bare root carries its code/description on the captured
-// root attributes (the child mapping does not match the root element itself).
-func (f *rss) firstError() *apiError {
-	return native.FirstError(f.XMLName, f.Attrs, f.Error, f.Channel.Error)
-}
-
-// errorCodeAuthLow / errorCodeAuthHigh bound the Newznab "incorrect credentials" code range
-// (100-199), which is an auth failure. 200-299 is a bad/missing parameter; 300-399 is a
-// content error; 900-999 is a generic/unknown error.
-const (
-	errorCodeAuthLow  = 100
-	errorCodeAuthHigh = 199
-)
-
-// errorCodeDailyQuota is dognzb's documented newznab code for "Daily API limit
-// reached" — a tracker-declared request-quota cap, not an ordinary transient
-// rate-limit. Kept as a single exact code (not the whole 900-999 "generic/unknown"
-// band): only this code is documented as a quota cap by a vendor, so classifying the
-// rest of that band as quota-exceeded would be guessing at other trackers' unrelated
-// 9xx error meanings (autobrr/harbrr#251 asks to be conservative here). Extend this
-// with more codes only once another vendor's quota code is similarly documented.
-const errorCodeDailyQuota = 910
-
-// toError maps a Newznab error envelope to a Go error. A 100-199 code, or a "Request limit
-// reached" / apikey-related description, are classified for the registry's health
-// recording: auth failures unwrap to login.ErrLoginFailed, rate limits to a RateLimitedError,
-// the dognzb-style daily-quota code to a QuotaExceededError; every other code is a generic
-// parse error. The description is server-controlled free text that reaches a persisted
-// health event / webhook, so the configured apikey is value-scrubbed out of it as defense in
-// depth: a misbehaving server that echoes the submitted apikey back in its description must
-// not leak it (a bare "invalid key ABCD1234" would pass RedactError's key[=:]value anchor
-// untouched).
-//
-// A plain function, not a method: apiError is an alias for native.APIError (a type defined
-// in another package), and Go forbids attaching methods to a type from outside its home
-// package even via a local alias.
-func toError(e *apiError, apikey string) error {
-	desc := apphttp.ScrubValues(strings.TrimSpace(e.Description), []string{apikey})
-	if strings.EqualFold(desc, "Request limit reached") {
-		return &search.RateLimitedError{StatusCode: 0}
-	}
-	code, _ := strconv.Atoi(strings.TrimSpace(e.Code))
-	if code == errorCodeDailyQuota {
-		return &search.QuotaExceededError{Detail: fmt.Sprintf("newznab: api error (code %d): %s", code, desc)}
-	}
-	if (code >= errorCodeAuthLow && code <= errorCodeAuthHigh) || native.MentionsAPIKey(desc) {
-		return fmt.Errorf("newznab: auth failed (code %s): %s: %w", e.Code, desc, login.ErrLoginFailed)
-	}
-	return fmt.Errorf("newznab: api error (code %s): %s: %w", e.Code, desc, search.ErrParseError)
 }
 
 // toRelease maps one <item> to a normalized usenet release, or nil when the item carries no
@@ -279,70 +186,31 @@ func (it *item) publishDate() string {
 
 // fillIDs maps the newznab:attr id values onto the release id fields. Prowlarr tries the
 // "imdb"/"imdbid", "tmdbid"/"tmdb", etc. attr-name pairs; harbrr keeps the raw imdb string
-// and parses the rest as int64.
+// (an int-parse would drop a tt prefix, and harbrr's IMDBID is a string) and parses the
+// rest as int64. attr already trims, so cmp.Or picks the first attr that is present.
 func (it *item) fillIDs(rel *normalizer.Release) {
-	rel.IMDBID = imdbAttr(firstNonEmpty(it.attr("imdb"), it.attr("imdbid")))
-	rel.TMDBID = native.ParseInt64(firstNonEmpty(it.attr("tmdbid"), it.attr("tmdb")))
-	rel.TVDBID = native.ParseInt64(firstNonEmpty(it.attr("tvdbid"), it.attr("tvdb")))
-	rel.TVMazeID = native.ParseInt64(firstNonEmpty(it.attr("tvmazeid"), it.attr("tvmaze")))
-	rel.TraktID = native.ParseInt64(firstNonEmpty(it.attr("traktid"), it.attr("trakt")))
+	rel.IMDBID = cmp.Or(it.attr("imdb"), it.attr("imdbid"))
+	rel.TMDBID = native.ParseInt64(cmp.Or(it.attr("tmdbid"), it.attr("tmdb")))
+	rel.TVDBID = native.ParseInt64(cmp.Or(it.attr("tvdbid"), it.attr("tvdb")))
+	rel.TVMazeID = native.ParseInt64(cmp.Or(it.attr("tvmazeid"), it.attr("tvmaze")))
+	rel.TraktID = native.ParseInt64(cmp.Or(it.attr("traktid"), it.attr("trakt")))
 	rel.RageID = native.ParseInt64(it.attr("rageid"))
 }
 
 // attr returns the value of the first newznab:attr with the given name (case-insensitive on
 // name, namespace-matched on the attr element). A missing attr yields "".
 func (it *item) attr(name string) string {
-	for i := range it.Attrs {
-		a := &it.Attrs[i]
-		if a.isNewznab() && strings.EqualFold(a.Name, name) {
-			return strings.TrimSpace(a.Value)
-		}
-	}
-	return ""
+	return native.AttrValue(it.Attrs, newznabAttrNS, name)
 }
 
 // attrAll returns all values of the newznab:attr with the given name (repeatable attrs like
 // category/language).
 func (it *item) attrAll(name string) []string {
-	var out []string
-	for i := range it.Attrs {
-		a := &it.Attrs[i]
-		if a.isNewznab() && strings.EqualFold(a.Name, name) {
-			if v := strings.TrimSpace(a.Value); v != "" {
-				out = append(out, v)
-			}
-		}
-	}
-	return out
+	return native.AttrValues(it.Attrs, newznabAttrNS, name)
 }
 
 // attrInt returns the first newznab:attr with the given name parsed as int64 (0 when absent
 // or unparseable).
 func (it *item) attrInt(name string) int64 {
 	return native.ParseInt64(it.attr(name))
-}
-
-// isNewznab reports whether the attr element is in the newznab attribute namespace. Some
-// minimal feeds omit the namespace binding (XMLName.Space == ""); those are accepted too, so
-// a feed that only declares the default RSS namespace still parses (the attr name is still
-// the disambiguator).
-func (a *nzbAttr) isNewznab() bool {
-	return a.XMLName.Space == newznabAttrNS || a.XMLName.Space == ""
-}
-
-// imdbAttr keeps the raw imdb id string (an int-parse would drop a tt prefix; Prowlarr
-// parses to int, but harbrr's IMDBID is a string so the raw value is preserved). A blank
-// value yields "".
-func imdbAttr(raw string) string {
-	return strings.TrimSpace(raw)
-}
-
-// firstNonEmpty returns the first non-empty trimmed string.
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if s := strings.TrimSpace(v); s != "" {
-			return s
-		}
-	}
-	return ""
 }

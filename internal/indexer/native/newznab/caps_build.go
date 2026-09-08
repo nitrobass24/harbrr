@@ -146,22 +146,12 @@ func getByNameFold(name string) (mapper.Category, bool) {
 	return mapper.Category{}, false
 }
 
-// getByIDStr resolves a standard category by its numeric id given as a string. A non-numeric
-// or unknown id yields no match.
+// getByIDStr resolves a standard category by its numeric id given as a string. A
+// non-numeric, negative, overflowing or unknown id yields no match.
 func getByIDStr(raw string) (mapper.Category, bool) {
-	id := digits(raw)
-	if id == "" {
+	id, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || id < 0 {
 		return mapper.Category{}, false
 	}
-	return mapper.GetByID(mustAtoiNonneg(id))
-}
-
-// mustAtoiNonneg parses a non-empty digit string (already validated by digits) to an
-// int, returning 0 on the impossible error/overflow rather than silently wrapping.
-func mustAtoiNonneg(s string) int {
-	n, err := strconv.Atoi(s)
-	if err != nil || n < 0 {
-		return 0
-	}
-	return n
+	return mapper.GetByID(id)
 }

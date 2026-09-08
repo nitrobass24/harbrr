@@ -18,7 +18,7 @@ const testAPIKey = "SECRETapikey1234567890"
 func urlDriver(t *testing.T) *driver {
 	t.Helper()
 	d, err := New(native.Params{
-		Def:     GenericDefinition(),
+		Def:     genericDefinition(),
 		Cfg:     map[string]string{"apikey": testAPIKey, "apiPath": "/api"},
 		BaseURL: "https://news.example.test",
 	})
@@ -206,7 +206,7 @@ func TestBuildSearchURLBaseAndPath(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			d, err := New(native.Params{
-				Def:     GenericDefinition(),
+				Def:     genericDefinition(),
 				Cfg:     map[string]string{"apikey": testAPIKey, "apiPath": c.apiCfg},
 				BaseURL: c.base,
 			})

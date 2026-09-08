@@ -50,7 +50,7 @@ func TestFamilies(t *testing.T) {
 			t.Errorf("mapper.Build(%q): %v", id, err)
 		}
 
-		d, err := f.Factory(native.Params{Def: f.Definition, Cfg: validCfg(profileFor(id).policy)})
+		d, err := f.Factory(native.Params{Def: f.Definition, Cfg: validCfg(siteFor(id).keyPolicy)})
 		if err != nil {
 			t.Errorf("factory(%q): %v", id, err)
 			continue
@@ -58,7 +58,7 @@ func TestFamilies(t *testing.T) {
 		if d.Capabilities() == nil {
 			t.Errorf("family %q Capabilities() = nil", id)
 		}
-		if got, want := d.NeedsResolver(), profileFor(id).needsResolver; got != want {
+		if got, want := d.NeedsResolver(), siteFor(id).needsResolver; got != want {
 			t.Errorf("family %q NeedsResolver = %v, want %v (per-preset posture)", id, got, want)
 		}
 		if d.DownloadNeedsAuth() {
@@ -161,7 +161,7 @@ func TestSettingsAPIKeyIsSecret(t *testing.T) {
 	check(presetDefinition(fixturePreset), true)
 	check(presetDefinition(tn), false)
 
-	generic := GenericDefinition()
+	generic := genericDefinition()
 	check(generic, false)
 	var apiPath *loader.SettingsField
 	for i := range generic.Settings {
@@ -227,7 +227,7 @@ func TestPresetCaps(t *testing.T) {
 	assertPassThrough(tnCaps, []int{1000, 2000, 3000, 5000, 7000, 8000}, "torrentnetwork (full parent table)")
 	assertModes(tnCaps, "torrentnetwork")
 
-	genCaps := capsFor(GenericDefinition(), nil)
+	genCaps := capsFor(genericDefinition(), nil)
 	assertPassThrough(genCaps, []int{1000, 2000, 3000, 5000, 7000, 8000}, "generic (full parent table)")
 	assertModes(genCaps, "generic")
 }
@@ -254,8 +254,8 @@ func TestNewValidatesAPIKeyPerPolicy(t *testing.T) {
 		{"tn long key ok (no length rule)", presetDefinition(tn), testAPIKey + "-and-more", true},
 		{"animetosho no key ok", presetDefinition(at), "", true},
 		{"animetosho stray key tolerated", presetDefinition(at), "stray", true},
-		{"generic no key ok", GenericDefinition(), "", true},
-		{"generic any key ok", GenericDefinition(), "whatever-length", true},
+		{"generic no key ok", genericDefinition(), "", true},
+		{"generic any key ok", genericDefinition(), "whatever-length", true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

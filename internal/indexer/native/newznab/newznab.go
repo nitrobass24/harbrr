@@ -16,7 +16,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
@@ -71,27 +70,12 @@ func New(p native.Params) (native.Driver, error) {
 	d := &driver{
 		Base:    base,
 		apikey:  strings.TrimSpace(p.Cfg["apikey"]),
-		apiPath: normalizeAPIPath(p.Cfg["apiPath"]),
+		apiPath: native.NormalizeAPIPath(p.Cfg["apiPath"], defaultAPIPath),
 		persist: p.PersistSetting,
 		limits:  readBudgetLimits(p.Cfg),
 	}
 	d.capsCache.rehydrate(p.Cfg)
 	return d, nil
-}
-
-// normalizeAPIPath resolves the apiPath setting: a blank value defaults to "/api"
-// (Prowlarr NewznabSettings default); a trailing slash is stripped; a missing leading
-// slash is added so {base}{apiPath} joins correctly.
-func normalizeAPIPath(raw string) string {
-	p := strings.TrimSpace(raw)
-	if p == "" {
-		p = defaultAPIPath
-	}
-	p = strings.TrimRight(p, "/")
-	if !strings.HasPrefix(p, "/") {
-		p = "/" + p
-	}
-	return p
 }
 
 // Capabilities returns the live Newznab capabilities, lazily fetching and caching the remote
@@ -145,6 +129,3 @@ func (d *driver) Test(ctx context.Context) error {
 	d.seedBudget(ctx)
 	return nil
 }
-
-// itoa is a tiny strconv.Itoa alias used by the caps builder.
-func itoa(n int) string { return strconv.Itoa(n) }

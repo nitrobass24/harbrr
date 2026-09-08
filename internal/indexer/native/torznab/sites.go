@@ -26,16 +26,16 @@ const defaultAPIPath = "/api"
 // The base URL is empty here — a generic instance is configured with its own base URL
 // at add time; presets carry a default link.
 func Family() native.Family {
-	return native.Family{Definition: GenericDefinition(), Factory: New}
+	return native.Family{Definition: genericDefinition(), Factory: New}
 }
 
-// GenericDefinition is the generic torznab family definition: torrent protocol, no
+// genericDefinition is the generic torznab family definition: torrent protocol, no
 // default link, the apikey (optional, unvalidated) + apiPath settings, and the full
 // standard parent table as placeholder caps (the remote server's real tree is
 // unknown). It is never schema-validated (no login/search/download block) — it exists
 // so mapper.Build, the credential store (IsSecret), indexerInfo, and the
 // addable-indexer list all work.
-func GenericDefinition() *loader.Definition {
+func genericDefinition() *loader.Definition {
 	delay := requestDelaySeconds
 	return &loader.Definition{
 		ID:           "torznab",

@@ -4,12 +4,11 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
-	stdhttp "net/http"
+	"strconv"
 	"strings"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
-	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // Reserved instance-setting keys for the request budget. The first three are read by
@@ -145,7 +144,7 @@ func (d *driver) seedLimit(ctx context.Context, key, sourceKey string, current, 
 	if err := d.persist(ctx, sourceKey, limitSourceDetected); err != nil {
 		return false
 	}
-	if err := d.persist(ctx, key, itoa(discovered)); err != nil {
+	if err := d.persist(ctx, key, strconv.Itoa(discovered)); err != nil {
 		return false
 	}
 	return true
@@ -166,16 +165,11 @@ func shouldSeed(current, discovered int) bool {
 }
 
 // fetchUser GETs ?t=user and parses the account document. The URL embeds the apikey, so
-// (exactly like getCaps) a request-build failure and a transport error both surface only
-// the endpoint's scheme://host — structurally, through native.Base's NewRequest and Do.
+// (exactly like the caps fetch — it is the same getXML request) a request-build failure
+// and a transport error both surface only the endpoint's scheme://host, structurally
+// through native.Base's NewRequest and Do.
 func (d *driver) fetchUser(ctx context.Context) (*userRoot, error) {
-	rawurl := d.buildAPIURL("user")
-	req, err := d.NewRequest(ctx, stdhttp.MethodGet, rawurl, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/rss+xml, application/xml, text/xml")
-	resp, err := d.Do(ctx, req, native.ClassifyRateLimit403)
+	resp, err := d.getXML(ctx, d.buildAPIURL("user"))
 	if err != nil {
 		return nil, err
 	}

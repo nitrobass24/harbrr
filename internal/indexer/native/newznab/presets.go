@@ -1,6 +1,8 @@
 package newznab
 
 import (
+	"strconv"
+
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/native"
@@ -42,7 +44,8 @@ var presets = []preset{
 	{id: "nzbstars", name: "NZBStars", baseURL: "https://nzbstars.com"},
 	{id: "abnzb", name: "abNZB", baseURL: "https://abnzb.com"},
 	{id: "althub", name: "altHUB", baseURL: "https://api.althub.co.za"},
-	{id: "animetosho", name: "AnimeTosho (Usenet)", baseURL: "https://feed.animetosho.org", categories: animeToshoCategories()},
+	// AnimeTosho is anime-only: 5070 TV/Anime, 2000 Movies, 5000 TV.
+	{id: "animetosho", name: "AnimeTosho (Usenet)", baseURL: "https://feed.animetosho.org", categories: []int{5070, 2000, 5000}},
 	{id: "gingadaddy", name: "GingaDADDY", baseURL: "https://www.gingadaddy.com"},
 	{id: "miatrix", name: "Miatrix", baseURL: "https://www.miatrix.com"},
 	{id: "newz69", name: "Newz69", baseURL: "https://newz69.keagaming.com"},
@@ -52,10 +55,6 @@ var presets = []preset{
 	{id: "nzbndx", name: "NZBNDX", baseURL: "https://www.nzbndx.com"},
 	{id: "tabularasa", name: "Tabula Rasa", baseURL: "https://www.tabula-rasa.pw"},
 }
-
-// animeToshoCategories is AnimeTosho's seed set: the anime TV/movie newznab categories
-// (5070 TV/Anime, 2000 Movies, 5000 TV) it serves before its live caps are fetched.
-func animeToshoCategories() []int { return []int{5070, 2000, 5000} }
 
 // Families returns the generic Newznab driver plus every preset, each a native.Family
 // sharing the New factory with its own Definition (distinct id/name, a default base URL,
@@ -119,7 +118,7 @@ func presetCaps(categoryIDs []int) loader.Caps {
 			continue
 		}
 		mappings = append(mappings, loader.CategoryMapping{
-			ID:   loader.Scalar{Value: itoa(cat.ID), Set: true},
+			ID:   loader.Scalar{Value: strconv.Itoa(cat.ID), Set: true},
 			Cat:  cat.Name,
 			Desc: cat.Name,
 		})

@@ -8,7 +8,6 @@ import (
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/dateparse"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -26,61 +25,22 @@ const torznabAttrNS = "http://torznab.com/schemas/2015/feed"
 // == "application/x-bittorrent"`).
 const bittorrentEnclosureType = "application/x-bittorrent"
 
-// rss is the top-level <rss><channel><item>* envelope plus any descendant <error>,
-// mirroring the newznab sibling's envelope: the error element is decoded greedily (it
-// can appear at channel or rss level, or as the document root), and items live under
-// channel.
-type rss struct {
-	XMLName xml.Name
-	Attrs   []xml.Attr `xml:",any,attr"`
-	Error   *apiError  `xml:"error"`
-	Channel channel    `xml:"channel"`
-}
-
-// channel holds the result items and a channel-level error (some servers place
-// <error> inside <channel>).
-type channel struct {
-	Error *apiError `xml:"error"`
-	Items []item    `xml:"item"`
-}
-
-// apiError is the Newznab/Torznab error envelope: <error code=".." description=".." />.
-// Both are attributes. Aliased to native.APIError so the decode/lookup logic (FirstError,
-// APIErrorFromAttrs, MentionsAPIKey) is shared with the newznab sibling while this struct
-// stays package-private per docs/native-indexer-pattern.md.
-type apiError = native.APIError
-
-// item is one RSS result row. Enclosure and the torznab:attr set are decoded; Size and
+// item is one RSS result row, carried by the shared native.Feed envelope. Size and
 // Files also decode the plain child-element fallback Jackett's base ResultFromFeedItem
 // checks (item.FirstValue("size")/("files")) when no attr is present.
 type item struct {
-	Title       string      `xml:"title"`
-	GUID        string      `xml:"guid"`
-	Link        string      `xml:"link"`
-	Comments    string      `xml:"comments"`
-	Description string      `xml:"description"`
-	PubDate     string      `xml:"pubDate"`
-	Size        string      `xml:"size"`
-	Files       string      `xml:"files"`
-	Grabs       string      `xml:"grabs"`
-	Categories  []string    `xml:"category"`
-	Enclosures  []enclosure `xml:"enclosure"`
-	Attrs       []tzAttr    `xml:"attr"`
-}
-
-// enclosure is the <enclosure url length type/> element.
-type enclosure struct {
-	URL    string `xml:"url,attr"`
-	Length string `xml:"length,attr"`
-	Type   string `xml:"type,attr"`
-}
-
-// tzAttr is a <torznab:attr name=".." value=".."/> element. Name carries the namespace
-// via XMLName.Space so the parser can verify it is the torznab attribute namespace.
-type tzAttr struct {
-	XMLName xml.Name
-	Name    string `xml:"name,attr"`
-	Value   string `xml:"value,attr"`
+	Title       string                 `xml:"title"`
+	GUID        string                 `xml:"guid"`
+	Link        string                 `xml:"link"`
+	Comments    string                 `xml:"comments"`
+	Description string                 `xml:"description"`
+	PubDate     string                 `xml:"pubDate"`
+	Size        string                 `xml:"size"`
+	Files       string                 `xml:"files"`
+	Grabs       string                 `xml:"grabs"`
+	Categories  []string               `xml:"category"`
+	Enclosures  []native.FeedEnclosure `xml:"enclosure"`
+	Attrs       []native.FeedAttr      `xml:"attr"`
 }
 
 // parseReleases decodes a Torznab RSS/XML search response into normalized releases. It
@@ -89,12 +49,12 @@ type tzAttr struct {
 // download link (neither an x-bittorrent enclosure nor a <link>) or no title is
 // skipped rather than failing the whole page. A malformed body is an ErrParseError.
 func (d *driver) parseReleases(body []byte, catMap *mapper.CategoryMap) ([]*normalizer.Release, error) {
-	var feed rss
+	var feed native.Feed[item]
 	if err := xml.Unmarshal(body, &feed); err != nil {
 		return nil, fmt.Errorf("torznab: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
 	}
-	if apiErr := feed.firstError(); apiErr != nil {
-		return nil, toError(apiErr, d.apikey)
+	if apiErr := feed.FirstError(); apiErr != nil {
+		return nil, native.APIEnvelopeError("torznab", apiErr, d.apikey)
 	}
 	releases := make([]*normalizer.Release, 0, len(feed.Channel.Items))
 	for i := range feed.Channel.Items {
@@ -104,40 +64,6 @@ func (d *driver) parseReleases(body []byte, catMap *mapper.CategoryMap) ([]*norm
 	}
 	native.TraceReleases(d.Log, d.Def.ID, releases)
 	return releases, nil
-}
-
-// firstError returns the first <error> found: a bare <error> document root, then a
-// child <error> at rss or channel level.
-func (f *rss) firstError() *apiError {
-	return native.FirstError(f.XMLName, f.Attrs, f.Error, f.Channel.Error)
-}
-
-// errorCodeAuthLow / errorCodeAuthHigh bound the Torznab "incorrect credentials" code
-// range (100-199), matching Prowlarr's TorznabRssParser.PreProcess.
-const (
-	errorCodeAuthLow  = 100
-	errorCodeAuthHigh = 199
-)
-
-// toError maps a Torznab error envelope to a Go error, mirroring the newznab
-// sibling's toError: a 100-199 code, or a "Request limit reached" / apikey-related
-// description, are classified for the registry's health recording. The description is
-// server-controlled free text that reaches a persisted health event, so the configured
-// apikey is value-scrubbed out of it as defense in depth.
-//
-// A plain function, not a method: apiError is an alias for native.APIError (a type defined
-// in another package), and Go forbids attaching methods to a type from outside its home
-// package even via a local alias.
-func toError(e *apiError, apikey string) error {
-	desc := apphttp.ScrubValues(strings.TrimSpace(e.Description), []string{apikey})
-	if strings.EqualFold(desc, "Request limit reached") {
-		return &search.RateLimitedError{StatusCode: 0}
-	}
-	code, _ := strconv.Atoi(strings.TrimSpace(e.Code))
-	if (code >= errorCodeAuthLow && code <= errorCodeAuthHigh) || native.MentionsAPIKey(desc) {
-		return fmt.Errorf("torznab: auth failed (code %s): %s: %w", e.Code, desc, login.ErrLoginFailed)
-	}
-	return fmt.Errorf("torznab: api error (code %s): %s: %w", e.Code, desc, search.ErrParseError)
 }
 
 // toRelease maps one <item> to a normalized torrent release, or nil when the item
@@ -352,24 +278,11 @@ func (d *driver) publishDate(value string) string {
 // (case-insensitive on name, namespace-matched on the attr element). A missing attr
 // yields "".
 func (it *item) attr(name string) string {
-	for i := range it.Attrs {
-		a := &it.Attrs[i]
-		if a.isTorznab() && strings.EqualFold(a.Name, name) {
-			return strings.TrimSpace(a.Value)
-		}
-	}
-	return ""
+	return native.AttrValue(it.Attrs, torznabAttrNS, name)
 }
 
 // attrInt returns the first torznab:attr with the given name parsed as int64 (0 when
 // absent or unparseable).
 func (it *item) attrInt(name string) int64 {
 	return native.ParseInt64(it.attr(name))
-}
-
-// isTorznab reports whether the attr element is in the torznab attribute namespace.
-// Some minimal feeds omit the namespace binding (XMLName.Space == ""); those are
-// accepted too, so a feed that only declares the default RSS namespace still parses.
-func (a *tzAttr) isTorznab() bool {
-	return a.XMLName.Space == torznabAttrNS || a.XMLName.Space == ""
 }

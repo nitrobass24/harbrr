@@ -24,7 +24,7 @@ const grabURL = "https://news.example.test/getnzb/abc123.nzb?r=" + testAPIKey
 func grabDriver(t *testing.T, doer search.Doer) *driver {
 	t.Helper()
 	d, err := New(native.Params{
-		Def:     GenericDefinition(),
+		Def:     genericDefinition(),
 		Cfg:     map[string]string{"apikey": testAPIKey},
 		Doer:    doer,
 		BaseURL: "https://news.example.test",
