@@ -94,27 +94,10 @@ func (s *Service) Resolve(ctx context.Context, ref Ref) (domain.App, error) {
 	case err == nil:
 		return s.reconcile(ctx, app, ref)
 	case errors.Is(err, database.ErrNotFound):
-		return s.createOrAdopt(ctx, ref)
+		return s.create(ctx, ref)
 	default:
 		return domain.App{}, fmt.Errorf("apps: resolve by identity: %w", err)
 	}
-}
-
-// createOrAdopt creates the app, or — on a concurrent create losing the unique race —
-// re-looks-up the winner and reconciles the caller's inline fields into it.
-func (s *Service) createOrAdopt(ctx context.Context, ref Ref) (domain.App, error) {
-	app, err := s.create(ctx, ref)
-	if err == nil {
-		return app, nil
-	}
-	if !errors.Is(err, domain.ErrConflict) {
-		return domain.App{}, err
-	}
-	existing, lookupErr := s.repo.GetAppByIdentity(ctx, s.db, ref.Kind, ref.BaseURL)
-	if lookupErr != nil {
-		return domain.App{}, fmt.Errorf("apps: re-lookup after concurrent create: %w", lookupErr)
-	}
-	return s.reconcile(ctx, existing, ref)
 }
 
 // create inserts a new App and seals its credential under the App's own id.

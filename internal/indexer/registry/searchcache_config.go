@@ -61,10 +61,6 @@ const (
 	keyCacheRefreshAhead  = "cache.refresh_ahead_pct"
 	keyCacheNegativeTTL   = "cache.negative_ttl"
 	keyCacheCleanup       = "cache.cleanup_interval"
-	// keyCacheDefsFingerprint is the LEGACY corpus-wide hash of the definition
-	// content (one hash for the whole corpus). It is only READ now, to drive the
-	// one-time upgrade in EnsureDefsFingerprints.
-	keyCacheDefsFingerprint = "cache.defs_fingerprint"
 	// keyCacheDefsFingerprints holds the last-seen PER-DEFINITION hashes as a JSON
 	// {id: hash} object — see EnsureDefsFingerprints.
 	keyCacheDefsFingerprints = "cache.defs_fingerprints"
@@ -253,8 +249,8 @@ func (c *SearchCache) LoadOverrides(ctx context.Context) error {
 // hashes, keyed by definition id (see internal/app/defsfingerprint.go) — against the
 // map stored under cache.defs_fingerprints, and expires the cached rows of ONLY the
 // instances backed by a definition that changed, appeared or disappeared
-// (autobrr/harbrr#388). Absent (a true first boot, and no legacy key either) just
-// stores fps: there is nothing to compare against, so nothing is expired.
+// (autobrr/harbrr#388). Absent (a true first boot) just stores fps: there is
+// nothing to compare against, so nothing is expired.
 // Serialized under cfgMu, like the other config paths, so a concurrent UpdateConfig
 // cannot interleave with the read-compare-expire-persist sequence.
 func (c *SearchCache) EnsureDefsFingerprints(ctx context.Context, fps map[string]string) error {
@@ -266,12 +262,9 @@ func (c *SearchCache) EnsureDefsFingerprints(ctx context.Context, fps map[string
 		return err
 	}
 	if found {
-		err = c.expireChangedDefs(ctx, prev, fps)
-	} else {
-		err = c.expireAllOnLegacyFingerprint(ctx)
-	}
-	if err != nil {
-		return err
+		if err := c.expireChangedDefs(ctx, prev, fps); err != nil {
+			return err
+		}
 	}
 
 	blob, err := json.Marshal(fps)
@@ -305,27 +298,6 @@ func (c *SearchCache) storedDefsFingerprints(ctx context.Context) (map[string]st
 		return nil, false, nil
 	}
 	return prev, true, nil
-}
-
-// expireAllOnLegacyFingerprint handles the first boot after the per-definition map
-// replaced the corpus-wide hash: the old single hash cannot be diffed per definition,
-// so the safe one-time answer is the full expire the corpus-wide check would have
-// done. Nothing to do when the legacy key is absent too (a true first boot).
-func (c *SearchCache) expireAllOnLegacyFingerprint(ctx context.Context) error {
-	legacy, found, err := database.AppSettings{}.Get(ctx, c.db, keyCacheDefsFingerprint)
-	if err != nil {
-		return fmt.Errorf("registry: read legacy defs fingerprint: %w", err)
-	}
-	if !found {
-		return nil
-	}
-	n, err := c.ExpireAll(ctx)
-	if err != nil {
-		return fmt.Errorf("registry: expire cache on defs fingerprint upgrade: %w", err)
-	}
-	c.log.Info().Int64("expired", n).Str("old_fingerprint", fingerprintPrefix(legacy)).
-		Msg("registry: upgrading to per-definition fingerprints; expired cached search results once")
-	return nil
 }
 
 // expireChangedDefs expires the cached rows of every instance backed by a definition

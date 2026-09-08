@@ -113,39 +113,6 @@ func TestEnsureDefsFingerprints_AddedAndRemovedDefs(t *testing.T) {
 	assertServes(t, sc, "otherdef-row", false, "a removed definition's instance must stop serving its cached rows")
 }
 
-// TestEnsureDefsFingerprints_LegacyStringUpgradesWithOneFullExpire proves the
-// upgrade path: a stored legacy corpus-wide fingerprint with no per-definition map
-// yet cannot be diffed, so it triggers exactly one full expire (all instances) and
-// then persists the map — and the NEXT boot with the same map expires nothing.
-func TestEnsureDefsFingerprints_LegacyStringUpgradesWithOneFullExpire(t *testing.T) {
-	t.Parallel()
-	sc, fakedefInst, otherdefInst := twoInstanceCache(t)
-	ctx := context.Background()
-	if err := (database.AppSettings{}).Set(ctx, sc.db, keyCacheDefsFingerprint, "legacy-corpus-hash", sc.clock()); err != nil {
-		t.Fatalf("seed legacy fingerprint: %v", err)
-	}
-	sc.storeBestEffort(ctx, cacheOp{instanceID: fakedefInst, q: search.Query{Keywords: "x"}, key: "fakedef-row"}, relSet("A"))
-	sc.storeBestEffort(ctx, cacheOp{instanceID: otherdefInst, q: search.Query{Keywords: "y"}, key: "otherdef-row"}, relSet("B"))
-
-	fps := map[string]string{"fakedef": fpA, "otherdef": fpA}
-	if err := sc.EnsureDefsFingerprints(ctx, fps); err != nil {
-		t.Fatalf("upgrade EnsureDefsFingerprints: %v", err)
-	}
-
-	assertServes(t, sc, "fakedef-row", false, "the legacy upgrade must expire every instance's rows once")
-	assertServes(t, sc, "otherdef-row", false, "the legacy upgrade must expire every instance's rows once")
-	if _, found, err := sc.store.FetchAny(ctx, sc.db, "fakedef-row"); err != nil || !found {
-		t.Errorf("expired row should still be readable via FetchAny (expire, not delete): found=%v err=%v", found, err)
-	}
-
-	// Second boot, same defs: the map is now stored, so nothing is expired again.
-	sc.storeBestEffort(ctx, cacheOp{instanceID: fakedefInst, q: search.Query{Keywords: "z"}, key: "after-upgrade"}, relSet("C"))
-	if err := sc.EnsureDefsFingerprints(ctx, fps); err != nil {
-		t.Fatalf("second EnsureDefsFingerprints: %v", err)
-	}
-	assertServes(t, sc, "after-upgrade", true, "the legacy upgrade must be one-time, not every boot")
-}
-
 // TestEnsureDefsFingerprints_UnreadableStoredMapRecovers proves a stored value
 // that is not a fingerprint map — hand-edited garbage, or a JSON "null" that
 // unmarshals cleanly into a NIL map — is logged and replaced rather than compared

@@ -46,9 +46,6 @@ func newBlackhole(c domain.DownloadClient, _ string, client *http.Client) (Drive
 	if c.Settings.Blackhole != nil {
 		settings = *c.Settings.Blackhole
 	}
-	if client == nil {
-		client = http.DefaultClient
-	}
 	return &blackholeDriver{settings: settings, client: client}, nil
 }
 

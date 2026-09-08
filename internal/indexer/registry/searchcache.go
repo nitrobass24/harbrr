@@ -470,7 +470,7 @@ func (c *SearchCache) runMiss(ctx context.Context, op cacheOp) ([]*normalizer.Re
 		}
 		return nil, err //nolint:wrapcheck // already wrapped by liveAndStore/adapter; no key/payload to add.
 	}
-	return c.resolveMissFlightResult(ctx, op, v)
+	return c.resolveMissFlightResult(ctx, v), nil
 }
 
 // missFlight returns the singleflight closure for one live-search attempt at key,
@@ -513,8 +513,7 @@ func (c *SearchCache) missFlight(ctx context.Context, op cacheOp) func() (any, e
 // time re-coalesces onto ONE retry leader, instead of each independently running its
 // own live search against the tracker (a follower stampede). If the retry ALSO
 // inherits a dead leader's context error — the retry leader died too — fall back to a
-// bounded, un-coalesced live search so a healthy follower is still guaranteed an
-// answer, mirroring the type-mismatch fallback below.
+// bounded, un-coalesced live search so a healthy follower is still guaranteed an answer.
 func (c *SearchCache) retryMissFlight(ctx context.Context, op cacheOp, flightKey string) ([]*normalizer.Release, error) {
 	v, err, _ := c.sf.Do(flightKey, c.missFlight(ctx, op))
 	if err != nil {
@@ -523,21 +522,16 @@ func (c *SearchCache) retryMissFlight(ctx context.Context, op cacheOp, flightKey
 		}
 		return nil, err //nolint:wrapcheck // already wrapped by liveAndStore/adapter; no key/payload to add.
 	}
-	return c.resolveMissFlightResult(ctx, op, v)
+	return c.resolveMissFlightResult(ctx, v), nil
 }
 
-// resolveMissFlightResult type-asserts a completed flight's value to missResult and
-// records its cache info per CALLER, outside the flight, so every coalesced miss
-// fills its own sink. A value of an unexpected type can only mean this caller
-// coalesced onto a flight that returned something else (defensive) — it never serves
-// an empty success on a type mismatch, it runs its own live search instead.
-func (c *SearchCache) resolveMissFlightResult(ctx context.Context, op cacheOp, v any) ([]*normalizer.Release, error) {
-	res, ok := v.(missResult)
-	if !ok {
-		return c.liveAndStoreRecording(ctx, op)
-	}
+// resolveMissFlightResult unwraps a completed flight's value — missFlight is the only
+// body ever run at a miss flight key, so it is always a missResult — and records its
+// cache info per CALLER, outside the flight, so every coalesced miss fills its own sink.
+func (c *SearchCache) resolveMissFlightResult(ctx context.Context, v any) []*normalizer.Release {
+	res := v.(missResult) //nolint:forcetypeassert // missFlight is the only body run at a miss flight key.
 	c.recordCacheInfo(ctx, res.info)
-	return res.releases, nil
+	return res.releases
 }
 
 // liveAndStore runs the live search and, on success, writes the result back

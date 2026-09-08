@@ -172,9 +172,8 @@ func (d *pacedDoer) Do(req *stdhttp.Request) (*stdhttp.Response, error) {
 		}
 	}
 
-	if lastRL == nil {
-		return nil, errors.New("registry: paced doer made no attempts") // only with attempts == 0
-	}
+	// The loop always runs (attempts is the maxRetryAttempts constant) and only leaves
+	// it via a 429/503, so lastRL is set here.
 	return nil, &search.RateLimitedError{StatusCode: lastRL.status, RetryAfter: lastRL.after}
 }
 

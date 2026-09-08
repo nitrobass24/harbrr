@@ -46,9 +46,6 @@ func newRotateKeyCmd() *cobra.Command {
 			}
 
 			ctx := cmd.Context()
-			if ctx == nil {
-				ctx = context.Background()
-			}
 			db, err := app.OpenDatabase(ctx, cfg)
 			if err != nil {
 				return fmt.Errorf("rotate-key: %w", err)

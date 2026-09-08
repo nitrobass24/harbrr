@@ -219,28 +219,15 @@ func TestServeGrab(t *testing.T) {
 		}
 	})
 
-	t.Run("falls back to the indexer for empty and legacy metadata", func(t *testing.T) {
+	t.Run("falls back to the indexer for empty metadata", func(t *testing.T) {
 		t.Parallel()
-		tests := []struct {
-			name  string
-			token string
-		}{
-			{name: "empty v2 metadata", token: tokenFor(t, "demo", "", "https://demo.test/x")},
-			{name: "category-link legacy payload", token: sealedDLTestPayload(t, kr, "demo", "2000;https://demo.test/x")},
-			{name: "bare-link legacy payload", token: sealedDLTestPayload(t, kr, "demo", "https://demo.test/x")},
+		idx := &fakeIndexer{info: core.IndexerInfo{ID: "demo"}, grabResult: &search.GrabResult{Body: []byte("d0:e"), ContentType: torrentContentType}}
+		rec := serve(t, idx, kr, tokenFor(t, "demo", "", "https://demo.test/x"))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
 		}
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				t.Parallel()
-				idx := &fakeIndexer{info: core.IndexerInfo{ID: "demo"}, grabResult: &search.GrabResult{Body: []byte("d0:e"), ContentType: torrentContentType}}
-				rec := serve(t, idx, kr, tt.token)
-				if rec.Code != http.StatusOK {
-					t.Fatalf("status = %d, want 200", rec.Code)
-				}
-				if got := rec.Header().Get("Content-Disposition"); got != `attachment; filename="demo.torrent"` {
-					t.Errorf("Content-Disposition = %q, want indexer fallback", got)
-				}
-			})
+		if got := rec.Header().Get("Content-Disposition"); got != `attachment; filename="demo.torrent"` {
+			t.Errorf("Content-Disposition = %q, want indexer fallback", got)
 		}
 	})
 
