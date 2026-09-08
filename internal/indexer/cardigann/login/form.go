@@ -214,13 +214,21 @@ func (e *Executor) resolveFormTarget(l *loader.Login, form *goquery.Selection, l
 		if err != nil {
 			return "", fmt.Errorf("rendering submitpath %q: %w", apphttp.SchemeHost(l.SubmitPath), err)
 		}
-		return resolveAgainst(landingURL, rendered)
+		resolved, rerr := httpx.Resolve(landingURL, rendered)
+		if rerr != nil {
+			return "", fmt.Errorf("resolving submitpath: %w", rerr)
+		}
+		return resolved, nil
 	}
 	action, _ := form.Attr("action")
 	if action == "" {
 		return landingURL, nil
 	}
-	return resolveAgainst(landingURL, action)
+	resolved, err := httpx.Resolve(landingURL, action)
+	if err != nil {
+		return "", fmt.Errorf("resolving form action: %w", err)
+	}
+	return resolved, nil
 }
 
 // postFormAbsolute POSTs an already-resolved absolute target, then runs the
@@ -304,17 +312,4 @@ func (e *Executor) seedStaticCookies(cookies []string) error {
 // isOptional reports whether a selector block is marked optional.
 func isOptional(b loader.SelectorBlock) bool {
 	return b.Optional != nil && *b.Optional
-}
-
-// resolveAgainst resolves a possibly-relative reference against an absolute base.
-func resolveAgainst(base, ref string) (string, error) {
-	b, err := url.Parse(base)
-	if err != nil {
-		return "", fmt.Errorf("parsing base %s: %w", apphttp.SchemeHost(base), apphttp.RedactURLError(err))
-	}
-	r, err := url.Parse(ref)
-	if err != nil {
-		return "", fmt.Errorf("parsing form action %s: %w", apphttp.SchemeHost(ref), apphttp.RedactURLError(err))
-	}
-	return b.ResolveReference(r).String(), nil
 }

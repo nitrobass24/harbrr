@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	stdhttp "net/http"
-	"net/url"
 	"strings"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
@@ -180,26 +179,18 @@ func (e *Executor) EnsureLoggedIn(ctx context.Context, def *loader.Definition) e
 	return e.Login(ctx, def)
 }
 
-// resolvePath resolves a (possibly relative) definition path against BaseURL,
-// mirroring Jackett's resolvePath. An absolute URL in the definition is returned
-// as-is. Errors reference the redacted path only.
+// resolvePath renders a definition path template and resolves it against
+// BaseURL. Errors reference the redacted path only.
 func (e *Executor) resolvePath(raw string) (string, error) {
 	rendered, err := template.Eval(raw, e.templateContext())
 	if err != nil {
 		return "", fmt.Errorf("rendering path %q: %w", apphttp.SchemeHost(raw), err)
 	}
-	ref, err := url.Parse(rendered)
+	resolved, err := httpx.Resolve(e.baseURL, rendered)
 	if err != nil {
-		return "", fmt.Errorf("parsing path %q: %w", apphttp.SchemeHost(rendered), apphttp.RedactURLError(err))
+		return "", fmt.Errorf("resolving login path: %w", err)
 	}
-	if ref.IsAbs() {
-		return ref.String(), nil
-	}
-	base, err := url.Parse(e.baseURL)
-	if err != nil {
-		return "", fmt.Errorf("parsing base URL %q: %w", apphttp.SchemeHost(e.baseURL), apphttp.RedactURLError(err))
-	}
-	return base.ResolveReference(ref).String(), nil
+	return resolved, nil
 }
 
 // get issues a GET, returning the (capped) body and final status. The shared

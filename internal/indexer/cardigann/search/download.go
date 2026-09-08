@@ -151,9 +151,9 @@ func fetchBefore(ctx context.Context, dl *loader.DownloadBlock, link string, du 
 	if err != nil {
 		return nil, fmt.Errorf("rendering download.before path: %w", err)
 	}
-	absURL, err := resolveURL(deps.BaseURL, rendered)
+	absURL, err := httpx.Resolve(deps.BaseURL, rendered)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resolving download.before path: %w", err)
 	}
 
 	pairs, err := renderInputs(before.Inputs, downloadContext(du, deps), true)
@@ -249,9 +249,9 @@ func resolveSelectors(ctx context.Context, def *loader.Definition, dl *loader.Do
 		if !found {
 			continue
 		}
-		resolved, err := resolveURL(link, href)
+		resolved, err := httpx.Resolve(link, href)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("resolving download selector target: %w", err)
 		}
 		ok, err := passesTorrentTest(ctx, def, resolved, headers, session, doer, validate)
 		if err != nil {

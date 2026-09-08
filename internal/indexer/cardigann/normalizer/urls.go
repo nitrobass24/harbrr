@@ -1,28 +1,18 @@
 package normalizer
 
-import "net/url"
+import "github.com/autobrr/harbrr/internal/indexer/cardigann/internal/httpx"
 
-// resolveURL reproduces Jackett's resolvePath: new Uri(base, path). An absolute
-// path returns unchanged; a relative path resolves against baseURL. When baseURL
-// is empty or unparseable the original value is returned (no base to resolve
-// against), which keeps already-absolute links intact.
+// resolveURL reproduces Jackett's resolvePath: new Uri(base, path). An empty
+// value stays empty. When there is nothing usable to resolve against — no base
+// URL, or a base/ref that will not parse — the original value is returned, which
+// keeps an already-absolute link intact.
 func resolveURL(baseURL, ref string) string {
 	if ref == "" {
 		return ref
 	}
-	refURL, err := url.Parse(ref)
+	resolved, err := httpx.Resolve(baseURL, ref)
 	if err != nil {
 		return ref
 	}
-	if refURL.IsAbs() {
-		return refURL.String()
-	}
-	if baseURL == "" {
-		return ref
-	}
-	base, err := url.Parse(baseURL)
-	if err != nil || !base.IsAbs() {
-		return ref
-	}
-	return base.ResolveReference(refURL).String()
+	return resolved
 }
