@@ -144,10 +144,12 @@ func mergeTags(base, extra []string) []string {
 	return out
 }
 
-// releaseFilename derives the upload filename for a bytes payload from the release
-// title. The title is untrusted tracker data and the download client names its job (and
-// possibly a file on disk) after it, so path separators and control characters are
-// dropped and an empty result falls back to a fixed name.
+// releaseFilename derives a payload's filename from the release title: the upload name
+// for the clients that take bytes (sabnzbd, nzbget) and the on-disk name blackhole
+// writes into a watch folder. The title is untrusted tracker data, so path separators
+// (POSIX and Windows), the other characters no mainstream filesystem accepts, and
+// control characters are all dropped, and an empty result falls back to a fixed name —
+// a name can never escape the directory it is joined with.
 func releaseFilename(name, ext string) string {
 	cleaned := strings.TrimSpace(strings.Map(func(r rune) rune {
 		if r < ' ' || strings.ContainsRune(`/\:*?"<>|`, r) {

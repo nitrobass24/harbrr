@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -46,11 +47,11 @@ func newDownloadStation(c domain.DownloadClient, secret string, client *http.Cli
 	}, nil
 }
 
-// dsAPIInfo is one entry of SYNO.API.Info's query response: the cgi path to call
-// an API at, and the version range it supports.
+// dsAPIInfo is one entry of SYNO.API.Info's query response: the cgi path to call an
+// API at, and the highest version it supports (the advertised minVersion is never
+// read — harbrr pins the version it sends off maxVersion alone).
 type dsAPIInfo struct {
 	Path       string `json:"path"`
-	MinVersion int    `json:"minVersion"`
 	MaxVersion int    `json:"maxVersion"`
 }
 
@@ -137,23 +138,43 @@ func (d *downloadStationDriver) authenticate(ctx context.Context) (dsSession, er
 	return dsSession{taskPath: task.Path, sid: sid}, nil
 }
 
+// call issues one Synology webapi request and decodes the JSON response into out. step
+// names the call in every error ("info", "login", "add"); body/contentType are nil/""
+// for the plain GETs. Every DS call shares this one request/decode cycle, so the
+// redaction cannot drift between them.
+//
+// Errors route through apphttp.RedactURLError rather than the shared JSONClient: DS
+// carries the session id, the destination directory and — on the type=url create — the
+// passkey-bearing release link in the request's QUERY STRING, and JSONClient formats
+// the request path verbatim into every error it emits. RedactURLError keeps
+// scheme://host and drops the rest.
+func (d *downloadStationDriver) call(ctx context.Context, method, u, step, contentType string, body io.Reader, out any) error {
+	req, err := http.NewRequestWithContext(ctx, method, u, body)
+	if err != nil {
+		return fmt.Errorf("download: download-station: build %s request: %w", step, apphttp.RedactURLError(err))
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	resp, err := d.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("download: download-station: %s: %w", step, apphttp.RedactURLError(err))
+	}
+	defer resp.Body.Close()
+
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("download: download-station: decode %s: %w", step, err)
+	}
+	return nil
+}
+
 // queryInfo asks SYNO.API.Info which cgi path and version range SYNO.API.Auth and
 // SYNO.DownloadStation2.Task are served at.
 func (d *downloadStationDriver) queryInfo(ctx context.Context) (map[string]dsAPIInfo, error) {
 	u := d.host + "/webapi/query.cgi?api=SYNO.API.Info&version=1&method=query&query=SYNO.API.Auth,SYNO.DownloadStation2.Task"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return nil, fmt.Errorf("download: download-station: build info request: %w", apphttp.RedactURLError(err))
-	}
-	resp, err := d.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("download: download-station: info: %w", apphttp.RedactURLError(err))
-	}
-	defer resp.Body.Close()
-
 	var out dsInfoResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, fmt.Errorf("download: download-station: decode info: %w", err)
+	if err := d.call(ctx, http.MethodGet, u, "info", "", nil, &out); err != nil {
+		return nil, err
 	}
 	if !out.Success {
 		return nil, errors.New("download: download-station: info query failed")
@@ -178,20 +199,11 @@ func (d *downloadStationDriver) login(ctx context.Context, authPath string, vers
 		"format":  {"sid"},
 	}
 	u := d.host + "/webapi/" + authPath
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, strings.NewReader(form.Encode()))
-	if err != nil {
-		return "", fmt.Errorf("download: download-station: build login request: %w", apphttp.RedactURLError(err))
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := d.client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("download: download-station: login: %w", apphttp.RedactURLError(err))
-	}
-	defer resp.Body.Close()
-
 	var out dsLoginResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return "", fmt.Errorf("download: download-station: decode login: %w", err)
+	err := d.call(ctx, http.MethodPost, u, "login", "application/x-www-form-urlencoded",
+		strings.NewReader(form.Encode()), &out)
+	if err != nil {
+		return "", err
 	}
 	if !out.Success || out.Data.SID == "" {
 		return "", errors.New("download: download-station: login failed")
@@ -213,11 +225,7 @@ func (d *downloadStationDriver) addURL(ctx context.Context, base, sid, destinati
 	if destination != "" {
 		q.Set("destination", destination)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"?"+q.Encode(), nil)
-	if err != nil {
-		return fmt.Errorf("download: download-station: build add request: %w", apphttp.RedactURLError(err))
-	}
-	return d.doCreate(req)
+	return d.create(ctx, http.MethodGet, base+"?"+q.Encode(), "", nil)
 }
 
 // addFile creates a task from fetched bytes, uploaded as multipart/form-data.
@@ -255,27 +263,16 @@ func (d *downloadStationDriver) addFile(ctx context.Context, base, sid, destinat
 	}
 
 	u := base + "?_sid=" + url.QueryEscape(sid)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, &body)
-	if err != nil {
-		return fmt.Errorf("download: download-station: build add request: %w", apphttp.RedactURLError(err))
-	}
-	req.Header.Set("Content-Type", mw.FormDataContentType())
-	return d.doCreate(req)
+	return d.create(ctx, http.MethodPost, u, mw.FormDataContentType(), &body)
 }
 
-// doCreate issues a create request and checks only success:true — DS's create
+// create issues a create request and checks only success:true — DS's create
 // response carries no task id worth reading (per #242, skip Prowlarr's
 // re-list/id-matching).
-func (d *downloadStationDriver) doCreate(req *http.Request) error {
-	resp, err := d.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("download: download-station: add: %w", apphttp.RedactURLError(err))
-	}
-	defer resp.Body.Close()
-
+func (d *downloadStationDriver) create(ctx context.Context, method, u, contentType string, body io.Reader) error {
 	var out dsGenericResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return fmt.Errorf("download: download-station: decode add response: %w", err)
+	if err := d.call(ctx, method, u, "add", contentType, body, &out); err != nil {
+		return err
 	}
 	if !out.Success {
 		return errors.New("download: download-station: add: task creation failed")

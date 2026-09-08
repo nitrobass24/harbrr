@@ -241,7 +241,7 @@ func TestBlackholeAdd_ReAddOverwritesNoResidue(t *testing.T) {
 
 func TestBlackholeAdd_SanitizesName(t *testing.T) {
 	t.Parallel()
-	longName := strings.Repeat("x", maxSanitizedNameLen+50)
+	longName := strings.Repeat("x", maxReleaseFilenameRunes+50)
 	tests := []struct {
 		name string
 		in   string
@@ -265,7 +265,7 @@ func TestBlackholeAdd_SanitizesName(t *testing.T) {
 			if strings.ContainsAny(names[0], `/\`) {
 				t.Errorf("filename %q retains a path separator", names[0])
 			}
-			if len(names[0]) > maxSanitizedNameLen+len(".torrent") {
+			if len(names[0]) > maxReleaseFilenameRunes+len(".torrent") {
 				t.Errorf("filename %q exceeds the length bound", names[0])
 			}
 		})
