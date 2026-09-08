@@ -97,7 +97,7 @@ type Case struct {
 	// Config is the resolved .Config template namespace (tracker settings).
 	Config map[string]string `yaml:"config"`
 	// Query is the search request the engine is driven with.
-	Query CaseQuery `yaml:"query"`
+	Query cardigann.Query `yaml:"query"`
 
 	// Response is the saved body file for parse mode.
 	Response string `yaml:"response"`
@@ -151,53 +151,6 @@ type CaseStep struct {
 	ExpectHeader map[string]string `yaml:"expect_header"`
 	// Note documents the step's role (e.g. "login probe"); harness-ignored.
 	Note string `yaml:"note"`
-}
-
-// CaseQuery is the subset of the engine Query a case can set, with explicit yaml
-// keys so the spec is self-documenting (the engine Query has no yaml tags).
-type CaseQuery struct {
-	Keywords   string   `yaml:"keywords"`
-	Categories []string `yaml:"categories"`
-	IMDBID     string   `yaml:"imdbid"`
-	TMDBID     string   `yaml:"tmdbid"`
-	TVDBID     string   `yaml:"tvdbid"`
-	TVMazeID   string   `yaml:"tvmazeid"`
-	TraktID    string   `yaml:"traktid"`
-	DoubanID   string   `yaml:"doubanid"`
-	RageID     string   `yaml:"rageid"`
-	Season     string   `yaml:"season"`
-	Ep         string   `yaml:"ep"`
-	Year       string   `yaml:"year"`
-	Artist     string   `yaml:"artist"`
-	Album      string   `yaml:"album"`
-	Label      string   `yaml:"label"`
-	Track      string   `yaml:"track"`
-	Author     string   `yaml:"author"`
-	BookTitle  string   `yaml:"booktitle"`
-}
-
-// toEngine converts the case query into the engine Query.
-func (q CaseQuery) toEngine() cardigann.Query {
-	return cardigann.Query{
-		Keywords:   q.Keywords,
-		Categories: q.Categories,
-		IMDBID:     q.IMDBID,
-		TMDBID:     q.TMDBID,
-		TVDBID:     q.TVDBID,
-		TVMazeID:   q.TVMazeID,
-		TraktID:    q.TraktID,
-		DoubanID:   q.DoubanID,
-		RageID:     q.RageID,
-		Season:     q.Season,
-		Ep:         q.Ep,
-		Year:       q.Year,
-		Artist:     q.Artist,
-		Album:      q.Album,
-		Label:      q.Label,
-		Track:      q.Track,
-		Author:     q.Author,
-		BookTitle:  q.BookTitle,
-	}
 }
 
 // Load reads and validates case.yml from dir. Unknown keys are rejected so a
@@ -315,7 +268,7 @@ func (c *Case) runSearch(dir string, def *loader.Definition, opts []cardigann.Op
 	if err != nil {
 		return nil, fmt.Errorf("building engine: %w", err)
 	}
-	releases, searchErr := eng.Search(context.Background(), c.Query.toEngine())
+	releases, searchErr := eng.Search(context.Background(), c.Query)
 	if searchErr != nil {
 		// A replay fault is the precise cause; prefer its (redacted) reason.
 		if replayErr := rep.done(); replayErr != nil {
@@ -365,7 +318,7 @@ func (c *Case) runParse(dir string, def *loader.Definition, opts []cardigann.Opt
 	if err != nil {
 		return nil, fmt.Errorf("reading response body: %w", err)
 	}
-	releases, err := eng.ParseResponseQuery(body, c.ResponseType, c.Query.toEngine())
+	releases, err := eng.ParseResponseQuery(body, c.ResponseType, c.Query)
 	if err != nil {
 		return nil, fmt.Errorf("parse mode: %w", err)
 	}
