@@ -10,36 +10,12 @@ import { useSyncExternalStore } from "react"
  */
 export function useMediaQuery(query: string): boolean {
   const subscribe = (callback: () => void) => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-      return () => {}
-    }
-
     const mediaQuery = window.matchMedia(query)
-
-    if (typeof mediaQuery.addEventListener === "function") {
-      mediaQuery.addEventListener("change", callback)
-      return () => mediaQuery.removeEventListener("change", callback)
-    }
-
-    // Legacy fallback
-    const legacyQuery = mediaQuery as MediaQueryList & {
-      addListener?: (listener: () => void) => void
-      removeListener?: (listener: () => void) => void
-    }
-    legacyQuery.addListener?.(callback)
-    return () => legacyQuery.removeListener?.(callback)
+    mediaQuery.addEventListener("change", callback)
+    return () => mediaQuery.removeEventListener("change", callback)
   }
 
-  const getSnapshot = () => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-      return false
-    }
-    return window.matchMedia(query).matches
-  }
-
-  const getServerSnapshot = () => false
-
-  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
+  return useSyncExternalStore(subscribe, () => window.matchMedia(query).matches)
 }
 
 /**

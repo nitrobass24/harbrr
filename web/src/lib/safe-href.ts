@@ -9,27 +9,17 @@
 export function isSafeHref(value: string | null | undefined, allowedSchemes: string[]): boolean {
   if (!value) return false
 
-  // Browsers strip embedded tab/newline/CR characters anywhere in the URL, and
-  // leading/trailing C0 controls and spaces, before parsing the scheme — so
-  // "java\tscript:alert(1)" and " javascript:alert(1)" both resolve to the
-  // "javascript" scheme even though a naive `startsWith` check would miss them.
-  const withoutTabsNewlines = value.replace(/[\t\n\r]/g, "")
-  let start = 0
-  let end = withoutTabsNewlines.length
-  while (start < end && withoutTabsNewlines.charCodeAt(start) <= 0x20) start++
-  while (end > start && withoutTabsNewlines.charCodeAt(end - 1) <= 0x20) end--
-  const forParsing = withoutTabsNewlines.slice(start, end)
-
-  let scheme: string
   try {
     // The WHATWG URL parser lowercases the scheme and handles opaque schemes
     // (e.g. "magnet:", "javascript:") as well as hierarchical ones (http/https).
+    // It also does its own input cleanup first — embedded tab/newline/CR anywhere
+    // in the URL and leading/trailing C0 controls and spaces are stripped before
+    // the scheme is read — so "java\tscript:alert(1)" and " javascript:alert(1)"
+    // both resolve to the "javascript" scheme a naive `startsWith` would miss.
     // `.protocol` includes the trailing colon (e.g. "http:"), matching the
     // allowedSchemes callers pass in ("http:", "https:", "magnet:").
-    scheme = new URL(forParsing).protocol.toLowerCase()
+    return allowedSchemes.includes(new URL(value).protocol)
   } catch {
     return false
   }
-
-  return allowedSchemes.includes(scheme)
 }

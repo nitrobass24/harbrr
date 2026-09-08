@@ -17,7 +17,7 @@ import (
 
 func newBlackholeDriver(t *testing.T, s domain.BlackholeSettings) *blackholeDriver {
 	t.Helper()
-	drv, err := newBlackhole(domain.DownloadClient{Settings: domain.DownloadClientSettings{Blackhole: &s}}, "", nil)
+	drv, err := newBlackhole(domain.DownloadClient{Settings: domain.DownloadClientSettings{Blackhole: &s}}, "", http.DefaultClient)
 	if err != nil {
 		t.Fatalf("newBlackhole: %v", err)
 	}

@@ -2,7 +2,6 @@ package animebytes
 
 import (
 	"context"
-	"errors"
 	stdhttp "net/http"
 
 	"github.com/autobrr/harbrr/internal/indexer/native"
@@ -16,9 +15,6 @@ import (
 // accept sets the Accept header — "application/json" for a scrape.php query, empty for a
 // .torrent download so JSON is not forced on binary bytes.
 func (d *driver) get(ctx context.Context, rawurl, accept string, download bool) (*native.Response, error) {
-	if d.Doer == nil {
-		return nil, errors.New("animebytes: nil request doer")
-	}
 	req, err := d.NewRequest(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
 		return nil, err

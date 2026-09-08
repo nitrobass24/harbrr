@@ -70,10 +70,7 @@ func newDoer(p ClientParams) (search.Doer, error) {
 // fails loud. Error messages never include proxy_url (it may embed credentials).
 // SOCKS4 is not yet supported (x/net/proxy has no socks4 dialer) — it fails loud.
 func buildTransport(cfg map[string]string) (*http.Transport, error) {
-	def, ok := http.DefaultTransport.(*http.Transport)
-	if !ok {
-		return nil, errors.New("registry: default transport is not *http.Transport")
-	}
+	def := http.DefaultTransport.(*http.Transport) //nolint:forcetypeassert // http.DefaultTransport is always *http.Transport.
 	transport := def.Clone()
 	transport.ResponseHeaderTimeout = responseHeaderTimeout
 
@@ -98,10 +95,7 @@ func buildTransport(cfg map[string]string) (*http.Transport, error) {
 		if derr != nil {
 			return nil, errors.New("registry: invalid socks5 proxy_url")
 		}
-		cd, ok := dialer.(proxy.ContextDialer)
-		if !ok {
-			return nil, errors.New("registry: socks5 proxy dialer has no DialContext")
-		}
+		cd := dialer.(proxy.ContextDialer) //nolint:forcetypeassert // x/net/proxy's socks5 dialer always implements ContextDialer.
 		transport.DialContext = cd.DialContext
 		// The cloned default transport carries Proxy=ProxyFromEnvironment; clear it
 		// so a stray HTTP(S)_PROXY env var can't layer an HTTP proxy over SOCKS5.

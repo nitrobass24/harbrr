@@ -260,20 +260,6 @@ func TestSearchAuthErrorEnvelope(t *testing.T) {
 	}
 }
 
-// TestGetNilDoerReturnsError proves get() returns a normal error (not a panic) when the
-// driver was constructed without a request doer (as the builder tests do).
-func TestGetNilDoerReturnsError(t *testing.T) {
-	t.Parallel()
-	d := builderDriver(nil) // doer is nil
-	_, err := d.Search(context.Background(), search.Query{Keywords: "x"})
-	if err == nil {
-		t.Fatal("Search with nil doer: want error, got nil")
-	}
-	if !strings.Contains(err.Error(), "nil request doer") {
-		t.Errorf("err = %v, want it to mention nil request doer", err)
-	}
-}
-
 // TestSearchTransportErrorRedactsPasskey proves the transport-error wrap at get()'s Do
 // site is rebuilt host-only. http.Client.Do returns a *url.Error that stringifies the
 // full request URL; the wrapped error must surface only scheme://host — dropping both the
