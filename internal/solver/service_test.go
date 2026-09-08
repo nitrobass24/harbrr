@@ -184,8 +184,8 @@ func TestUpdateRotatesURL(t *testing.T) {
 
 // TestValidateSkipsOmittedMaxTimeout proves the bound check is gated on the field
 // being present: a nil maxTimeout (an update patch that omits it) leaves the stored
-// value untouched — so an unrelated edit, or an over-cap value imported by
-// resourcemigrate (which bypasses validate), doesn't block the update — while a
+// value untouched — so an unrelated edit, or an over-cap value imported by a
+// path that bypasses validate (backup restore), doesn't block the update — while a
 // supplied over-cap value is still rejected.
 func TestValidateSkipsOmittedMaxTimeout(t *testing.T) {
 	t.Parallel()

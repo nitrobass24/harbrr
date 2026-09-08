@@ -34,7 +34,6 @@ import (
 	"github.com/autobrr/harbrr/internal/logger"
 	"github.com/autobrr/harbrr/internal/notify"
 	"github.com/autobrr/harbrr/internal/proxy"
-	"github.com/autobrr/harbrr/internal/resourcemigrate"
 	"github.com/autobrr/harbrr/internal/secrets"
 	"github.com/autobrr/harbrr/internal/server"
 	"github.com/autobrr/harbrr/internal/solver"
@@ -181,8 +180,7 @@ func keyringOptions(cfg *config.Config) secrets.KeyringOptions {
 	}
 }
 
-// initSecrets opens the keyring, verifies (or writes) the startup canary, and
-// folds any legacy inline proxy/FlareSolverr settings into global resources.
+// initSecrets opens the keyring and verifies (or writes) the startup canary.
 func (a *App) initSecrets(ctx context.Context) error {
 	keyring, err := secrets.OpenKeyring(keyringOptions(a.cfg), a.log)
 	if err != nil {
@@ -191,22 +189,8 @@ func (a *App) initSecrets(ctx context.Context) error {
 	if err := verifyCanary(ctx, a.db, keyring); err != nil {
 		return err
 	}
-	migrateResources(ctx, a.db, keyring, a.log)
 	a.keyring = keyring
 	return nil
-}
-
-// migrateResources runs the one-time fold of legacy inline proxy/FlareSolverr
-// settings into global resources. Non-fatal: the engine keeps the inline settings
-// as a fallback, so a failure leaves every indexer working and retries next boot.
-// (The App-identity fold, resourcemigrate.FoldApps, was removed in #269 once
-// migration 0021's guard made it a permanent no-op — see that migration's comment.
-// The proxy-URL-split backfill, resourcemigrate.SplitProxyURLs, was removed in #294
-// for the same reason, once migration 0022's guard made it a permanent no-op.)
-func migrateResources(ctx context.Context, db *database.DB, keyring *secrets.Keyring, log zerolog.Logger) {
-	if err := resourcemigrate.Run(ctx, db, keyring, time.Now, log); err != nil {
-		log.Warn().Err(err).Msg("migrating inline proxy/FlareSolverr settings failed; inline settings remain in effect, will retry next boot")
-	}
 }
 
 // verifyCanary writes the secrets canary on first run, or verifies it on later
