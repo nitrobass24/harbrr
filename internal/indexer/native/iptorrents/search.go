@@ -38,7 +38,7 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 // term, a keyword query carries no imdb). See the testdata README divergence note.
 func (d *driver) buildSearchURL(q search.Query) string {
 	params := url.Values{}
-	for _, cat := range distinct(q.Categories) {
+	for _, cat := range q.Categories {
 		params.Set(cat, "")
 	}
 	if freeleechOnly(d.Cfg) {
@@ -80,21 +80,6 @@ func (d *driver) searchTerm(q search.Query) string {
 
 // sphinx wraps a term in IPTorrents' Sphinx boolean grouping `+(term)`.
 func sphinx(term string) string { return "+(" + term + ")" }
-
-// distinct returns the input with duplicate tracker categories removed, preserving
-// order (Prowlarr's MapTorznabCapsToTrackers(...).Distinct()).
-func distinct(cats []string) []string {
-	seen := make(map[string]struct{}, len(cats))
-	out := make([]string, 0, len(cats))
-	for _, c := range cats {
-		if _, dup := seen[c]; dup {
-			continue
-		}
-		seen[c] = struct{}{}
-		out = append(out, c)
-	}
-	return out
-}
 
 // freeleechOnly reports whether the freeleech_only checkbox is enabled.
 func freeleechOnly(cfg map[string]string) bool {

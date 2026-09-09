@@ -42,7 +42,7 @@ func (d *driver) buildSearchURL(q search.Query) string {
 	if kw := newsnabifyTitle(q.Keywords); kw != "" {
 		params.Set("q", kw)
 	}
-	if cat := joinCategories(q.Categories); cat != "" {
+	if cat := strings.Join(q.Categories, ","); cat != "" {
 		params.Set("cat", cat)
 	}
 	// Forward the requested page window upstream. offset is emitted ONLY when > 0, so a
@@ -168,25 +168,6 @@ func normalizeMode(mode string) string {
 // which emits "+" on the wire — the x-www-form-urlencoded space form, not "%20".
 func newsnabifyTitle(raw string) string {
 	return strings.ReplaceAll(strings.TrimSpace(raw), "+", " ")
-}
-
-// joinCategories comma-joins the resolved tracker category ids, de-duplicated and order-
-// preserving (cat=2000,2010). Blank entries are dropped.
-func joinCategories(cats []string) string {
-	seen := make(map[string]struct{}, len(cats))
-	out := make([]string, 0, len(cats))
-	for _, c := range cats {
-		c = strings.TrimSpace(c)
-		if c == "" {
-			continue
-		}
-		if _, dup := seen[c]; dup {
-			continue
-		}
-		seen[c] = struct{}{}
-		out = append(out, c)
-	}
-	return strings.Join(out, ",")
 }
 
 // imdbDigits renders an imdb id as the digits Newznab expects, exactly as supplied

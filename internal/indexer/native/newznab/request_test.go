@@ -66,8 +66,8 @@ func TestBuildSearchURLModes(t *testing.T) {
 			wantQuery: map[string]string{"q": "the matrix reloaded"},
 		},
 		{
-			name:      "categories comma-joined dedup",
-			query:     search.Query{Categories: []string{"2000", "2010", "2000"}},
+			name:      "categories comma-joined",
+			query:     search.Query{Categories: []string{"2000", "2010"}},
 			wantT:     "search",
 			wantQuery: map[string]string{"cat": "2000,2010"},
 		},

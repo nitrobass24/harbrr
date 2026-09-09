@@ -221,15 +221,6 @@ func TestSearchTransportErrorHostOnly(t *testing.T) {
 	assertNoSecret(t, msg)
 }
 
-func TestDistinctNonEmpty(t *testing.T) {
-	t.Parallel()
-	got := distinctNonEmpty([]string{"13", "", "14", "13", " 15 "})
-	want := []string{"13", "14", "15"}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("distinctNonEmpty = %v, want %v", got, want)
-	}
-}
-
 func TestBoolSetting(t *testing.T) {
 	t.Parallel()
 	if !boolSetting("True") {

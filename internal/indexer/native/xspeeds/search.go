@@ -56,22 +56,13 @@ func (d *driver) newBrowseRequest(ctx context.Context, query search.Query) (*std
 	return request, nil
 }
 
+// singleCategory is Prowlarr's FirstIfSingleOrDefault("0"): XSpeeds' browse takes one
+// category, so a single requested tracker id passes through and anything else (none, or
+// a mix) browses all. q.Categories is already the distinct, non-blank tracker-id mapping
+// (mapper.MapTorznabCapsToTrackers).
 func singleCategory(categories []string) string {
-	seen := make(map[string]struct{}, len(categories))
-	var distinct []string
-	for _, category := range categories {
-		category = strings.TrimSpace(category)
-		if category == "" {
-			continue
-		}
-		if _, exists := seen[category]; exists {
-			continue
-		}
-		seen[category] = struct{}{}
-		distinct = append(distinct, category)
-	}
-	if len(distinct) == 1 {
-		return distinct[0]
+	if len(categories) == 1 {
+		return categories[0]
 	}
 	return "0"
 }

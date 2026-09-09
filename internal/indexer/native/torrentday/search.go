@@ -49,7 +49,7 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 // encoding is positional ';'-joined tokens, which url.Values cannot express.
 func (d *driver) buildSearchURL(q search.Query) string {
 	tokens := make([]string, 0, len(q.Categories)+2)
-	tokens = append(tokens, distinct(q.Categories)...)
+	tokens = append(tokens, q.Categories...)
 	if freeleechOnly(d.Cfg) {
 		tokens = append(tokens, freeleechToken)
 	}
@@ -72,19 +72,4 @@ func (d *driver) searchTerm(q search.Query) string {
 	}
 	term := strings.TrimSpace(keyword + " " + q.EpisodeSearchString())
 	return strings.TrimSpace(term)
-}
-
-// distinct returns the input with duplicate tracker categories removed, preserving
-// order (Prowlarr's MapTorznabCapsToTrackers(...).Distinct()).
-func distinct(cats []string) []string {
-	seen := make(map[string]struct{}, len(cats))
-	out := make([]string, 0, len(cats))
-	for _, c := range cats {
-		if _, dup := seen[c]; dup {
-			continue
-		}
-		seen[c] = struct{}{}
-		out = append(out, c)
-	}
-	return out
 }

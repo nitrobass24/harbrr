@@ -37,8 +37,8 @@ func TestBuildSearchURL(t *testing.T) {
 			wantQuery: url.Values{"72": {""}, "q": {"+(dune)"}},
 		},
 		{
-			name:      "multiple categories deduplicated",
-			query:     search.Query{Categories: []string{"72", "73", "72"}, Keywords: "foo"},
+			name:      "multiple categories, order preserved",
+			query:     search.Query{Categories: []string{"72", "73"}, Keywords: "foo"},
 			wantQuery: url.Values{"72": {""}, "73": {""}, "q": {"+(foo)"}},
 		},
 		{

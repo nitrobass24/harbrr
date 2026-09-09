@@ -125,22 +125,12 @@ func (d *driver) classify(q search.Query, typ string) searchKind {
 }
 
 // derivedType reproduces Prowlarr's categoryMapping.FirstIfSingleOrDefault("0"): the
-// single distinct tracker category id when exactly one was requested, else "0" (no
-// category, or a mix the API cannot express as a single type). q.Categories is already
-// the distinct tracker-id mapping (registry buildQuery), so this only collapses it to
-// a single value or the default.
+// single tracker category id when exactly one was requested, else "0" (no category, or
+// a mix the API cannot express as a single type). q.Categories is already the distinct,
+// non-blank tracker-id mapping (mapper.MapTorznabCapsToTrackers).
 func derivedType(cats []string) string {
-	seen := make(map[string]struct{}, len(cats))
-	distinct := make([]string, 0, len(cats))
-	for _, c := range cats {
-		if _, dup := seen[c]; dup {
-			continue
-		}
-		seen[c] = struct{}{}
-		distinct = append(distinct, c)
-	}
-	if len(distinct) == 1 {
-		return distinct[0]
+	if len(cats) == 1 {
+		return cats[0]
 	}
 	return "0"
 }

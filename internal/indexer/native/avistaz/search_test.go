@@ -298,7 +298,6 @@ func TestDerivedType(t *testing.T) {
 	}{
 		{nil, "0"},
 		{[]string{"1"}, "1"},
-		{[]string{"2", "2"}, "2"},
 		{[]string{"1", "2"}, "0"},
 	}
 	for _, tc := range cases {

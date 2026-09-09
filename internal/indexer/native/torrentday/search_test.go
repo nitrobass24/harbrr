@@ -41,8 +41,8 @@ func TestBuildSearchURL(t *testing.T) {
 			want:  base + "t.json?29;q=dune",
 		},
 		{
-			name:  "multiple categories deduplicated, order preserved",
-			query: search.Query{Categories: []string{"29", "28", "29"}, Keywords: "foo"},
+			name:  "multiple categories, order preserved",
+			query: search.Query{Categories: []string{"29", "28"}, Keywords: "foo"},
 			want:  base + "t.json?29;28;q=foo",
 		},
 		{

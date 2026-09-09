@@ -85,32 +85,13 @@ func (d *driver) addSearchIn(params url.Values) {
 // addCategories sets the tor[cat][n] params for each requested tracker category, or
 // tor[cat][]="0" (all) when none was requested, matching Prowlarr.
 func addCategories(params url.Values, cats []string) {
-	distinct := distinctNonEmpty(cats)
-	if len(distinct) == 0 {
+	if len(cats) == 0 {
 		params.Set("tor[cat][]", "0")
 		return
 	}
-	for i, c := range distinct {
+	for i, c := range cats {
 		params.Set("tor[cat]["+strconv.Itoa(i)+"]", c)
 	}
-}
-
-// distinctNonEmpty returns the distinct, non-blank category ids preserving order.
-func distinctNonEmpty(cats []string) []string {
-	seen := make(map[string]struct{}, len(cats))
-	out := make([]string, 0, len(cats))
-	for _, c := range cats {
-		c = strings.TrimSpace(c)
-		if c == "" {
-			continue
-		}
-		if _, dup := seen[c]; dup {
-			continue
-		}
-		seen[c] = struct{}{}
-		out = append(out, c)
-	}
-	return out
 }
 
 // boolSetting reports whether a checkbox setting is enabled.

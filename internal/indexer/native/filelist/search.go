@@ -87,33 +87,12 @@ func (d *driver) addCommonParams(params url.Values, q search.Query) {
 	if params.Get("action") == "" {
 		params.Set("action", "latest-torrents")
 	}
-	if cats := distinctCategories(q.Categories); cats != "" {
+	if cats := strings.Join(q.Categories, ","); cats != "" {
 		params.Set("category", cats)
 	}
 	if freeleechOnly(d.Cfg) {
 		params.Set("freeleech", "1")
 	}
-}
-
-// distinctCategories joins the resolved tracker category ids into the comma-separated
-// list Prowlarr sends (string.Join(",", …Distinct())). q.Categories is already the
-// tracker-id mapping (registry buildQuery); this only de-duplicates while preserving
-// order.
-func distinctCategories(cats []string) string {
-	seen := make(map[string]struct{}, len(cats))
-	distinct := make([]string, 0, len(cats))
-	for _, c := range cats {
-		c = strings.TrimSpace(c)
-		if c == "" {
-			continue
-		}
-		if _, dup := seen[c]; dup {
-			continue
-		}
-		seen[c] = struct{}{}
-		distinct = append(distinct, c)
-	}
-	return strings.Join(distinct, ",")
 }
 
 // sanitizeSearchTerm reproduces SearchCriteriaBase.SanitizedSearchTerm: collapse any

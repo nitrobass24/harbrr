@@ -126,8 +126,8 @@ func TestBuildSearchURL(t *testing.T) {
 			want:  url.Values{"action": {"search-torrents"}, "type": {"imdb"}, "query": {"tt0944947"}, "season": {"1"}, "episode": {"2"}},
 		},
 		{
-			name:  "multiple categories -> csv, deduped",
-			query: search.Query{Keywords: "foo", Categories: []string{"4", "21", "4"}},
+			name:  "multiple categories -> csv",
+			query: search.Query{Keywords: "foo", Categories: []string{"4", "21"}},
 			want:  url.Values{"action": {"search-torrents"}, "type": {"name"}, "query": {"foo"}, "category": {"4,21"}},
 		},
 		{

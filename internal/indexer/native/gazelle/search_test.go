@@ -108,8 +108,8 @@ func TestBuildBrowseURL(t *testing.T) {
 			want:  "action=browse&order_by=time&order_way=desc&filter_cat%5B1%5D=1",
 		},
 		{
-			name:  "multiple categories deduped in order",
-			query: search.Query{Categories: []string{"1", "4", "1"}},
+			name:  "multiple categories in order",
+			query: search.Query{Categories: []string{"1", "4"}},
 			want:  "action=browse&order_by=time&order_way=desc&filter_cat%5B1%5D=1&filter_cat%5B4%5D=1",
 		},
 		{
