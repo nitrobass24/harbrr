@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -141,12 +142,19 @@ func APIErrorFromAttrs(attrs []xml.Attr) *APIError {
 	return e
 }
 
+// MentionsAny reports whether msg contains any of phrases, case-insensitively. It is the
+// shape every family's "does this error text name a rejected credential?" check shares;
+// the phrase list stays with the driver, because the words a tracker's error uses are the
+// family's own.
+func MentionsAny(msg string, phrases ...string) bool {
+	lower := strings.ToLower(msg)
+	return slices.ContainsFunc(phrases, func(p string) bool { return strings.Contains(lower, p) })
+}
+
 // MentionsAPIKey reports whether the error description references a missing/incorrect
 // apikey, which Prowlarr promotes to an auth failure (e.g. code 200 "Missing parameter:
 // apikey").
-func MentionsAPIKey(desc string) bool {
-	return strings.Contains(strings.ToLower(desc), "apikey")
-}
+func MentionsAPIKey(desc string) bool { return MentionsAny(desc, "apikey") }
 
 // ParseInt64 parses s as a base-10 int64, returning 0 on blank/unparseable input.
 func ParseInt64(s string) int64 {

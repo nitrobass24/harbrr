@@ -141,23 +141,3 @@ func TestCleanTitle(t *testing.T) {
 		}
 	}
 }
-
-func TestParseSizeBytes(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		in   string
-		want int64
-	}{
-		{"8.5 GB", 9126805504},
-		{"1.2 GB", 1288490240},
-		{"500 MB", 524288000},
-		{"1,018.29 MB", 1067754432},
-		{"700 KB", 716800},
-		{"-", 0},
-	}
-	for _, tc := range cases {
-		if got := parseSizeBytes(tc.in); got != tc.want {
-			t.Errorf("parseSizeBytes(%q) = %d, want %d", tc.in, got, tc.want)
-		}
-	}
-}

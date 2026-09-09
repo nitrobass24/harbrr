@@ -14,7 +14,9 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
-const customCategoryOffset = 100000
+// authFailurePhrases are the words a Nebulance error message uses for a rejected
+// credential, so such a failure surfaces as a login error rather than a parse error.
+var authFailurePhrases = []string{"api key", "apikey", "credential", "unauthorized", "authentication", "invalid key"}
 
 type apiResponse struct {
 	CurrentPage  int64     `json:"current_page"`
@@ -59,7 +61,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 		if isBareAuthError(body) {
 			return nil, fmt.Errorf("nebulance: invalid API key: %w", login.ErrLoginFailed)
 		}
-		if containsFold(body, "api is down") {
+		if native.MentionsAny(string(body), "api is down") {
 			return nil, fmt.Errorf("nebulance: API is unavailable: %w", search.ErrParseError)
 		}
 		return nil, fmt.Errorf("nebulance: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
@@ -89,20 +91,10 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 
 func (d *driver) apiError(message string) error {
 	message = d.Scrub(strings.TrimSpace(message))
-	if looksLikeAuthError(message) {
+	if native.MentionsAny(message, authFailurePhrases...) {
 		return fmt.Errorf("nebulance: API error: %s: %w", message, login.ErrLoginFailed)
 	}
 	return fmt.Errorf("nebulance: API error: %s: %w", message, search.ErrParseError)
-}
-
-func looksLikeAuthError(message string) bool {
-	lower := strings.ToLower(message)
-	for _, marker := range []string{"api key", "apikey", "credential", "unauthorized", "authentication"} {
-		if strings.Contains(lower, marker) {
-			return true
-		}
-	}
-	return strings.Contains(lower, "invalid key")
 }
 
 func (d *driver) toRelease(row *apiRow) (*normalizer.Release, error) {
@@ -136,16 +128,13 @@ func (d *driver) toRelease(row *apiRow) (*normalizer.Release, error) {
 		DownloadVolumeFactor: 0,
 		UploadVolumeFactor:   1,
 		IMDBID:               native.CanonicalIMDBID(row.IMDBID),
-		TVMazeID:             positiveInt64(row.TVMazeID),
+		TVMazeID:             max(row.TVMazeID, 0),
 	}, nil
 }
 
 func (d *driver) categories(title string) []int {
-	trackerCategory := qualityCategory(title)
-	for _, category := range d.Caps.CategoryMap.MapTrackerCatToNewznab(trackerCategory) {
-		if category < customCategoryOffset {
-			return []int{category}
-		}
+	if cats := native.FirstStandardCat(d.Caps.CategoryMap.MapTrackerCatToNewznab(qualityCategory(title))); cats != nil {
+		return cats
 	}
 	return []int{5000}
 }
@@ -211,20 +200,9 @@ func resolutionCategory(title string, include576p bool) string {
 	}
 }
 
-func positiveInt64(value int64) int64 {
-	if value > 0 {
-		return value
-	}
-	return 0
-}
-
 // isBareAuthError recognizes only NBL's complete plain-text authentication
 // responses, preventing matching marker text inside malformed HTML or help pages.
 func isBareAuthError(body []byte) bool {
 	message := strings.ToLower(strings.TrimSpace(string(body)))
 	return message == "invalid params" || message == "invalid api key"
-}
-
-func containsFold(body []byte, marker string) bool {
-	return strings.Contains(strings.ToLower(string(body)), marker)
 }

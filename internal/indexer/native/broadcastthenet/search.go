@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // pageResults is the page size harbrr requests (Prowlarr LimitsDefault/PageSize=100).
@@ -81,10 +81,10 @@ func isAbsoluteEpisodeQuery(q search.Query) bool {
 	if positiveID(q.TVDBID) == "" && positiveID(q.RageID) == "" {
 		return false
 	}
-	if _, daily := dailyDate(q.Season, q.Ep); daily {
+	if _, daily := native.DailyEpisodeDate(q.Season, q.Ep); daily {
 		return false
 	}
-	return positiveInt(q.Season) == 0 && positiveInt(q.Ep) == 0
+	return native.PositiveInt(q.Season) == 0 && native.PositiveInt(q.Ep) == 0
 }
 
 // isNonNegativeInteger reports whether s is a base-10 non-negative integer.
@@ -129,16 +129,16 @@ func setTvdbOrTvrage(params *btnParameters, q search.Query) {
 // model the season-only query emits the SEASON arm — Prowlarr fans both arms out across
 // requests, harbrr fetches the single Season-prefixed page (one request, like FileList).
 func setSeasonEpisode(params *btnParameters, q search.Query) {
-	if daily, ok := dailyDate(q.Season, q.Ep); ok {
+	if daily, ok := native.DailyEpisodeDate(q.Season, q.Ep); ok {
 		params.Category = "Episode"
-		params.Name = daily + "%"
+		params.Name = daily.Format("2006.01.02") + "%"
 		return
 	}
-	season := positiveInt(q.Season)
+	season := native.PositiveInt(q.Season)
 	if season == 0 {
 		return
 	}
-	if episode := positiveInt(q.Ep); episode > 0 {
+	if episode := native.PositiveInt(q.Ep); episode > 0 {
 		params.Category = "Episode"
 		params.Name = fmt.Sprintf("S%02dE%02d%%", season, episode)
 		return
@@ -147,38 +147,11 @@ func setSeasonEpisode(params *btnParameters, q search.Query) {
 	params.Name = fmt.Sprintf("Season %d%%", season)
 }
 
-// dailyDate parses a "{season} {episode}" pair into "yyyy.MM.dd" when season is a
-// four-digit year and episode is "MM/dd", matching Prowlarr's DateTime.TryParseExact
-// with "yyyy MM/dd". The four-digit-year guard keeps Go's lenient year parsing from
-// matching a normal season.
-func dailyDate(season, episode string) (string, bool) {
-	season = strings.TrimSpace(season)
-	episode = strings.TrimSpace(episode)
-	if len(season) != 4 {
-		return "", false
-	}
-	t, err := time.Parse("2006 01/02", season+" "+episode)
-	if err != nil {
-		return "", false
-	}
-	return t.Format("2006.01.02"), true
-}
-
 // positiveID renders an id string as itself when it parses to a positive integer, else
 // "" (BTN sends Tvdb/Tvrage only when the id is > 0).
 func positiveID(raw string) string {
-	if n := positiveInt(raw); n > 0 {
+	if n := native.PositiveInt(raw); n > 0 {
 		return strconv.Itoa(n)
 	}
 	return ""
-}
-
-// positiveInt parses raw as a non-negative base-10 int; a blank or unparseable value
-// (or a negative) yields 0.
-func positiveInt(raw string) int {
-	n, err := strconv.Atoi(strings.TrimSpace(raw))
-	if err != nil || n < 0 {
-		return 0
-	}
-	return n
 }

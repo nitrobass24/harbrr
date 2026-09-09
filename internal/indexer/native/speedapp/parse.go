@@ -14,9 +14,8 @@ import (
 )
 
 const (
-	customCategoryOffset = 100000
-	minimumRatio         = 1
-	minimumSeedTime      = 432000
+	minimumRatio    = 1
+	minimumSeedTime = 432000
 )
 
 type apiCategory struct {
@@ -94,10 +93,5 @@ func cleanTitle(title string) string {
 }
 
 func (d *driver) categories(id int64) []int {
-	for _, category := range d.Caps.CategoryMap.MapTrackerCatToNewznab(strconv.FormatInt(id, 10)) {
-		if category < customCategoryOffset {
-			return []int{category}
-		}
-	}
-	return nil
+	return native.FirstStandardCat(d.Caps.CategoryMap.MapTrackerCatToNewznab(strconv.FormatInt(id, 10)))
 }

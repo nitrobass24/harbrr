@@ -11,6 +11,7 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // searchPath is the AnimeBytes scrape endpoint (Prowlarr: "{BaseUrl}/scrape.php").
@@ -65,7 +66,7 @@ func (d *driver) buildSearchURL(q search.Query) string {
 
 	d.addTypeParams(params, q, typ)
 	d.addCategoryParams(params, q)
-	if freeleechOnly(d.Cfg) {
+	if native.CheckboxOn(d.Cfg["freeleech_only"]) {
 		params.Set("freeleech", "1")
 	}
 	return d.BaseURL + searchPath + "?" + params.Encode()

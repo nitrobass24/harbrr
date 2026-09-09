@@ -4,8 +4,6 @@ import (
 	"context"
 	"net/url"
 	"strings"
-	"time"
-	"unicode"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -50,18 +48,18 @@ func (d *driver) buildSearchURL(q search.Query) string {
 // season/episode.
 func (d *driver) addSearchParams(params url.Values, q search.Query) {
 	imdb := native.CanonicalIMDBID(q.IMDBID)
-	keywords := strings.TrimSpace(sanitizeSearchTerm(q.Keywords))
+	keywords := strings.TrimSpace(native.SanitizeSearchTerm(q.Keywords))
 	if imdb == "" && keywords == "" {
 		return // no criteria → latest-torrents (set by addCommonParams)
 	}
 
-	if daily, ok := dailyDate(q.Season, q.Ep); ok {
+	if daily, ok := native.DailyEpisodeDate(q.Season, q.Ep); ok {
 		if imdb != "" {
 			return // Prowlarr skips id searches for daily episodes
 		}
 		params.Set("action", "search-torrents")
 		params.Set("type", "name")
-		params.Set("query", strings.TrimSpace(keywords+" "+daily))
+		params.Set("query", strings.TrimSpace(keywords+" "+daily.Format("2006.01.02")))
 		return
 	}
 
@@ -88,91 +86,10 @@ func (d *driver) addCommonParams(params url.Values, q search.Query) {
 	if params.Get("action") == "" {
 		params.Set("action", "latest-torrents")
 	}
-	if cats := distinctCategories(q.Categories); cats != "" {
+	if cats := strings.Join(q.Categories, ","); cats != "" {
 		params.Set("category", cats)
 	}
-	if freeleechOnly(d.Cfg) {
+	if native.CheckboxOn(d.Cfg["freeleech_only"]) {
 		params.Set("freeleech", "1")
 	}
-}
-
-// distinctCategories joins the resolved tracker category ids into the comma-separated
-// list Prowlarr sends (string.Join(",", …Distinct())). q.Categories is already the
-// tracker-id mapping (registry buildQuery); this only de-duplicates while preserving
-// order.
-func distinctCategories(cats []string) string {
-	seen := make(map[string]struct{}, len(cats))
-	distinct := make([]string, 0, len(cats))
-	for _, c := range cats {
-		c = strings.TrimSpace(c)
-		if c == "" {
-			continue
-		}
-		if _, dup := seen[c]; dup {
-			continue
-		}
-		seen[c] = struct{}{}
-		distinct = append(distinct, c)
-	}
-	return strings.Join(distinct, ",")
-}
-
-// dailyDate parses a "{season} {episode}" pair into "yyyy.MM.dd" when season is a
-// four-digit year and episode is "MM/dd", matching Prowlarr's DateTime.TryParseExact
-// with "yyyy MM/dd". The four-digit-year guard keeps Go's lenient year parsing from
-// matching a normal season.
-func dailyDate(season, episode string) (string, bool) {
-	season = strings.TrimSpace(season)
-	episode = strings.TrimSpace(episode)
-	if len(season) != 4 {
-		return "", false
-	}
-	t, err := time.Parse("2006 01/02", season+" "+episode)
-	if err != nil {
-		return "", false
-	}
-	return t.Format("2006.01.02"), true
-}
-
-// sanitizeSearchTerm reproduces SearchCriteriaBase.SanitizedSearchTerm: collapse any
-// run of Unicode dash punctuation to a single '-', normalize the grave/acute/curly
-// single quotes to '\”, then keep only letters, digits, whitespace, and the
-// punctuation FileList tolerates (-._()@/'[]+%); every other rune is dropped.
-func sanitizeSearchTerm(term string) string {
-	var b strings.Builder
-	b.Grow(len(term))
-	prevDash := false
-	for _, r := range term {
-		if unicode.Is(unicode.Pd, r) { // any dash punctuation -> a single '-'
-			if !prevDash {
-				b.WriteByte('-')
-				prevDash = true
-			}
-			continue
-		}
-		prevDash = false
-		switch {
-		case r == '`', r == '´', r == '‘', r == '’':
-			b.WriteByte('\'')
-		case unicode.IsLetter(r), unicode.IsDigit(r), unicode.IsSpace(r), isSafePunct(r):
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
-
-// isSafePunct reports whether r is one of the punctuation runes the sanitized search
-// term tolerates (the SanitizedSearchTerm whitelist, minus '-' which is handled above).
-func isSafePunct(r rune) bool {
-	switch r {
-	case '.', '_', '(', ')', '@', '/', '\'', '[', ']', '+', '%':
-		return true
-	default:
-		return false
-	}
-}
-
-// freeleechOnly reports whether the freeleech_only checkbox is enabled.
-func freeleechOnly(cfg map[string]string) bool {
-	return native.CheckboxOn(cfg["freeleech_only"])
 }

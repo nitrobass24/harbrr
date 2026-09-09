@@ -44,7 +44,7 @@ func (d *driver) buildSearchURL(q search.Query) string {
 	if kw := strings.TrimSpace(q.Keywords); kw != "" {
 		params.Set("q", kw)
 	}
-	if cat := joinCategories(q.Categories); cat != "" {
+	if cat := strings.Join(q.Categories, ","); cat != "" {
 		params.Set("cat", cat)
 	}
 	if imdb := strings.TrimSpace(q.IMDBID); imdb != "" {
@@ -97,25 +97,4 @@ func positiveSeason(raw string) (string, bool) {
 		return "", false
 	}
 	return strconv.Itoa(n), true
-}
-
-// joinCategories comma-joins the resolved tracker category ids, de-duplicated and
-// order-preserving (cat=2040,2050). Blank entries are dropped. Mirrors the newznab
-// sibling's helper of the same shape — each driver owns its own copy rather than
-// sharing a package for a five-line helper.
-func joinCategories(cats []string) string {
-	seen := make(map[string]struct{}, len(cats))
-	out := make([]string, 0, len(cats))
-	for _, c := range cats {
-		c = strings.TrimSpace(c)
-		if c == "" {
-			continue
-		}
-		if _, dup := seen[c]; dup {
-			continue
-		}
-		seen[c] = struct{}{}
-		out = append(out, c)
-	}
-	return strings.Join(out, ",")
 }

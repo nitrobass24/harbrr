@@ -12,12 +12,15 @@ import (
 	"strings"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/dateparse"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
+
+// authFailurePhrases are the words a GGn error message uses for a rejected credential.
+var authFailurePhrases = []string{"api key", "apikey", "credential", "authorization", "authenticat", "unauthorized", "forbidden"}
 
 const (
 	// statusSuccess is the only response status that yields releases; any other status
@@ -29,20 +32,13 @@ const (
 	// group's torrent map to TorrentType.ToUpperInvariant() == "TORRENT").
 	torrentTypeWanted = "TORRENT"
 
-	// customCatCutoff bounds the canonical newznab id range. The caps map carries a
-	// description on every entry, so the mapper synthesises a 1:1 custom category
-	// (id + CustomCategoryOffset = 100000); the parser keeps only canonical ids and
-	// discards the synthetic ones (mirroring gazelle/broadcastthenet).
-	customCatCutoff = 100000
-
 	// minimumSeedTimeSeconds is the fixed MinimumSeedTime Prowlarr sets on every GGn
 	// release: 80 hours (3 days + 8 hours).
 	minimumSeedTimeSeconds = 288000
 
-	// downloadPath / detailsPath are the torrents.php endpoints Prowlarr rebuilds for the
-	// download and info URLs.
-	downloadPath = "torrents.php"
-	detailsPath  = "torrents.php"
+	// torrentsPath is the endpoint Prowlarr rebuilds for BOTH the download and the info
+	// URL (they differ only in their query params).
+	torrentsPath = "torrents.php"
 
 	// downloadAuthKeyDummy is the placeholder authkey Prowlarr passes — GGn requires the
 	// param but does not check it (the real authkey is randomly cycled), so a constant is
@@ -179,13 +175,7 @@ func looksLikeAuthFailure(status, msg string) bool {
 	case "401", "403":
 		return true
 	}
-	lower := strings.ToLower(msg)
-	for _, phrase := range []string{"api key", "apikey", "credential", "authorization", "authenticat", "unauthorized", "forbidden"} {
-		if strings.Contains(lower, phrase) {
-			return true
-		}
-	}
-	return false
+	return native.MentionsAny(msg, authFailurePhrases...)
 }
 
 // flattenGroup turns one group into releases: an empty group (Torrents is [] / not an
@@ -377,7 +367,7 @@ func (d *driver) downloadURL(torrentID int64) string {
 	params.Set("id", strconv.FormatInt(torrentID, 10))
 	params.Set("authkey", downloadAuthKeyDummy)
 	params.Set("torrent_pass", strings.TrimSpace(d.cfgValue("passkey")))
-	return d.BaseURL + downloadPath + "?" + params.Encode()
+	return d.BaseURL + torrentsPath + "?" + params.Encode()
 }
 
 // detailsURL rebuilds Prowlarr's GetInfoUrl: {base}torrents.php?id={groupId}&torrentid=
@@ -386,17 +376,14 @@ func (d *driver) detailsURL(groupID, torrentID int64) string {
 	params := url.Values{}
 	params.Set("id", strconv.FormatInt(groupID, 10))
 	params.Set("torrentid", strconv.FormatInt(torrentID, 10))
-	return d.BaseURL + detailsPath + "?" + params.Encode()
+	return d.BaseURL + torrentsPath + "?" + params.Encode()
 }
 
 // publishDate renders a GGn time value as UTC RFC3339. It tolerates the "yyyy-MM-dd
 // HH:mm:ss" datetime GGn emits and a fuzzy value via the date parser. An unparseable value
 // yields the empty string.
 func (d *driver) publishDate(value string) string {
-	if strings.TrimSpace(value) == "" {
-		return ""
-	}
-	out, err := dateparse.New(dateparse.WithClock(d.Clock)).ParseRelTime(value)
+	out, err := native.PublishDate(value, d.Clock)
 	if err != nil {
 		return ""
 	}
@@ -408,7 +395,7 @@ func (d *driver) publishDate(value string) string {
 func canonical(ids []int) []int {
 	var out []int
 	for _, id := range ids {
-		if id < customCatCutoff {
+		if id < mapper.CustomCategoryOffset {
 			out = append(out, id)
 		}
 	}

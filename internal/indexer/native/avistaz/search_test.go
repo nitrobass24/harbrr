@@ -260,42 +260,6 @@ func TestSearchTransportErrorHostOnly(t *testing.T) {
 	assertNoSecret(t, apphttp.RedactError(err))
 }
 
-func TestSanitizeSearchTerm(t *testing.T) {
-	t.Parallel()
-	cases := []struct{ in, want string }{
-		{"the matrix", "the matrix"},
-		{"Money$ Heist: 4!", "Money Heist 4"},
-		{"Amélie", "Amélie"},                   // accented letters kept
-		{"a — b", "a - b"},                     // em dash -> '-'
-		{"a–-—b", "a-b"},                       // a run of dashes collapses to one '-'
-		{"it’s", "it's"},                       // curly apostrophe normalized
-		{"WALL[E]+ (2008)", "WALL[E]+ (2008)"}, // whitelisted punctuation survives
-		{"a@b/c_d.e%f", "a@b/c_d.e%f"},
-	}
-	for _, tc := range cases {
-		if got := sanitizeSearchTerm(tc.in); got != tc.want {
-			t.Errorf("sanitize(%q) = %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
-func TestEpisodeSearchString(t *testing.T) {
-	t.Parallel()
-	cases := []struct{ season, ep, want string }{
-		{"", "", ""},
-		{"0", "5", ""},                  // seasonless (base) -> empty
-		{"1", "", "S01"},                // season only
-		{"1", "2", "S01E02"},            // standard
-		{"12", "5", "S12E05"},           // two-digit season, padded episode
-		{"2021", "05/13", "2021.05.13"}, // daily
-	}
-	for _, tc := range cases {
-		if got := episodeSearchString(tc.season, tc.ep); got != tc.want {
-			t.Errorf("episodeSearchString(%q,%q) = %q, want %q", tc.season, tc.ep, got, tc.want)
-		}
-	}
-}
-
 func TestEpisodeSearchTermOverride(t *testing.T) {
 	t.Parallel()
 	q := search.Query{Ep: "323"} // seasonless episode
@@ -315,29 +279,11 @@ func TestDerivedType(t *testing.T) {
 	}{
 		{nil, "0"},
 		{[]string{"1"}, "1"},
-		{[]string{"2", "2"}, "2"},
 		{[]string{"1", "2"}, "0"},
 	}
 	for _, tc := range cases {
 		if got := derivedType(tc.in); got != tc.want {
 			t.Errorf("derivedType(%v) = %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
-func TestFreeleechOnly(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		value string
-		want  bool
-	}{
-		{"True", true},
-		{"", false},
-		{"false", false},
-	}
-	for _, tt := range tests {
-		if got := freeleechOnly(map[string]string{"freeleech_only": tt.value}); got != tt.want {
-			t.Errorf("freeleechOnly(%q) = %v, want %v", tt.value, got, tt.want)
 		}
 	}
 }

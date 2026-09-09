@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -141,48 +140,21 @@ func tmdbParam(raw string) string {
 	return "movie/" + s
 }
 
-// positiveInt parses raw as a non-negative base-10 int; a blank or unparseable value (or a
-// negative) yields 0.
-func positiveInt(raw string) int {
-	n, err := strconv.Atoi(strings.TrimSpace(raw))
-	if err != nil || n < 0 {
-		return 0
-	}
-	return n
-}
-
 // episodeSearchString formats the season/episode component appended to a TV search term: a
 // daily episode (season a four-digit year, episode "MM/dd") becomes "yyyy-MM-dd" (Prowlarr
 // rewrites the term to "<term> yyyy-MM-dd" when the episode parses as a date); a
 // season+episode becomes "S%02dE%02d"; a season alone becomes "S%02d"; anything else is
 // empty.
 func episodeSearchString(season, ep string) string {
-	if daily, ok := dailyDate(season, ep); ok {
-		return daily
+	if daily, ok := native.DailyEpisodeDate(season, ep); ok {
+		return daily.Format("2006-01-02")
 	}
-	s := positiveInt(season)
+	s := native.PositiveInt(season)
 	if s <= 0 {
 		return ""
 	}
-	if e := positiveInt(ep); strings.TrimSpace(ep) != "" && e > 0 {
+	if e := native.PositiveInt(ep); strings.TrimSpace(ep) != "" && e > 0 {
 		return fmt.Sprintf("S%02dE%02d", s, e)
 	}
 	return fmt.Sprintf("S%02d", s)
-}
-
-// dailyDate parses a "{season} {episode}" pair into "yyyy-MM-dd" when season is a
-// four-digit year and episode is "MM/dd", matching Prowlarr's DateTime.TryParseExact with
-// "yyyy MM/dd". The four-digit-year guard keeps Go's lenient year parsing from matching a
-// normal season.
-func dailyDate(season, episode string) (string, bool) {
-	season = strings.TrimSpace(season)
-	episode = strings.TrimSpace(episode)
-	if len(season) != 4 {
-		return "", false
-	}
-	t, err := time.Parse("2006 01/02", season+" "+episode)
-	if err != nil {
-		return "", false
-	}
-	return t.Format("2006-01-02"), true
 }

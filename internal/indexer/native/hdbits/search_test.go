@@ -304,25 +304,6 @@ func TestTestAction(t *testing.T) {
 	}
 }
 
-func TestDailyDate(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		season, ep, want string
-		ok               bool
-	}{
-		{"2024", "01/15", "2024-01-15", true},
-		{"1", "2", "", false},        // a normal season, not a year
-		{"2024", "13/40", "", false}, // invalid month/day
-		{"", "", "", false},
-	}
-	for _, c := range cases {
-		got, ok := dailyDate(c.season, c.ep)
-		if ok != c.ok || got != c.want {
-			t.Errorf("dailyDate(%q,%q) = (%q,%v), want (%q,%v)", c.season, c.ep, got, ok, c.want, c.ok)
-		}
-	}
-}
-
 func TestSanitizeMovieTerm(t *testing.T) {
 	t.Parallel()
 	cases := []struct{ in, want string }{

@@ -8,18 +8,15 @@ import (
 	"strings"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/dateparse"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
-// customCatCutoff bounds the canonical newznab id range. The caps map carries a
-// description on every entry, so the mapper synthesises a 1:1 custom category
-// (id + CustomCategoryOffset = 100000); the parser keeps only the canonical id and
-// discards that synthetic one (mirroring broadcastthenet).
-const customCatCutoff = 100000
+// authFailurePhrases are the words a Gazelle error message uses for a rejected
+// credential, so such a failure surfaces as a login error rather than a parse error.
+var authFailurePhrases = []string{"credential", "api key", "apikey", "authorization", "authenticat", "unauthorized"}
 
 // defaultCatID is the tracker category id used when a result's Category is null or
 // "Select Category" — Prowlarr's MapTrackerCatToNewznab("1") default. What "1" maps
@@ -138,22 +135,10 @@ func (d *driver) parseBrowse(body []byte, requestCookie string) ([]*normalizer.R
 // before it reaches the error string.
 func (d *driver) classifyStatusError(status, msg, requestCookie string) error {
 	scrubbed := d.scrubCredentials(msg, requestCookie)
-	if looksLikeAuthFailure(scrubbed) {
+	if native.MentionsAny(scrubbed, authFailurePhrases...) {
 		return fmt.Errorf("gazelle: browse status %q: %s: %w", status, scrubbed, login.ErrLoginFailed)
 	}
 	return fmt.Errorf("gazelle: browse status %q: %s: %w", status, scrubbed, search.ErrParseError)
-}
-
-// looksLikeAuthFailure reports whether a Gazelle error message indicates a rejected
-// credential (so the failure is surfaced as a login error rather than a parse error).
-func looksLikeAuthFailure(msg string) bool {
-	lower := strings.ToLower(msg)
-	for _, phrase := range []string{"credential", "api key", "apikey", "authorization", "authenticat", "unauthorized"} {
-		if strings.Contains(lower, phrase) {
-			return true
-		}
-	}
-	return false
 }
 
 // flattenGroup turns one browse group into releases: a MUSIC group (Torrents != nil)
@@ -371,33 +356,19 @@ func imdbTag(tags []string) string {
 // id. A null Category or one containing "Select Category" defaults to Audio ("1").
 func (d *driver) categories(category *string) []int {
 	if category == nil || strings.Contains(*category, "Select Category") {
-		return canonical(d.Caps.CategoryMap.MapTrackerCatToNewznab(defaultCatID))
+		return native.FirstStandardCat(d.Caps.CategoryMap.MapTrackerCatToNewznab(defaultCatID))
 	}
-	if mapped := canonical(d.Caps.CategoryMap.MapTrackerCatDescToNewznab(*category)); mapped != nil {
+	if mapped := native.FirstStandardCat(d.Caps.CategoryMap.MapTrackerCatDescToNewznab(*category)); mapped != nil {
 		return mapped
 	}
-	return canonical(d.Caps.CategoryMap.MapTrackerCatToNewznab(defaultCatID))
-}
-
-// canonical keeps only the canonical newznab category id, dropping the mapper's
-// synthesised 1:1 custom id (>= 100000), so each release carries exactly one category.
-func canonical(ids []int) []int {
-	for _, id := range ids {
-		if id < customCatCutoff {
-			return []int{id}
-		}
-	}
-	return nil
+	return native.FirstStandardCat(d.Caps.CategoryMap.MapTrackerCatToNewznab(defaultCatID))
 }
 
 // publishDate renders a Gazelle time value as UTC RFC3339. It tolerates a music
 // torrent's datetime ("2012-04-14 15:57:00"), a non-music unix-seconds string, and a
 // fuzzy value ("now") via the date parser. An unparseable value yields the empty string.
 func (d *driver) publishDate(value string) string {
-	if strings.TrimSpace(value) == "" {
-		return ""
-	}
-	out, err := dateparse.New(dateparse.WithClock(d.Clock)).ParseRelTime(value)
+	out, err := native.PublishDate(value, d.Clock)
 	if err != nil {
 		return ""
 	}

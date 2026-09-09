@@ -85,9 +85,9 @@ func (d *driver) parseRow(row *goquery.Selection, layout columnLayout) (*normali
 	rel := &normalizer.Release{
 		Title:                cleanTitle(titleLink.Text()),
 		Link:                 d.absoluteURL(dlHref),
-		Details:              d.absoluteURL(attrOr(titleLink, "href")),
+		Details:              d.absoluteURL(titleLink.AttrOr("href", "")),
 		Categories:           d.rowCategories(row),
-		Size:                 parseSizeBytes(cells(row).textAt(layout.size)),
+		Size:                 normalizer.ParseSize(cells(row).textAt(layout.size)),
 		Files:                cells(row).intAt(layout.files),
 		Grabs:                cells(row).intAt(layout.grabs),
 		Seeders:              seeders,
@@ -138,9 +138,4 @@ func freeleechFactor(row *goquery.Selection) float64 {
 // `new Uri(BaseUrl + href.TrimStart('/'))`.
 func (d *driver) absoluteURL(href string) string {
 	return d.BaseURL + strings.TrimLeft(strings.TrimSpace(href), "/")
-}
-
-func attrOr(sel *goquery.Selection, name string) string {
-	v, _ := sel.Attr(name)
-	return v
 }

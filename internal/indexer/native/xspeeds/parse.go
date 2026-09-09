@@ -28,7 +28,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	var releases []*normalizer.Release
 	doc.Find(`table#sortabletable > tbody > tr:has(a[href*="details.php?id="])`).Each(func(_ int, row *goquery.Selection) {
 		release, ok := d.parseRow(row)
-		if ok && (!freeleechOnly(d.Cfg) || release.DownloadVolumeFactor == 0) {
+		if ok && (!native.CheckboxOn(d.Cfg["freeleech_only"]) || release.DownloadVolumeFactor == 0) {
 			releases = append(releases, release)
 		}
 	})
@@ -211,8 +211,4 @@ func uploadFactor(row *goquery.Selection) float64 {
 		return 2
 	}
 	return 1
-}
-
-func freeleechOnly(cfg map[string]string) bool {
-	return native.CheckboxOn(cfg["freeleech_only"])
 }

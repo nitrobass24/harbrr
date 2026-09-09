@@ -41,9 +41,7 @@ func TestSingleCategory(t *testing.T) {
 	}{
 		{name: "none", want: "0"},
 		{name: "one", in: []string{"70"}, want: "70"},
-		{name: "duplicate", in: []string{"70", "70"}, want: "70"},
 		{name: "multiple", in: []string{"70", "12"}, want: "0"},
-		{name: "blank ignored", in: []string{"", "70", " "}, want: "70"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

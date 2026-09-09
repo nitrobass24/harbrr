@@ -8,6 +8,51 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/dateparse"
 )
 
+// TestDailyEpisodeDate pins the daily-show parse the five TV families share: a
+// four-digit year plus a fixed-width "MM/dd" episode, nothing else.
+func TestDailyEpisodeDate(t *testing.T) {
+	t.Parallel()
+	cases := []struct{ season, ep, want string }{
+		{"2024", "01/15", "2024-01-15"},
+		{" 2024 ", " 01/15 ", "2024-01-15"},
+		{"1", "2", ""},        // a normal season, not a year
+		{"2024", "13/40", ""}, // an invalid month/day
+		{"2024", "1/15", ""},  // ParseExact's fixed widths reject a single-digit month
+		{"", "", ""},
+	}
+	for _, c := range cases {
+		got, ok := DailyEpisodeDate(c.season, c.ep)
+		if ok != (c.want != "") {
+			t.Errorf("DailyEpisodeDate(%q,%q) ok = %v, want %v", c.season, c.ep, ok, c.want != "")
+			continue
+		}
+		if ok && got.Format("2006-01-02") != c.want {
+			t.Errorf("DailyEpisodeDate(%q,%q) = %q, want %q", c.season, c.ep, got.Format("2006-01-02"), c.want)
+		}
+	}
+}
+
+// TestSanitizeSearchTerm pins the SanitizedSearchTerm whitelist the three HTML/API
+// families share.
+func TestSanitizeSearchTerm(t *testing.T) {
+	t.Parallel()
+	cases := []struct{ in, want string }{
+		{"the matrix", "the matrix"},
+		{"Money$ Heist: 4!", "Money Heist 4"},
+		{"Amélie", "Amélie"},                   // accented letters kept
+		{"a — b", "a - b"},                     // em dash -> '-'
+		{"a–-—b", "a-b"},                       // a run of dashes collapses to one '-'
+		{"it’s", "it's"},                       // curly apostrophe normalized
+		{"WALL[E]+ (2008)", "WALL[E]+ (2008)"}, // whitelisted punctuation survives
+		{"a@b/c_d.e%f", "a@b/c_d.e%f"},
+	}
+	for _, tc := range cases {
+		if got := SanitizeSearchTerm(tc.in); got != tc.want {
+			t.Errorf("SanitizeSearchTerm(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestCanonicalIMDBID(t *testing.T) {
 	t.Parallel()
 	cases := []struct{ in, want string }{

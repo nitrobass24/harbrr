@@ -19,10 +19,6 @@ const (
 	// success, so the parser treats != 0 as OK rather than hard-requiring ==1 (Prowlarr
 	// BeyondHDParser gates on `== 0`).
 	statusFailure = 0
-	// customCatCutoff bounds the canonical newznab id range: the caps mapper synthesises a
-	// 1:1 custom category at ids >= 100000, which is discarded so each release carries
-	// exactly one newznab category (matching Prowlarr, which emits one).
-	customCatCutoff = 100000
 	// minimumSeedTime is BeyondHD's seed-time requirement in seconds (the Prowlarr literal,
 	// 172800 = 48h — the code comment there says "120 hours" but the literal wins).
 	minimumSeedTime = 172800
@@ -170,15 +166,10 @@ func (d *driver) toRelease(row *bhdTorrent) *normalizer.Release {
 
 // categories returns the single canonical newznab category for a BeyondHD `category`
 // description string ("Movies"/"TV"), mapped through the site caps. The mapper also
-// synthesises a 1:1 custom id (>= customCatCutoff) which is discarded so the release
+// synthesises a 1:1 custom id which native.FirstStandardCat discards so the release
 // carries exactly one category (matching Prowlarr).
 func (d *driver) categories(category string) []int {
-	for _, c := range d.Caps.CategoryMap.MapTrackerCatDescToNewznab(category) {
-		if c < customCatCutoff {
-			return []int{c}
-		}
-	}
-	return nil
+	return native.FirstStandardCat(d.Caps.CategoryMap.MapTrackerCatDescToNewznab(category))
 }
 
 // downloadVolumeFactor reproduces Prowlarr's GetDownloadVolumeFactor: a freeleech or

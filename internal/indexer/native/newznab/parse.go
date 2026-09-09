@@ -164,7 +164,7 @@ func (it *item) categories(catMap *mapper.CategoryMap) []int {
 	seen := make(map[int]struct{}, len(ids))
 	for _, raw := range ids {
 		for _, c := range catMap.MapTrackerCatToNewznab(strings.TrimSpace(raw)) {
-			if c >= customCatCutoff {
+			if c >= mapper.CustomCategoryOffset {
 				continue
 			}
 			if _, dup := seen[c]; dup {
@@ -179,11 +179,6 @@ func (it *item) categories(catMap *mapper.CategoryMap) []int {
 	}
 	return out
 }
-
-// customCatCutoff bounds the canonical newznab id range: the mapper synthesises a 1:1 custom
-// category at ids >= CustomCategoryOffset (100000), which is discarded so a release carries
-// only standard newznab categories (matching the HDBits driver).
-const customCatCutoff = 100000
 
 // publishDate returns the release date: the newznab:attr "usenetdate" overrides <pubDate>
 // when present (Prowlarr's GetPublishDate). The string form is stored as-is for the

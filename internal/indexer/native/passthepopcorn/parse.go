@@ -5,19 +5,12 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
-	"time"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
-
-// customCatCutoff bounds the canonical newznab id range. The caps map carries a
-// description on every entry, so the mapper synthesises a 1:1 custom category
-// (id + CustomCategoryOffset = 100000); the parser keeps only the canonical id and
-// discards that synthetic one (mirroring gazelle/broadcastthenet).
-const customCatCutoff = 100000
 
 // defaultCatID is the tracker category id used when a movie-group's CategoryId is
 // blank: PTP is movie-only and every CategoryId 1-6 maps to Movies, so an absent id
@@ -30,10 +23,6 @@ const (
 	minSeedTime  = 345600
 	minimumRatio = 1
 )
-
-// uploadTimeLayout is PTP's UploadTime wire format ("YYYY-MM-DD HH:MM:SS"), which
-// Prowlarr parses as UTC (UploadTime + " +0000"). A parsed value renders to UTC RFC3339.
-const uploadTimeLayout = "2006-01-02 15:04:05"
 
 // ptpResponse is the torrents.php?action=advanced JSON envelope. TotalResults is a JSON
 // string ("0"/blank/missing => empty page); Movies is the movie-group list (null =>
@@ -138,7 +127,7 @@ func (d *driver) toRelease(m *ptpMovie, t *ptpTorrent) *normalizer.Release {
 		Seeders:              seeders,
 		Leechers:             leechers,
 		Peers:                seeders + leechers,
-		PublishDate:          publishDate(t.UploadTime),
+		PublishDate:          d.publishDate(t.UploadTime),
 		IMDBID:               native.CanonicalIMDBID(m.ImdbID.Str()),
 		Year:                 m.Year.Int64(),
 		Genre:                strings.Join(m.Tags, ", "),
@@ -179,21 +168,10 @@ func (d *driver) categories(categoryID string) []int {
 	if id == "" {
 		id = defaultCatID
 	}
-	if mapped := canonical(d.Caps.CategoryMap.MapTrackerCatToNewznab(id)); mapped != nil {
+	if mapped := native.FirstStandardCat(d.Caps.CategoryMap.MapTrackerCatToNewznab(id)); mapped != nil {
 		return mapped
 	}
-	return canonical(d.Caps.CategoryMap.MapTrackerCatToNewznab(defaultCatID))
-}
-
-// canonical keeps only the canonical newznab category id, dropping the mapper's
-// synthesised 1:1 custom id (>= 100000), so each release carries exactly one category.
-func canonical(ids []int) []int {
-	for _, id := range ids {
-		if id < customCatCutoff {
-			return []int{id}
-		}
-	}
-	return nil
+	return native.FirstStandardCat(d.Caps.CategoryMap.MapTrackerCatToNewznab(defaultCatID))
 }
 
 // downloadVolumeFactor maps PTP's FreeleechType to the download volume factor, matching
@@ -229,16 +207,12 @@ func freeleechUpper(freeleechType *string) string {
 
 // publishDate renders PTP's UploadTime ("YYYY-MM-DD HH:MM:SS") as UTC RFC3339. Prowlarr
 // parses it as UTC (UploadTime + " +0000"); an empty or unparseable value yields "".
-func publishDate(uploadTime string) string {
-	s := strings.TrimSpace(uploadTime)
-	if s == "" {
-		return ""
-	}
-	t, err := time.ParseInLocation(uploadTimeLayout, s, time.UTC)
+func (d *driver) publishDate(uploadTime string) string {
+	out, err := native.PublishDate(uploadTime, d.Clock)
 	if err != nil {
 		return ""
 	}
-	return t.UTC().Format(time.RFC3339)
+	return out
 }
 
 // posterURL returns the movie Cover only when it is an absolute http(s) URL, mirroring

@@ -2,13 +2,10 @@ package avistaz
 
 import (
 	"context"
-	"fmt"
 	stdhttp "net/http"
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
-	"unicode"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -67,7 +64,7 @@ func (d *driver) buildSearchURL(q search.Query) string {
 	params.Set("in", "1")
 	params.Set("type", typ)
 	params.Set("limit", strconv.Itoa(pageSize))
-	if freeleechOnly(d.Cfg) {
+	if native.CheckboxOn(d.Cfg["freeleech_only"]) {
 		params.Add("discount[]", "1")
 	}
 	d.addQueryParams(params, q, d.classify(q, typ))
@@ -87,7 +84,7 @@ func (d *driver) addQueryParams(params url.Values, q search.Query, kind searchKi
 		case q.TMDBID != "":
 			params.Set("tmdb", strings.TrimSpace(q.TMDBID))
 		default:
-			params.Set("search", strings.TrimSpace(sanitizeSearchTerm(q.Keywords)))
+			params.Set("search", strings.TrimSpace(native.SanitizeSearchTerm(q.Keywords)))
 		}
 	case kindTV:
 		ep := d.episodeSearchTerm(q)
@@ -99,10 +96,10 @@ func (d *driver) addQueryParams(params url.Values, q search.Query, kind searchKi
 			params.Set("tvdb", strings.TrimSpace(q.TVDBID))
 			params.Set("search", strings.TrimSpace(ep))
 		default:
-			params.Set("search", strings.TrimSpace(sanitizeSearchTerm(q.Keywords)+" "+ep))
+			params.Set("search", strings.TrimSpace(native.SanitizeSearchTerm(q.Keywords)+" "+ep))
 		}
 	case kindBasic:
-		params.Set("search", strings.TrimSpace(sanitizeSearchTerm(q.Keywords)))
+		params.Set("search", strings.TrimSpace(native.SanitizeSearchTerm(q.Keywords)))
 	}
 }
 
@@ -127,22 +124,12 @@ func (d *driver) classify(q search.Query, typ string) searchKind {
 }
 
 // derivedType reproduces Prowlarr's categoryMapping.FirstIfSingleOrDefault("0"): the
-// single distinct tracker category id when exactly one was requested, else "0" (no
-// category, or a mix the API cannot express as a single type). q.Categories is already
-// the distinct tracker-id mapping (registry buildQuery), so this only collapses it to
-// a single value or the default.
+// single tracker category id when exactly one was requested, else "0" (no category, or
+// a mix the API cannot express as a single type). q.Categories is already the distinct,
+// non-blank tracker-id mapping (mapper.MapTorznabCapsToTrackers).
 func derivedType(cats []string) string {
-	seen := make(map[string]struct{}, len(cats))
-	distinct := make([]string, 0, len(cats))
-	for _, c := range cats {
-		if _, dup := seen[c]; dup {
-			continue
-		}
-		seen[c] = struct{}{}
-		distinct = append(distinct, c)
-	}
-	if len(distinct) == 1 {
-		return distinct[0]
+	if len(cats) == 1 {
+		return cats[0]
 	}
 	return "0"
 }
@@ -156,86 +143,5 @@ func (d *driver) episodeSearchTerm(q search.Query) string {
 	if d.profile.episodeOverride && (season == "" || season == "0") && ep != "" {
 		return "E" + ep
 	}
-	return episodeSearchString(season, ep)
-}
-
-// episodeSearchString reproduces TvSearchCriteria.EpisodeSearchString: a seasonless
-// query is empty; a "{year} {MM/dd}" pair is a daily date "yyyy.MM.dd"; a season with
-// no episode is "S{season:00}"; otherwise "S{season:00}E{episode:00}" (the episode
-// coerced to an int, falling back to the raw episode when it is not numeric).
-func episodeSearchString(season, episode string) string {
-	if season == "" || season == "0" {
-		return ""
-	}
-	if daily, ok := dailyDate(season, episode); ok {
-		return daily
-	}
-	seasonPart := season
-	if n, err := strconv.Atoi(season); err == nil {
-		seasonPart = fmt.Sprintf("%02d", n)
-	}
-	if episode == "" {
-		return "S" + seasonPart
-	}
-	if n, err := strconv.Atoi(episode); err == nil {
-		return fmt.Sprintf("S%sE%02d", seasonPart, n)
-	}
-	return "S" + seasonPart + "E" + episode
-}
-
-// dailyDate parses a "{year} {MM/dd}" season/episode pair (a daily show) into
-// "yyyy.MM.dd", matching the DateTime.TryParseExact in EpisodeSearchString. The
-// four-digit-year guard keeps Go's lenient year parsing from matching a normal season.
-func dailyDate(season, episode string) (string, bool) {
-	if len(season) != 4 {
-		return "", false
-	}
-	t, err := time.Parse("2006 01/02", season+" "+episode)
-	if err != nil {
-		return "", false
-	}
-	return t.Format("2006.01.02"), true
-}
-
-// sanitizeSearchTerm reproduces SearchCriteriaBase.SanitizedSearchTerm: collapse any
-// run of Unicode dash punctuation to a single '-', normalize the grave/acute/curly
-// single quotes to '\”, then keep only letters, digits, whitespace, and the
-// punctuation the Avistaz API tolerates (-._()@/'[]+%); every other rune is dropped.
-func sanitizeSearchTerm(term string) string {
-	var b strings.Builder
-	b.Grow(len(term))
-	prevDash := false
-	for _, r := range term {
-		if unicode.Is(unicode.Pd, r) { // any dash punctuation -> a single '-'
-			if !prevDash {
-				b.WriteByte('-')
-				prevDash = true
-			}
-			continue
-		}
-		prevDash = false
-		switch {
-		case r == '`', r == '´', r == '‘', r == '’':
-			b.WriteByte('\'')
-		case unicode.IsLetter(r), unicode.IsDigit(r), unicode.IsSpace(r), isSafePunct(r):
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
-
-// isSafePunct reports whether r is one of the punctuation runes Avistaz's search term
-// tolerates (the SanitizedSearchTerm whitelist, minus '-' which is handled above).
-func isSafePunct(r rune) bool {
-	switch r {
-	case '.', '_', '(', ')', '@', '/', '\'', '[', ']', '+', '%':
-		return true
-	default:
-		return false
-	}
-}
-
-// freeleechOnly reports whether the freeleech_only checkbox is enabled.
-func freeleechOnly(cfg map[string]string) bool {
-	return native.CheckboxOn(cfg["freeleech_only"])
+	return q.EpisodeSearchString()
 }

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
@@ -29,22 +28,22 @@ const (
 )
 
 // torrentDayRow is one row of the /t.json flat array (TorrentDayParser's per-torrent
-// access). Every numeric field is decoded through flexInt / flexFloat because the wire
+// access). Every numeric field is decoded through native.FlexString because the wire
 // form is either a JSON number or a JSON string — Prowlarr's dynamic cast tolerates
 // both, so a strict struct decode must too. `c` (the category id) is read via
 // `.ToString()` in Prowlarr, so it too may arrive as a number or string.
 type torrentDayRow struct {
-	ID                 flexInt   `json:"t"`
-	Name               string    `json:"name"`
-	CTime              flexInt   `json:"ctime"`
-	Size               flexInt   `json:"size"`
-	Files              flexInt   `json:"files"`
-	Completed          flexInt   `json:"completed"`
-	Seeders            flexInt   `json:"seeders"`
-	Leechers           flexInt   `json:"leechers"`
-	Category           flexInt   `json:"c"`
-	ImdbID             string    `json:"imdb-id"`
-	DownloadMultiplier flexFloat `json:"download-multiplier"`
+	ID                 native.FlexString `json:"t"`
+	Name               string            `json:"name"`
+	CTime              native.FlexString `json:"ctime"`
+	Size               native.FlexString `json:"size"`
+	Files              native.FlexString `json:"files"`
+	Completed          native.FlexString `json:"completed"`
+	Seeders            native.FlexString `json:"seeders"`
+	Leechers           native.FlexString `json:"leechers"`
+	Category           native.FlexString `json:"c"`
+	ImdbID             string            `json:"imdb-id"`
+	DownloadMultiplier native.FlexString `json:"download-multiplier"`
 }
 
 // parseReleases decodes a /t.json body (a FLAT JSON array of torrents) into normalized
@@ -67,10 +66,10 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 		return nil, fmt.Errorf("torrentday: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
 	}
 
-	freeOnly := freeleechOnly(d.Cfg)
+	freeOnly := native.CheckboxOn(d.Cfg["freeleech_only"])
 	releases := make([]*normalizer.Release, 0, len(rows))
 	for i := range rows {
-		if freeOnly && rows[i].DownloadMultiplier.float64WithDefault(1) != 0 {
+		if freeOnly && float64WithDefault(rows[i].DownloadMultiplier, 1) != 0 {
 			continue
 		}
 		releases = append(releases, d.toRelease(&rows[i]))
@@ -89,21 +88,21 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 // seeders+leechers; PublishDate is the unix ctime rendered as UTC RFC3339; and the
 // DownloadVolumeFactor is the download-multiplier (default 1, 0 = freeleech).
 func (d *driver) toRelease(row *torrentDayRow) *normalizer.Release {
-	seeders := row.Seeders.int64()
-	leechers := row.Leechers.int64()
+	seeders := row.Seeders.Int64()
+	leechers := row.Leechers.Int64()
 	return &normalizer.Release{
 		Title:                row.Name,
-		Link:                 d.downloadURL(row.ID.int64()),
-		Details:              d.detailsURL(row.ID.int64()),
+		Link:                 d.downloadURL(row.ID.Int64()),
+		Details:              d.detailsURL(row.ID.Int64()),
 		Categories:           d.categories(row.Category),
-		Size:                 row.Size.int64(),
-		Files:                row.Files.int64(),
-		Grabs:                row.Completed.int64(),
+		Size:                 row.Size.Int64(),
+		Files:                row.Files.Int64(),
+		Grabs:                row.Completed.Int64(),
 		Seeders:              seeders,
 		Leechers:             leechers,
 		Peers:                seeders + leechers,
-		PublishDate:          time.Unix(row.CTime.int64(), 0).UTC().Format(time.RFC3339),
-		DownloadVolumeFactor: row.DownloadMultiplier.float64WithDefault(1),
+		PublishDate:          time.Unix(row.CTime.Int64(), 0).UTC().Format(time.RFC3339),
+		DownloadVolumeFactor: float64WithDefault(row.DownloadMultiplier, 1),
 		UploadVolumeFactor:   1,
 		MinimumRatio:         minimumRatio,
 		MinimumSeedTime:      minimumSeedTimeSeconds,
@@ -113,15 +112,10 @@ func (d *driver) toRelease(row *torrentDayRow) *normalizer.Release {
 
 // categories maps a row's tracker category id (`c`) to its newznab category through the
 // caps, keeping only the canonical newznab id and discarding the mapper's synthesised
-// 1:1 custom id (those ids are >= customCatCutoff). An unmapped id yields no category
+// 1:1 custom id (native.FirstStandardCat). An unmapped id yields no category
 // (an uncategorised release) rather than failing the page.
-func (d *driver) categories(c flexInt) []int {
-	for _, id := range d.Caps.CategoryMap.MapTrackerCatToNewznab(c.string()) {
-		if id < customCatCutoff {
-			return []int{id}
-		}
-	}
-	return nil
+func (d *driver) categories(c native.FlexString) []int {
+	return native.FirstStandardCat(d.Caps.CategoryMap.MapTrackerCatToNewznab(c.Str()))
 }
 
 // downloadURL rebuilds the Prowlarr download URL: {base}download.php/<id>/<id>.torrent.
@@ -139,75 +133,11 @@ func (d *driver) detailsURL(id int64) string {
 	return d.BaseURL + detailsPath + "?id=" + strconv.FormatInt(id, 10)
 }
 
-// freeleechOnly reports whether the freeleech_only checkbox is enabled.
-func freeleechOnly(cfg map[string]string) bool {
-	return native.CheckboxOn(cfg["freeleech_only"])
-}
-
-// flexInt unmarshals a JSON number OR a JSON string into an int64-bearing value.
-// TorrentDay wire-encodes numerics inconsistently (sometimes a bare number, sometimes a
-// quoted string), so every numeric row field uses flexInt and a strict struct decode
-// never rejects the body (mirrors broadcastthenet flexString).
-type flexInt string
-
-func (f *flexInt) UnmarshalJSON(b []byte) error {
-	if len(b) == 0 || string(b) == "null" {
-		*f = ""
-		return nil
-	}
-	if b[0] == '"' {
-		var str string
-		if err := json.Unmarshal(b, &str); err != nil {
-			return fmt.Errorf("torrentday: decode numeric string field: %w", err)
-		}
-		*f = flexInt(str)
-		return nil
-	}
-	*f = flexInt(b) // a bare JSON number: keep its literal text
-	return nil
-}
-
-// int64 parses the flexInt as a base-10 int64; a blank or unparseable value yields 0 (a
-// malformed numeric must degrade to 0, not fail the whole page).
-func (f flexInt) int64() int64 {
-	n, err := strconv.ParseInt(strings.TrimSpace(string(f)), 10, 64)
-	if err != nil {
-		return 0
-	}
-	return n
-}
-
-// string returns the flexInt's literal text (used for the category id, which the caps
-// map matches as a string).
-func (f flexInt) string() string { return strings.TrimSpace(string(f)) }
-
-// flexFloat unmarshals a JSON number OR a JSON string into a float64-bearing value. The
-// download-multiplier is a `double?` in Prowlarr (default 1 when absent), and may arrive
-// as either a number or a string.
-type flexFloat string
-
-func (f *flexFloat) UnmarshalJSON(b []byte) error {
-	if len(b) == 0 || string(b) == "null" {
-		*f = ""
-		return nil
-	}
-	if b[0] == '"' {
-		var str string
-		if err := json.Unmarshal(b, &str); err != nil {
-			return fmt.Errorf("torrentday: decode numeric string field: %w", err)
-		}
-		*f = flexFloat(str)
-		return nil
-	}
-	*f = flexFloat(b)
-	return nil
-}
-
-// float64WithDefault parses the flexFloat as a float64; a blank (absent) field yields
-// def (the download-multiplier defaults to 1 when the row omits it). An unparseable
-// non-blank value also degrades to def.
-func (f flexFloat) float64WithDefault(def float64) float64 {
-	s := strings.TrimSpace(string(f))
+// float64WithDefault parses f as a float64; a blank (absent) field yields def — the
+// download-multiplier is a `double?` in Prowlarr, defaulting to 1 when the row omits it.
+// An unparseable non-blank value also degrades to def.
+func float64WithDefault(f native.FlexString, def float64) float64 {
+	s := f.Str()
 	if s == "" {
 		return def
 	}
@@ -217,8 +147,3 @@ func (f flexFloat) float64WithDefault(def float64) float64 {
 	}
 	return n
 }
-
-// customCatCutoff bounds the canonical newznab id range: the mapper synthesises a 1:1
-// custom category per tracker id with an id >= this cutoff; the parser discards it so
-// each release carries exactly one canonical category (mirrors broadcastthenet).
-const customCatCutoff = 100000

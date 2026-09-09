@@ -171,13 +171,13 @@ func TestParseFreeleechOnlyFilter(t *testing.T) {
 }
 
 // TestCategories proves the `c` id resolves to a single canonical newznab category (the
-// synthetic >= customCatCutoff custom id is discarded) and an unmapped id yields no
+// synthetic custom id is discarded) and an unmapped id yields no
 // category.
 func TestCategories(t *testing.T) {
 	t.Parallel()
 	d := parseDriver(t, nil)
 	cases := []struct {
-		c    flexInt
+		c    native.FlexString
 		want []int
 	}{
 		{"96", []int{2045}}, // Movies/UHD
@@ -193,35 +193,9 @@ func TestCategories(t *testing.T) {
 	}
 }
 
-// TestFlexIntDecode proves flexInt accepts a JSON string and a bare JSON number, and that
-// int64()/string() parse tolerantly (blank/garbage -> 0/"").
-func TestFlexIntDecode(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		in   string
-		want int64
-	}{
-		{`"42"`, 42},
-		{`42`, 42},
-		{`""`, 0},
-		{`null`, 0},
-		{`"notanumber"`, 0},
-	}
-	for _, c := range cases {
-		var f flexInt
-		if err := f.UnmarshalJSON([]byte(c.in)); err != nil {
-			t.Errorf("UnmarshalJSON(%s): %v", c.in, err)
-			continue
-		}
-		if got := f.int64(); got != c.want {
-			t.Errorf("flexInt(%s).int64() = %d, want %d", c.in, got, c.want)
-		}
-	}
-}
-
-// TestFlexFloatDefault proves the download-multiplier defaults to the supplied default
+// TestFloat64WithDefault proves the download-multiplier defaults to the supplied default
 // when absent/blank/unparseable, and otherwise parses the number (string or bare).
-func TestFlexFloatDefault(t *testing.T) {
+func TestFloat64WithDefault(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		in   string
@@ -235,13 +209,13 @@ func TestFlexFloatDefault(t *testing.T) {
 		{`"junk"`, 1}, // unparseable -> default
 	}
 	for _, c := range cases {
-		var f flexFloat
+		var f native.FlexString
 		if err := f.UnmarshalJSON([]byte(c.in)); err != nil {
 			t.Errorf("UnmarshalJSON(%s): %v", c.in, err)
 			continue
 		}
-		if got := f.float64WithDefault(1); got != c.want {
-			t.Errorf("flexFloat(%s).float64WithDefault(1) = %v, want %v", c.in, got, c.want)
+		if got := float64WithDefault(f, 1); got != c.want {
+			t.Errorf("float64WithDefault(%s, 1) = %v, want %v", c.in, got, c.want)
 		}
 	}
 }

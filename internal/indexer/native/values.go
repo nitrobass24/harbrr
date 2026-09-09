@@ -5,9 +5,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/dateparse"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 )
 
 // CanonicalIMDBID returns "tt%07d" for any recognisable IMDB id form ("tt0133093",
@@ -60,3 +62,77 @@ func PublishDate(raw string, clock func() time.Time) (string, error) {
 // box as Jackett's "True" sentinel; "true"/"1"/"on"/"yes" are accepted case-insensitively
 // so whatever the management API persists is read consistently).
 func CheckboxOn(v string) bool { return loader.CheckboxOn(v) }
+
+// DailyEpisodeDate parses a daily-show season/episode pair — season a four-digit year,
+// episode "MM/dd" — into the date it names, reproducing Prowlarr's
+// DateTime.TryParseExact($"{Season} {Episode}", "yyyy MM/dd"). The four-digit-year guard
+// keeps Go's lenient year parsing from matching a normal season (the month/day widths are
+// already fixed by the layout). The date is returned unformatted because the families
+// disagree on the rendering: the base episode string and BTN/FileList/Nebulance want
+// "yyyy.MM.dd", while HDBits' and BeyondHD's APIs want ISO "yyyy-MM-dd".
+func DailyEpisodeDate(season, episode string) (time.Time, bool) {
+	season, episode = strings.TrimSpace(season), strings.TrimSpace(episode)
+	if len(season) != 4 {
+		return time.Time{}, false
+	}
+	t, err := time.Parse("2006 01/02", season+" "+episode)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t, true
+}
+
+// FirstStandardCat returns the first STANDARD newznab category id in ids as a
+// one-element slice, or nil when ids carries none. The caps mapper resolves one tracker
+// category to both its standard newznab id and Jackett's synthesised 1:1 custom category
+// (mapper.CustomCategoryOffset and above); Prowlarr emits exactly one category per
+// release, so every native family keeps the standard id and drops the synthetic one. A
+// family with a fallback category applies it to the nil.
+func FirstStandardCat(ids []int) []int {
+	for _, id := range ids {
+		if id < mapper.CustomCategoryOffset {
+			return []int{id}
+		}
+	}
+	return nil
+}
+
+// PositiveInt parses raw as a non-negative base-10 int: blank, unparseable or negative
+// yields 0. It is the "did the query give me a usable id/season?" read the TV families do
+// on search.Query's string fields, where 0 and absent are the same thing.
+func PositiveInt(raw string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return 0
+	}
+	return max(n, 0)
+}
+
+// SanitizeSearchTerm reproduces Prowlarr's SearchCriteriaBase.SanitizedSearchTerm:
+// collapse any run of Unicode dash punctuation to a single '-', normalise the
+// grave/acute/curly single quotes to a plain apostrophe, then keep only letters, digits,
+// whitespace and the punctuation a tracker search term tolerates (-._()@/'[]+%); every
+// other rune is dropped. The '-' is absent from the whitelist below because the dash
+// branch above has already consumed it.
+func SanitizeSearchTerm(term string) string {
+	var b strings.Builder
+	b.Grow(len(term))
+	prevDash := false
+	for _, r := range term {
+		if unicode.Is(unicode.Pd, r) { // any dash punctuation -> a single '-'
+			if !prevDash {
+				b.WriteByte('-')
+				prevDash = true
+			}
+			continue
+		}
+		prevDash = false
+		switch {
+		case r == '`', r == '´', r == '‘', r == '’':
+			b.WriteByte('\'')
+		case unicode.IsLetter(r), unicode.IsDigit(r), unicode.IsSpace(r), strings.ContainsRune("._()@/'[]+%", r):
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}

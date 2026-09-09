@@ -14,23 +14,6 @@ import (
 // driver's baseURL already ends in a single trailing slash.
 const searchPath = "api.php"
 
-// Static search params Prowlarr's GetBasicSearchParameters always sets (GazelleGames
-// RequestGenerator): request=search selects the search action, search_type=torrents asks
-// for the torrent rows, empty_groups=filled drops groups with no torrents, and
-// order_by=time / order_way=desc sort newest-first.
-const (
-	paramRequest     = "search"
-	paramSearchType  = "torrents"
-	paramEmptyGroups = "filled"
-	paramOrderBy     = "time"
-	paramOrderWay    = "desc"
-
-	// paramArtistCheck carries one requested category per value (the platform name); GGn's
-	// search filters the artist/platform set on it. paramFreeTorrent=1 restricts to freeleech.
-	paramArtistCheck = "artistcheck[]"
-	paramFreeTorrent = "freetorrent"
-)
-
 // Search issues the authenticated api.php search request for the query and returns the
 // parsed releases. A 401/403 is an auth failure wrapped with login.ErrLoginFailed (so the
 // registry records an auth_failure health event); a rate-limit status is a RateLimitedError
@@ -60,11 +43,15 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 // so it is safe to log.
 func (d *driver) buildSearchURL(q search.Query) string {
 	params := url.Values{}
-	params.Set("request", paramRequest)
-	params.Set("search_type", paramSearchType)
-	params.Set("empty_groups", paramEmptyGroups)
-	params.Set("order_by", paramOrderBy)
-	params.Set("order_way", paramOrderWay)
+	// The static params Prowlarr's GetBasicSearchParameters always sets: request=search
+	// selects the search action, search_type=torrents asks for the torrent rows,
+	// empty_groups=filled drops groups with no torrents, and order_by=time /
+	// order_way=desc sort newest-first.
+	params.Set("request", "search")
+	params.Set("search_type", "torrents")
+	params.Set("empty_groups", "filled")
+	params.Set("order_by", "time")
+	params.Set("order_way", "desc")
 	// Prowlarr replaces '.' with ' ' before sending (GazelleGames.GetBasicSearchParameters:
 	// searchTerm.Replace(".", " ")): *arr emits dotted scene-style queries and GGn tokenizes
 	// the term on spaces, so a dotted query must be de-dotted to match the same releases.
@@ -73,7 +60,7 @@ func (d *driver) buildSearchURL(q search.Query) string {
 	}
 	d.addCategoryParams(params, q)
 	if d.freeleechOnly() {
-		params.Set(paramFreeTorrent, "1")
+		params.Set("freetorrent", "1")
 	}
 	return d.BaseURL + searchPath + "?" + params.Encode()
 }
@@ -95,7 +82,7 @@ func (d *driver) addCategoryParams(params url.Values, q search.Query) {
 			continue
 		}
 		seen[c] = struct{}{}
-		params.Add(paramArtistCheck, c)
+		params.Add("artistcheck[]", c)
 	}
 }
 

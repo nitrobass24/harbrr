@@ -44,7 +44,4 @@ func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, err
 // surfaces as a RateLimitedError, while a parseable response confirms the credentials work.
 // Reuses Search so the test path is the real request path, including the status mapping and
 // header auth.
-func (d *driver) Test(ctx context.Context) error {
-	_, err := d.Search(ctx, search.Query{})
-	return err
-}
+func (d *driver) Test(ctx context.Context) error { return native.TestViaSearch(ctx, d) }

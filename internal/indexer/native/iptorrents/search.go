@@ -2,9 +2,7 @@ package iptorrents
 
 import (
 	"context"
-	"fmt"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
@@ -40,10 +38,10 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 // term, a keyword query carries no imdb). See the testdata README divergence note.
 func (d *driver) buildSearchURL(q search.Query) string {
 	params := url.Values{}
-	for _, cat := range distinct(q.Categories) {
+	for _, cat := range q.Categories {
 		params.Set(cat, "")
 	}
-	if freeleechOnly(d.Cfg) {
+	if native.CheckboxOn(d.Cfg["freeleech_only"]) {
 		params.Set("free", "on")
 	}
 	imdb := native.CanonicalIMDBID(q.IMDBID)
@@ -73,54 +71,12 @@ func (d *driver) searchTerm(q search.Query) string {
 	if season == "" && ep == "" {
 		return keyword
 	}
-	epString := episodeSearchString(season, ep)
-	term := strings.TrimSpace(keyword + " " + epString)
+	term := strings.TrimSpace(keyword + " " + q.EpisodeSearchString())
 	if season != "" && season != "0" && ep == "" {
 		term += "*"
 	}
 	return strings.TrimSpace(term)
 }
 
-// episodeSearchString reproduces TvSearchCriteria's SxxExx rendering: a season with no
-// episode is "S{season:00}"; a season+episode is "S{season:00}E{episode:00}"; a
-// seasonless query is empty. Non-numeric season/episode values fall back to the raw
-// value (matching ParseUtil's lenient coercion).
-func episodeSearchString(season, episode string) string {
-	if season == "" || season == "0" {
-		return ""
-	}
-	seasonPart := season
-	if n, err := strconv.Atoi(season); err == nil {
-		seasonPart = fmt.Sprintf("%02d", n)
-	}
-	if episode == "" {
-		return "S" + seasonPart
-	}
-	if n, err := strconv.Atoi(episode); err == nil {
-		return fmt.Sprintf("S%sE%02d", seasonPart, n)
-	}
-	return "S" + seasonPart + "E" + episode
-}
-
 // sphinx wraps a term in IPTorrents' Sphinx boolean grouping `+(term)`.
 func sphinx(term string) string { return "+(" + term + ")" }
-
-// distinct returns the input with duplicate tracker categories removed, preserving
-// order (Prowlarr's MapTorznabCapsToTrackers(...).Distinct()).
-func distinct(cats []string) []string {
-	seen := make(map[string]struct{}, len(cats))
-	out := make([]string, 0, len(cats))
-	for _, c := range cats {
-		if _, dup := seen[c]; dup {
-			continue
-		}
-		seen[c] = struct{}{}
-		out = append(out, c)
-	}
-	return out
-}
-
-// freeleechOnly reports whether the freeleech_only checkbox is enabled.
-func freeleechOnly(cfg map[string]string) bool {
-	return native.CheckboxOn(cfg["freeleech_only"])
-}

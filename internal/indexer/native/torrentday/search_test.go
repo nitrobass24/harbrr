@@ -41,8 +41,8 @@ func TestBuildSearchURL(t *testing.T) {
 			want:  base + "t.json?29;q=dune",
 		},
 		{
-			name:  "multiple categories deduplicated, order preserved",
-			query: search.Query{Categories: []string{"29", "28", "29"}, Keywords: "foo"},
+			name:  "multiple categories, order preserved",
+			query: search.Query{Categories: []string{"29", "28"}, Keywords: "foo"},
 			want:  base + "t.json?29;28;q=foo",
 		},
 		{
@@ -189,22 +189,5 @@ func TestSearchEmptyResult(t *testing.T) {
 	}
 	if len(releases) != 0 {
 		t.Errorf("got %d releases, want 0", len(releases))
-	}
-}
-
-// TestEpisodeSearchString covers the SxxExx rendering used in the search term.
-func TestEpisodeSearchString(t *testing.T) {
-	t.Parallel()
-	cases := []struct{ season, ep, want string }{
-		{"", "", ""},
-		{"0", "5", ""},
-		{"1", "", "S01"},
-		{"1", "2", "S01E02"},
-		{"12", "5", "S12E05"},
-	}
-	for _, tc := range cases {
-		if got := episodeSearchString(tc.season, tc.ep); got != tc.want {
-			t.Errorf("episodeSearchString(%q,%q) = %q, want %q", tc.season, tc.ep, got, tc.want)
-		}
 	}
 }

@@ -16,6 +16,10 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
+// authFailurePhrases are the words an AnimeBytes error message uses for a rejected
+// credential (passkey/username), so such a failure surfaces as a login error.
+var authFailurePhrases = []string{"passkey", "username", "credential", "authoriz", "authenticat", "unauthorized"}
+
 // Newznab category ids the parser emits directly. AnimeBytes' scrape.php carries no
 // numeric tracker category id, so — exactly like Prowlarr's AnimeBytesParser — the
 // parser maps a group's GroupName/CategoryName (and, for games/music, the Property
@@ -142,22 +146,10 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 // of the configured passkey first.
 func (d *driver) classifyError(msg string) error {
 	scrubbed := d.Scrub(msg)
-	if looksLikeAuthFailure(scrubbed) {
+	if native.MentionsAny(scrubbed, authFailurePhrases...) {
 		return fmt.Errorf("animebytes: api error: %s: %w", scrubbed, login.ErrLoginFailed)
 	}
 	return fmt.Errorf("animebytes: api error: %s: %w", scrubbed, search.ErrParseError)
-}
-
-// looksLikeAuthFailure reports whether an AnimeBytes error message indicates a rejected
-// credential (passkey/username), so the failure surfaces as a login error.
-func looksLikeAuthFailure(msg string) bool {
-	lower := strings.ToLower(msg)
-	for _, phrase := range []string{"passkey", "username", "credential", "authoriz", "authenticat", "unauthorized"} {
-		if strings.Contains(lower, phrase) {
-			return true
-		}
-	}
-	return false
 }
 
 // flattenGroup turns one group into releases, one per torrent. The FreeleechOnly setting
@@ -166,7 +158,7 @@ func looksLikeAuthFailure(msg string) bool {
 // the primary (main) title only — Prowlarr additionally fans out one release per Japanese
 // /Romaji/Alternative synonym, a parity feature deferred here (noted divergence).
 func (d *driver) flattenGroup(g *group) []*normalizer.Release {
-	freeOnly := freeleechOnly(d.Cfg)
+	freeOnly := native.CheckboxOn(d.Cfg["freeleech_only"])
 	rels := make([]*normalizer.Release, 0, len(g.Torrents))
 	for i := range g.Torrents {
 		t := &g.Torrents[i]
@@ -239,11 +231,6 @@ func minimumSeedTime(size int64) int64 {
 
 // minimumRatio is the fixed 1 Prowlarr sets for every AnimeBytes release.
 const minimumRatio = 1
-
-// freeleechOnly reports whether the freeleech_only toggle is enabled (parser-side filter).
-func freeleechOnly(cfg map[string]string) bool {
-	return native.CheckboxOn(cfg["freeleech_only"])
-}
 
 // torrentProperties splits a torrent Property string into its ordered, de-duplicated
 // descriptor list, HTML-decoding the whole string first and dropping the "Freeleech"

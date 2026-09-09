@@ -126,8 +126,8 @@ func TestBuildSearchURL(t *testing.T) {
 			want:  url.Values{"action": {"search-torrents"}, "type": {"imdb"}, "query": {"tt0944947"}, "season": {"1"}, "episode": {"2"}},
 		},
 		{
-			name:  "multiple categories -> csv, deduped",
-			query: search.Query{Keywords: "foo", Categories: []string{"4", "21", "4"}},
+			name:  "multiple categories -> csv",
+			query: search.Query{Keywords: "foo", Categories: []string{"4", "21"}},
 			want:  url.Values{"action": {"search-torrents"}, "type": {"name"}, "query": {"foo"}, "category": {"4,21"}},
 		},
 		{
@@ -283,41 +283,6 @@ func TestTestAction(t *testing.T) {
 	}})
 	if err := bad.Test(context.Background()); !errors.Is(err, login.ErrLoginFailed) {
 		t.Errorf("Test on bad creds = %v, want login.ErrLoginFailed", err)
-	}
-}
-
-func TestSanitizeSearchTerm(t *testing.T) {
-	t.Parallel()
-	cases := []struct{ in, want string }{
-		{"the matrix", "the matrix"},
-		{"Money$ Heist: 4!", "Money Heist 4"},
-		{"Amélie", "Amélie"},
-		{"a — b", "a - b"},
-		{"a–-—b", "a-b"},
-		{"it’s", "it's"},
-		{"WALL[E]+ (2008)", "WALL[E]+ (2008)"},
-	}
-	for _, tc := range cases {
-		if got := sanitizeSearchTerm(tc.in); got != tc.want {
-			t.Errorf("sanitize(%q) = %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
-func TestFreeleechOnly(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		value string
-		want  bool
-	}{
-		{"True", true},
-		{"", false},
-		{"false", false},
-	}
-	for _, tt := range tests {
-		if got := freeleechOnly(map[string]string{"freeleech_only": tt.value}); got != tt.want {
-			t.Errorf("freeleechOnly(%q) = %v, want %v", tt.value, got, tt.want)
-		}
 	}
 }
 

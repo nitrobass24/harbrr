@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"strconv"
 	"strings"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
@@ -50,8 +49,8 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 // encoding is positional ';'-joined tokens, which url.Values cannot express.
 func (d *driver) buildSearchURL(q search.Query) string {
 	tokens := make([]string, 0, len(q.Categories)+2)
-	tokens = append(tokens, distinct(q.Categories)...)
-	if freeleechOnly(d.Cfg) {
+	tokens = append(tokens, q.Categories...)
+	if native.CheckboxOn(d.Cfg["freeleech_only"]) {
 		tokens = append(tokens, freeleechToken)
 	}
 	tokens = append(tokens, "q="+url.QueryEscape(d.searchTerm(q)))
@@ -71,41 +70,14 @@ func (d *driver) searchTerm(q search.Query) string {
 	if season == "" && ep == "" {
 		return keyword
 	}
-	term := strings.TrimSpace(keyword + " " + episodeSearchString(season, ep))
+	term := strings.TrimSpace(keyword + " " + q.EpisodeSearchString())
 	return strings.TrimSpace(term)
 }
 
-// episodeSearchString reproduces the SxxExx rendering: a season with no episode is
-// "S{season:00}"; a season+episode is "S{season:00}E{episode:00}"; a seasonless query
-// is empty. Non-numeric season/episode values fall back to the raw value.
-func episodeSearchString(season, episode string) string {
-	if season == "" || season == "0" {
-		return ""
-	}
-	seasonPart := season
-	if n, err := strconv.Atoi(season); err == nil {
-		seasonPart = fmt.Sprintf("%02d", n)
-	}
-	if episode == "" {
-		return "S" + seasonPart
-	}
-	if n, err := strconv.Atoi(episode); err == nil {
-		return fmt.Sprintf("S%sE%02d", seasonPart, n)
-	}
-	return "S" + seasonPart + "E" + episode
-}
-
-// distinct returns the input with duplicate tracker categories removed, preserving
-// order (Prowlarr's MapTorznabCapsToTrackers(...).Distinct()).
-func distinct(cats []string) []string {
-	seen := make(map[string]struct{}, len(cats))
-	out := make([]string, 0, len(cats))
-	for _, c := range cats {
-		if _, dup := seen[c]; dup {
-			continue
-		}
-		seen[c] = struct{}{}
-		out = append(out, c)
-	}
-	return out
-}
+// Test verifies the configured session cookie still authenticates (the management
+// "test indexer" action) by issuing an empty browse query. A good cookie returns 200 with
+// a JSON array; a stale cookie redirects to /login.php (or returns 401/403). Search stamps
+// the context WithNoRedirectFollow, so that redirect surfaces as a raw 3xx that
+// isLoginRedirect maps to login.ErrLoginFailed (the registry records an auth_failure health
+// event) instead of being followed to the login page and misread as a parse error.
+func (d *driver) Test(ctx context.Context) error { return native.TestViaSearch(ctx, d) }

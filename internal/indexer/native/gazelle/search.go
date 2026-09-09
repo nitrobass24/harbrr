@@ -133,22 +133,12 @@ func sanitizeTerm(keywords string) string {
 }
 
 // filterCats renders the per-category filter_cat[<id>]=1 params Prowlarr emits, one per
-// requested tracker category, de-duplicated in request order. q.Categories already holds
-// the tracker category ids (the Torznab layer mapped the newznab cats to tracker cats
-// before building the query), so each id is emitted verbatim. The "[" / "]" in the key
-// are percent-encoded so the URL is well-formed.
+// requested tracker category, in request order. q.Categories already holds the distinct,
+// non-blank tracker category ids (mapper.MapTorznabCapsToTrackers), so each id is emitted
+// verbatim. The "[" / "]" in the key are percent-encoded so the URL is well-formed.
 func filterCats(cats []string) string {
-	seen := make(map[string]struct{}, len(cats))
 	parts := make([]string, 0, len(cats))
 	for _, c := range cats {
-		c = strings.TrimSpace(c)
-		if c == "" {
-			continue
-		}
-		if _, dup := seen[c]; dup {
-			continue
-		}
-		seen[c] = struct{}{}
 		parts = append(parts, url.QueryEscape(fmt.Sprintf("filter_cat[%s]", c))+"=1")
 	}
 	return strings.Join(parts, "&")

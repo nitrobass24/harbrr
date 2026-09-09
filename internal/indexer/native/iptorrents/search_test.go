@@ -37,8 +37,8 @@ func TestBuildSearchURL(t *testing.T) {
 			wantQuery: url.Values{"72": {""}, "q": {"+(dune)"}},
 		},
 		{
-			name:      "multiple categories deduplicated",
-			query:     search.Query{Categories: []string{"72", "73", "72"}, Keywords: "foo"},
+			name:      "multiple categories, order preserved",
+			query:     search.Query{Categories: []string{"72", "73"}, Keywords: "foo"},
 			wantQuery: url.Values{"72": {""}, "73": {""}, "q": {"+(foo)"}},
 		},
 		{
@@ -180,34 +180,6 @@ func TestSearchTransportErrorHostOnly(t *testing.T) {
 	// The configured cookie credential must not leak either.
 	assertNoSecret(t, err.Error())
 	assertNoSecret(t, apphttp.RedactError(err))
-}
-
-func TestEpisodeSearchString(t *testing.T) {
-	t.Parallel()
-	cases := []struct{ season, ep, want string }{
-		{"", "", ""},
-		{"0", "5", ""},
-		{"1", "", "S01"},
-		{"1", "2", "S01E02"},
-		{"12", "5", "S12E05"},
-	}
-	for _, tc := range cases {
-		if got := episodeSearchString(tc.season, tc.ep); got != tc.want {
-			t.Errorf("episodeSearchString(%q,%q) = %q, want %q", tc.season, tc.ep, got, tc.want)
-		}
-	}
-}
-
-func TestFreeleechOnly(t *testing.T) {
-	t.Parallel()
-	if !freeleechOnly(map[string]string{"freeleech_only": "True"}) {
-		t.Error("freeleechOnly(True) = false, want true")
-	}
-	for _, v := range []string{"", "false"} {
-		if freeleechOnly(map[string]string{"freeleech_only": v}) {
-			t.Errorf("freeleechOnly(%q) = true, want false", v)
-		}
-	}
 }
 
 func cfgOr(cfg map[string]string) map[string]string {

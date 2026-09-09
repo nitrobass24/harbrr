@@ -68,7 +68,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 		return nil, fmt.Errorf("filelist: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
 	}
 
-	freeOnly := freeleechOnly(d.Cfg)
+	freeOnly := native.CheckboxOn(d.Cfg["freeleech_only"])
 	releases := make([]*normalizer.Release, 0, len(rows))
 	for i := range rows {
 		if freeOnly && rows[i].FreeLeech == 0 {
