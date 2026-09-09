@@ -56,34 +56,17 @@ type delugeVendorClient interface {
 	LabelPlugin(ctx context.Context) (*deluge.LabelPlugin, error)
 }
 
-// realDelugeClient adapts a delugeVendorClient to delugeClient, resolving the
-// Label plugin on demand for each label op — it's a rare path, so there's no
-// need to cache the plugin handle across calls.
+// realDelugeClient adapts a delugeVendorClient to delugeClient. Everything but the
+// two label ops is identical on both interfaces, so the vendor client is embedded and
+// carries them through unchanged; only the label ops need adapting, and they resolve
+// the Label plugin on demand for each call — it's a rare path, so there's no need to
+// cache the plugin handle.
 type realDelugeClient struct {
-	vendor delugeVendorClient
-}
-
-func (r *realDelugeClient) Connect(ctx context.Context) error { return r.vendor.Connect(ctx) }
-func (r *realDelugeClient) Close() error                      { return r.vendor.Close() }
-
-func (r *realDelugeClient) DaemonVersion(ctx context.Context) (string, error) {
-	return r.vendor.DaemonVersion(ctx)
-}
-
-func (r *realDelugeClient) AddTorrentMagnet(ctx context.Context, uri string, opts *deluge.Options) (string, error) {
-	return r.vendor.AddTorrentMagnet(ctx, uri, opts)
-}
-
-func (r *realDelugeClient) AddTorrentURL(ctx context.Context, url string, opts *deluge.Options) (string, error) {
-	return r.vendor.AddTorrentURL(ctx, url, opts)
-}
-
-func (r *realDelugeClient) AddTorrentFile(ctx context.Context, name, contentBase64 string, opts *deluge.Options) (string, error) {
-	return r.vendor.AddTorrentFile(ctx, name, contentBase64, opts)
+	delugeVendorClient
 }
 
 func (r *realDelugeClient) SetTorrentLabel(ctx context.Context, hash, label string) error {
-	plugin, err := r.vendor.LabelPlugin(ctx)
+	plugin, err := r.LabelPlugin(ctx)
 	if err != nil {
 		return err
 	}
@@ -97,7 +80,7 @@ func (r *realDelugeClient) SetTorrentLabel(ctx context.Context, hash, label stri
 }
 
 func (r *realDelugeClient) AddLabel(ctx context.Context, label string) error {
-	plugin, err := r.vendor.LabelPlugin(ctx)
+	plugin, err := r.LabelPlugin(ctx)
 	if err != nil {
 		return err
 	}
@@ -145,7 +128,7 @@ func newDeluge(c domain.DownloadClient, secret string, _ *http.Client) (Driver, 
 		vendor = deluge.NewV2(rpcSettings)
 	}
 
-	return &delugeDriver{cli: &realDelugeClient{vendor: vendor}, settings: settings}, nil
+	return &delugeDriver{cli: &realDelugeClient{delugeVendorClient: vendor}, settings: settings}, nil
 }
 
 // Test connects and reads the daemon version, proving the host + credentials work.

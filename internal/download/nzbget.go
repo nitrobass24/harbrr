@@ -87,7 +87,7 @@ func (d *nzbgetDriver) Add(ctx context.Context, p Payload, opts AddOptions) erro
 // the same defense-in-depth reason as the URL path.
 func (d *nzbgetDriver) appendContent(ctx context.Context, p Payload, category string) error {
 	err := d.client.AddFromContent(ctx, nzbget.AddNzbContentRequest{
-		Filename: releaseFilename(p.Name, ".nzb"),
+		Filename: releaseFilename(p.Name, ".nzb", maxUploadNameBytes),
 		Content:  p.Bytes,
 		Category: category,
 	})

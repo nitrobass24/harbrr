@@ -28,11 +28,11 @@ func TestSealOpenRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	ad := aad(1, "passkey")
-	blob, err := seal(testKey, ad, []byte("super-secret-passkey"))
+	blob, err := Seal(testKey, ad, []byte("super-secret-passkey"))
 	if err != nil {
 		t.Fatalf("seal: %v", err)
 	}
-	got, err := open(testKey, ad, blob)
+	got, err := Open(testKey, ad, blob)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestSealBlobNeverContainsPlaintext(t *testing.T) {
 	t.Parallel()
 
 	plaintext := "DISTINCTIVE-PLAINTEXT-MARKER-9173"
-	blob, err := seal(testKey, aad(1, "x"), []byte(plaintext))
+	blob, err := Seal(testKey, aad(1, "x"), []byte(plaintext))
 	if err != nil {
 		t.Fatalf("seal: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestSealTamperFails(t *testing.T) {
 	t.Parallel()
 
 	ad := aad(1, "x")
-	blob, err := seal(testKey, ad, []byte("payload"))
+	blob, err := Seal(testKey, ad, []byte("payload"))
 	if err != nil {
 		t.Fatalf("seal: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestSealTamperFails(t *testing.T) {
 	raw[len(raw)-1] ^= 0x01 // flip one bit of the tag
 	tampered := base64.StdEncoding.EncodeToString(raw)
 
-	if _, err := open(testKey, ad, tampered); err == nil {
+	if _, err := Open(testKey, ad, tampered); err == nil {
 		t.Error("open accepted a tampered ciphertext, want auth failure")
 	}
 }
@@ -82,11 +82,11 @@ func TestOpenWrongKeyFails(t *testing.T) {
 	t.Parallel()
 
 	ad := aad(1, "x")
-	blob, err := seal(testKey, ad, []byte("payload"))
+	blob, err := Seal(testKey, ad, []byte("payload"))
 	if err != nil {
 		t.Fatalf("seal: %v", err)
 	}
-	if _, err := open(testKey2, ad, blob); err == nil {
+	if _, err := Open(testKey2, ad, blob); err == nil {
 		t.Error("open accepted a wrong key, want auth failure")
 	}
 }
@@ -94,16 +94,16 @@ func TestOpenWrongKeyFails(t *testing.T) {
 func TestOpenAADMismatchFails(t *testing.T) {
 	t.Parallel()
 
-	blob, err := seal(testKey, aad(1, "passkey"), []byte("payload"))
+	blob, err := Seal(testKey, aad(1, "passkey"), []byte("payload"))
 	if err != nil {
 		t.Fatalf("seal: %v", err)
 	}
 	// Same key, different AAD (other instance or setting) must fail — this is the
 	// cross-row replay protection.
-	if _, err := open(testKey, aad(2, "passkey"), blob); err == nil {
+	if _, err := Open(testKey, aad(2, "passkey"), blob); err == nil {
 		t.Error("open accepted a different instance AAD, want auth failure")
 	}
-	if _, err := open(testKey, aad(1, "cookie"), blob); err == nil {
+	if _, err := Open(testKey, aad(1, "cookie"), blob); err == nil {
 		t.Error("open accepted a different setting AAD, want auth failure")
 	}
 }
@@ -122,7 +122,7 @@ func TestSealNonceUnique(t *testing.T) {
 	ad := aad(1, "passkey")
 	seen := make(map[string]struct{}, iters)
 	for i := range iters {
-		blob, err := seal(testKey, ad, []byte("same-plaintext-every-time"))
+		blob, err := Seal(testKey, ad, []byte("same-plaintext-every-time"))
 		if err != nil {
 			t.Fatalf("seal[%d]: %v", i, err)
 		}
@@ -145,11 +145,11 @@ func TestOpenErrorHasNoPlaintext(t *testing.T) {
 	t.Parallel()
 
 	plaintext := "LEAK-CANARY-55512"
-	blob, err := seal(testKey, aad(1, "x"), []byte(plaintext))
+	blob, err := Seal(testKey, aad(1, "x"), []byte(plaintext))
 	if err != nil {
 		t.Fatalf("seal: %v", err)
 	}
-	_, err = open(testKey2, aad(1, "x"), blob)
+	_, err = Open(testKey2, aad(1, "x"), blob)
 	if err == nil {
 		t.Fatal("expected an error")
 	}

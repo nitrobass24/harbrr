@@ -31,17 +31,17 @@ func TestPassphraseRoundTrip(t *testing.T) {
 	}
 
 	plaintext := []byte(`{"tables":{"proxies":[{"url":"http://user:pw@proxy:8080"}]}}`)
-	blob, err := EncryptWithKey(key, []byte(backupAAD), plaintext)
+	blob, err := Seal(key, []byte(backupAAD), plaintext)
 	if err != nil {
-		t.Fatalf("EncryptWithKey: %v", err)
+		t.Fatalf("Seal: %v", err)
 	}
 	if strings.Contains(blob, "proxy:8080") || strings.Contains(blob, "user:pw") {
 		t.Fatalf("ciphertext leaked plaintext: %q", blob)
 	}
 
-	got, err := DecryptWithKey(key, []byte(backupAAD), blob)
+	got, err := Open(key, []byte(backupAAD), blob)
 	if err != nil {
-		t.Fatalf("DecryptWithKey: %v", err)
+		t.Fatalf("Open: %v", err)
 	}
 	if !bytes.Equal(got, plaintext) {
 		t.Errorf("round-trip mismatch: got %q, want %q", got, plaintext)
@@ -51,16 +51,16 @@ func TestPassphraseRoundTrip(t *testing.T) {
 func TestPassphraseWrongPassphraseFailsCleanly(t *testing.T) {
 	t.Parallel()
 	salt, _ := NewPassphraseSalt()
-	blob, err := EncryptWithKey(mustDerive(t, "right", salt), []byte(backupAAD), []byte("secret data"))
+	blob, err := Seal(mustDerive(t, "right", salt), []byte(backupAAD), []byte("secret data"))
 	if err != nil {
-		t.Fatalf("EncryptWithKey: %v", err)
+		t.Fatalf("Seal: %v", err)
 	}
 
 	// A wrong passphrase derives a different key, so the GCM tag check fails — a clean
 	// error, never garbage plaintext.
-	got, err := DecryptWithKey(mustDerive(t, "wrong", salt), []byte(backupAAD), blob)
+	got, err := Open(mustDerive(t, "wrong", salt), []byte(backupAAD), blob)
 	if err == nil {
-		t.Fatalf("DecryptWithKey with wrong passphrase = %q, want error", got)
+		t.Fatalf("Open with wrong passphrase = %q, want error", got)
 	}
 	if got != nil {
 		t.Errorf("failed decrypt returned non-nil plaintext: %q", got)
@@ -87,18 +87,18 @@ func TestDeriveKeyDeterministicAndSaltUnique(t *testing.T) {
 	}
 }
 
-func TestDecryptWithKeyRejectsTamperAndAADMismatch(t *testing.T) {
+func TestOpenRejectsTamperAndAADMismatch(t *testing.T) {
 	t.Parallel()
 	salt, _ := NewPassphraseSalt()
 	key := mustDerive(t, "pw", salt)
-	blob, err := EncryptWithKey(key, []byte(backupAAD), []byte("payload"))
+	blob, err := Seal(key, []byte(backupAAD), []byte("payload"))
 	if err != nil {
-		t.Fatalf("EncryptWithKey: %v", err)
+		t.Fatalf("Seal: %v", err)
 	}
 
 	// A payload sealed under one AAD cannot be opened under another (splice protection).
-	if _, err := DecryptWithKey(key, []byte("harbrr-backup/v2"), blob); err == nil {
-		t.Error("DecryptWithKey accepted a mismatched AAD")
+	if _, err := Open(key, []byte("harbrr-backup/v2"), blob); err == nil {
+		t.Error("Open accepted a mismatched AAD")
 	}
 
 	// A flipped GCM-tag byte fails authentication. Flip a decoded byte (not a base64
@@ -108,8 +108,8 @@ func TestDecryptWithKeyRejectsTamperAndAADMismatch(t *testing.T) {
 		t.Fatalf("decode blob: %v", err)
 	}
 	raw[len(raw)-1] ^= 0x01
-	if _, err := DecryptWithKey(key, []byte(backupAAD), base64.StdEncoding.EncodeToString(raw)); err == nil {
-		t.Error("DecryptWithKey accepted a tampered blob")
+	if _, err := Open(key, []byte(backupAAD), base64.StdEncoding.EncodeToString(raw)); err == nil {
+		t.Error("Open accepted a tampered blob")
 	}
 }
 
@@ -129,12 +129,12 @@ func TestDeriveKeyHonorsRecordedKDFParams(t *testing.T) {
 	}
 	// A payload sealed under the recorded params re-derives + opens with those same params
 	// — the self-describing guarantee that survives a future default-cost bump.
-	blob, err := EncryptWithKey(customKey, []byte(backupAAD), []byte("payload"))
+	blob, err := Seal(customKey, []byte(backupAAD), []byte("payload"))
 	if err != nil {
 		t.Fatalf("seal: %v", err)
 	}
 	reKey, _ := DeriveKeyFromPassphrase("pw", salt, custom)
-	got, err := DecryptWithKey(reKey, []byte(backupAAD), blob)
+	got, err := Open(reKey, []byte(backupAAD), blob)
 	if err != nil || string(got) != "payload" {
 		t.Errorf("re-derive+open with recorded params = %q, err %v; want payload", got, err)
 	}

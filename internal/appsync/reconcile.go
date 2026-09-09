@@ -62,7 +62,7 @@ func Reconcile(ctx context.Context, t Target, syncLevel string, desired []Desire
 
 // addOrUpdate creates the indexer when no remote id resolves, no-ops when the prior
 // hash still matches, and otherwise updates it.
-func addOrUpdate(ctx context.Context, t Target, d DesiredIndexer, prior, owned ledgerOrRemote, existingIDs map[string]struct{}) IndexerOutcome {
+func addOrUpdate(ctx context.Context, t Target, d DesiredIndexer, prior LedgerEntry, owned RemoteIndexer, existingIDs map[string]struct{}) IndexerOutcome {
 	hash := d.hash()
 	remoteID := resolveRemoteID(prior, owned, existingIDs)
 	if remoteID == "" {
@@ -72,7 +72,7 @@ func addOrUpdate(ctx context.Context, t Target, d DesiredIndexer, prior, owned l
 		}
 		return IndexerOutcome{Slug: d.Slug, Action: ActionCreated, RemoteID: rid, Hash: hash}
 	}
-	if prior.id() == remoteID && prior.hash() == hash {
+	if prior.RemoteID == remoteID && prior.PayloadHash == hash {
 		return IndexerOutcome{Slug: d.Slug, Action: ActionNoop, RemoteID: remoteID, Hash: hash}
 	}
 	if err := t.Update(ctx, remoteID, d); err != nil {
@@ -84,13 +84,13 @@ func addOrUpdate(ctx context.Context, t Target, d DesiredIndexer, prior, owned l
 // resolveRemoteID picks the id to update: the persisted one when it still exists
 // remotely (authoritative), else the id recovered from a feed-URL slug match
 // (recovery after lost state), else "" to signal a create.
-func resolveRemoteID(prior, owned ledgerOrRemote, existingIDs map[string]struct{}) string {
-	if id := prior.id(); id != "" {
+func resolveRemoteID(prior LedgerEntry, owned RemoteIndexer, existingIDs map[string]struct{}) string {
+	if id := prior.RemoteID; id != "" {
 		if _, ok := existingIDs[id]; ok {
 			return id
 		}
 	}
-	return owned.id() // recovered remote id, or "" when no managed row matches the slug
+	return owned.RemoteID // recovered remote id, or "" when no managed row matches the slug
 }
 
 // removeOrphans deletes harbrr-owned remote rows whose slug is no longer desired. Rows
@@ -147,17 +147,3 @@ func Status(outcomes []IndexerOutcome) string {
 		return domain.SyncStatusPartial
 	}
 }
-
-// ledgerOrRemote is the small "has an id (and maybe a hash)" view addOrUpdate needs,
-// satisfied by both a persisted LedgerEntry and a recovered RemoteIndexer, so the
-// resolve logic reads the same for either source.
-type ledgerOrRemote interface {
-	id() string
-	hash() string
-}
-
-func (l LedgerEntry) id() string   { return l.RemoteID }
-func (l LedgerEntry) hash() string { return l.PayloadHash }
-
-func (r RemoteIndexer) id() string   { return r.RemoteID }
-func (r RemoteIndexer) hash() string { return "" }

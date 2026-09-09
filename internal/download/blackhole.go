@@ -23,9 +23,13 @@ const (
 	// a separate, larger ceiling.
 	maxNZBFetchBytes = 64 << 20 // 64 MiB
 
-	// maxSanitizedNameLen bounds the release-name-derived filename so an
-	// absurdly long name can't produce an unwieldy (or filesystem-rejected) path.
-	maxSanitizedNameLen = 200
+	// maxBlackholeNameBytes bounds the release-name-derived filename (in encoded bytes,
+	// so multibyte names stay under the 255-byte filesystem limit too) so an absurdly
+	// long name can't produce an unwieldy or filesystem-rejected path. It is much
+	// higher than an upload job's bound because these names are real paths sharing one
+	// watch folder: a scene release name routinely runs past 60 characters, and two
+	// that agreed on the first 60 would land on the same file and overwrite each other.
+	maxBlackholeNameBytes = 200
 )
 
 // errMagnetNotSaved is returned by Add when a magnet-only release arrives and
@@ -94,7 +98,7 @@ func (d *blackholeDriver) Add(ctx context.Context, p Payload, _ AddOptions) erro
 		if !d.settings.SaveMagnetFiles {
 			return errMagnetNotSaved
 		}
-		return writeAtomic(dir, sanitizeName(p.Name)+".magnet", []byte(p.URL+"\n"))
+		return writeAtomic(dir, releaseFilename(p.Name, ".magnet", maxBlackholeNameBytes), []byte(p.URL+"\n"))
 	}
 
 	data := p.Bytes
@@ -106,7 +110,7 @@ func (d *blackholeDriver) Add(ctx context.Context, p Payload, _ AddOptions) erro
 			return err
 		}
 	}
-	return writeAtomic(dir, sanitizeName(p.Name)+ext, data)
+	return writeAtomic(dir, releaseFilename(p.Name, ext, maxBlackholeNameBytes), data)
 }
 
 // dirForProtocol resolves a payload's protocol to its configured dir,
@@ -180,24 +184,4 @@ func writeAtomic(dir, filename string, data []byte) error {
 		return fmt.Errorf("download: blackhole: rename to %s: %w", filename, err)
 	}
 	return nil
-}
-
-// sanitizeName strips path separators and NUL from a release name so it can
-// never escape dir when joined with an extension, and bounds its length.
-func sanitizeName(name string) string {
-	name = strings.Map(func(r rune) rune {
-		switch r {
-		case '/', '\\', 0:
-			return -1
-		default:
-			return r
-		}
-	}, strings.TrimSpace(name))
-	if name == "" {
-		name = "release"
-	}
-	if len(name) > maxSanitizedNameLen {
-		name = name[:maxSanitizedNameLen]
-	}
-	return name
 }

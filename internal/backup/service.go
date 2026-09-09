@@ -81,7 +81,7 @@ func (s *Service) Export(ctx context.Context, p ExportParams) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("backup: derive key: %w", err)
 	}
-	sealed, err := secrets.EncryptWithKey(key, []byte(payloadAAD), payload)
+	sealed, err := secrets.Seal(key, []byte(payloadAAD), payload)
 	if err != nil {
 		return nil, fmt.Errorf("backup: seal payload: %w", err)
 	}
@@ -143,7 +143,7 @@ func (s *Service) decode(payload []byte, passphrase string) (*Tables, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalid, err)
 	}
-	raw, err := secrets.DecryptWithKey(key, []byte(payloadAAD), env.Payload)
+	raw, err := secrets.Open(key, []byte(payloadAAD), env.Payload)
 	if err != nil {
 		return nil, fmt.Errorf("%w: wrong passphrase or corrupt bundle", ErrInvalid)
 	}

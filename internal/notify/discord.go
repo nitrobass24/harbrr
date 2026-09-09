@@ -63,7 +63,7 @@ type discord struct {
 
 // newDiscord builds a Discord-webhook sender for a destination URL.
 func newDiscord(url string, client *http.Client) *discord {
-	return &discord{p: poster{kind: "discord", url: url, client: client}}
+	return &discord{p: newPoster("discord", url, client)}
 }
 
 // Send posts the event as a Discord embed. The indexer + kind become embed fields and

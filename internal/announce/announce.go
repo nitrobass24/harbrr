@@ -84,36 +84,17 @@ type Target interface {
 	AnnounceTimeout() time.Duration
 }
 
-// poster is the announce package's view of the shared authenticated-JSON transport:
-// an api-keyed JSON call to the cross-seed tool that never echoes the request URL or
-// body (both carry secrets) into an error.
-type poster struct {
-	c *apphttp.JSONClient
-}
-
-// newPoster builds the transport for one cross-seed tool. kind labels it in every
-// error ("announce: qui: ..."); apiKey both authenticates the push and is scrubbed by
-// value from any error the tool's response can produce.
-func newPoster(kind, baseURL, apiKey string, client *http.Client) poster {
-	return poster{c: apphttp.NewJSONClient(apphttp.JSONClient{
+// newClient builds the shared authenticated-JSON transport for one cross-seed tool: an
+// api-keyed JSON call that never echoes the request URL or body (both carry secrets)
+// into an error. kind labels it in every error ("announce: qui: ..."); apiKey both
+// authenticates the push and is scrubbed by value from any error the tool's response
+// can produce.
+func newClient(kind, baseURL, apiKey string, client *http.Client) *apphttp.JSONClient {
+	return apphttp.NewJSONClient(apphttp.JSONClient{
 		Prefix: "announce: " + kind,
 		Base:   baseURL,
 		Auth:   http.Header{apiKeyHeader: {apiKey}},
 		Client: client,
 		Secret: apiKey,
-	})}
-}
-
-// post sends body as JSON to baseURL+path, decoding a 2xx response into out (when
-// non-nil). It returns the HTTP status (set even on the error path so a caller can
-// branch on, e.g., 404) plus a scrubbed error.
-func (p poster) post(ctx context.Context, path string, body, out any) (int, error) {
-	return p.c.Do(ctx, http.MethodPost, path, body, out)
-}
-
-// get sends an authenticated GET to baseURL+path, decoding a 2xx response into out
-// (when non-nil). It is used by non-mutating reachability probes (cross-seed v6's
-// /api/ping).
-func (p poster) get(ctx context.Context, path string, out any) (int, error) {
-	return p.c.Do(ctx, http.MethodGet, path, nil, out)
+	})
 }

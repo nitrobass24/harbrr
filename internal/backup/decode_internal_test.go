@@ -32,7 +32,7 @@ func TestDecodeHonorsRecordedKDF(t *testing.T) {
 	if err != nil {
 		t.Fatalf("derive: %v", err)
 	}
-	sealed, err := secrets.EncryptWithKey(key, []byte(payloadAAD), payload)
+	sealed, err := secrets.Seal(key, []byte(payloadAAD), payload)
 	if err != nil {
 		t.Fatalf("seal: %v", err)
 	}

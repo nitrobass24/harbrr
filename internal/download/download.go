@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/autobrr/harbrr/internal/domain"
 )
@@ -144,11 +145,18 @@ func mergeTags(base, extra []string) []string {
 	return out
 }
 
-// releaseFilename derives the upload filename for a bytes payload from the release
-// title. The title is untrusted tracker data and the download client names its job (and
-// possibly a file on disk) after it, so path separators and control characters are
-// dropped and an empty result falls back to a fixed name.
-func releaseFilename(name, ext string) string {
+// releaseFilename derives a payload's filename from the release title: the upload name
+// for the clients that take bytes (sabnzbd, nzbget) and the on-disk name blackhole
+// writes into a watch folder. The title is untrusted tracker data, so path separators
+// (POSIX and Windows), the other characters no mainstream filesystem accepts, and
+// control characters are all dropped, and an empty result falls back to a fixed name —
+// a name can never escape the directory it is joined with.
+//
+// maxBytes bounds the derived name in encoded bytes, truncating on a rune boundary
+// (the extension is on top). It is a parameter because the two uses have different stakes: an upload name is a job label the remote
+// client shows, while a blackhole name is a real path in a shared directory, where
+// truncating two releases to the same prefix silently overwrites one with the other.
+func releaseFilename(name, ext string, maxBytes int) string {
 	cleaned := strings.TrimSpace(strings.Map(func(r rune) rune {
 		if r < ' ' || strings.ContainsRune(`/\:*?"<>|`, r) {
 			return -1
@@ -158,12 +166,13 @@ func releaseFilename(name, ext string) string {
 	if cleaned == "" {
 		cleaned = "release"
 	}
-	if runes := []rune(cleaned); len(runes) > maxReleaseFilenameRunes {
-		cleaned = string(runes[:maxReleaseFilenameRunes])
+	for len(cleaned) > maxBytes {
+		_, size := utf8.DecodeLastRuneInString(cleaned)
+		cleaned = cleaned[:len(cleaned)-size]
 	}
 	return cleaned + ext
 }
 
-// maxReleaseFilenameRunes keeps the derived name well inside the 255-byte filename
-// limit every mainstream filesystem enforces, even at 4 bytes per rune.
-const maxReleaseFilenameRunes = 60
+// maxUploadNameBytes bounds an upload job name well inside the 255-byte limit every
+// mainstream filesystem enforces, since the remote client may in turn name a file after it.
+const maxUploadNameBytes = 60
