@@ -76,6 +76,7 @@ func TestRefuseCrossHostRedirect(t *testing.T) {
 		name        string
 		crossHost   bool // redirect to the second server (different port, same hostname)
 		spoofHost   bool // rewrite the origin's URL to another hostname for the same server
+		caseOnly    bool // address the origin as LOCALHOST and redirect to localhost (case-only change)
 		withHeader  bool
 		loop        bool // the origin redirects to itself forever (trips the hop cap)
 		wantErr     bool
@@ -87,6 +88,7 @@ func TestRefuseCrossHostRedirect(t *testing.T) {
 		{name: "header-less cross-host followed without Referer", crossHost: true, spoofHost: true, wantLanded: true},
 		{name: "same hostname different port followed", crossHost: true, withHeader: true, wantLanded: true, wantKeySent: true, wantReferer: true},
 		{name: "same host followed", withHeader: true, wantLanded: true, wantKeySent: true, wantReferer: true},
+		{name: "same hostname different case followed", caseOnly: true, withHeader: true, wantLanded: true, wantKeySent: true, wantReferer: true},
 		{name: "ten-hop cap trips", withHeader: true, loop: true, wantErr: true},
 	}
 	for _, tt := range tests {
@@ -110,6 +112,8 @@ func TestRefuseCrossHostRedirect(t *testing.T) {
 					stdhttp.Redirect(w, r, origin.URL+"/loop", stdhttp.StatusFound)
 				case tt.crossHost:
 					stdhttp.Redirect(w, r, other.URL+"/landing", stdhttp.StatusFound)
+				case tt.caseOnly:
+					stdhttp.Redirect(w, r, strings.Replace(origin.URL, "127.0.0.1", "localhost", 1)+"/landing", stdhttp.StatusFound)
 				default:
 					stdhttp.Redirect(w, r, origin.URL+"/landing", stdhttp.StatusFound)
 				}
@@ -122,6 +126,9 @@ func TestRefuseCrossHostRedirect(t *testing.T) {
 			target := origin.URL
 			if tt.spoofHost {
 				target = strings.Replace(target, "127.0.0.1", "localhost", 1)
+			}
+			if tt.caseOnly {
+				target = strings.Replace(target, "127.0.0.1", "LOCALHOST", 1)
 			}
 			req, err := stdhttp.NewRequestWithContext(context.Background(), stdhttp.MethodGet, target+"/?apikey=q_secret", nil)
 			if err != nil {

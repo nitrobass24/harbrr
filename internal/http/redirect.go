@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	stdhttp "net/http"
+	"strings"
 )
 
 // noRedirectFollowKey marks a request whose redirects the caller handles itself.
@@ -60,7 +61,7 @@ func RefuseCrossHostRedirect(req *stdhttp.Request, via []*stdhttp.Request) error
 		return errors.New("stopped after 10 redirects")
 	}
 	from, to := via[0].URL.Hostname(), req.URL.Hostname()
-	if from == to {
+	if strings.EqualFold(from, to) { // hostnames are case-insensitive
 		return nil
 	}
 	if len(via[0].Header) == 0 {
