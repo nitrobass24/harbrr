@@ -9,37 +9,15 @@ package announce
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"time"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 )
 
-// httpClientTimeout bounds a single push so an unresponsive cross-seed tool cannot hang
-// the announce worker.
-const httpClientTimeout = 30 * time.Second
-
 // apiKeyHeader is the header both tools authenticate the push with (qui's X-API-Key and
 // cross-seed v6's x-api-key are the same header, case-insensitive).
 const apiKeyHeader = "X-API-Key" //nolint:gosec // G101: an HTTP header name, not a credential.
-
-func defaultHTTPClient() *http.Client {
-	return &http.Client{Timeout: httpClientTimeout, CheckRedirect: refuseCrossHostRedirect}
-}
-
-// refuseCrossHostRedirect stops the client from following a redirect to a different host
-// than the original request. Go strips only Authorization/Cookie/WWW-Authenticate on a
-// cross-origin hop, not custom headers, so an open redirect would otherwise carry the
-// X-API-Key to the redirect target. A same-host redirect (e.g. an http->https upgrade) is
-// still followed. The error names both hosts (hosts are not secrets) but no query string.
-func refuseCrossHostRedirect(req *http.Request, via []*http.Request) error {
-	if len(via) == 0 || req.URL.Host == via[0].URL.Host {
-		return nil
-	}
-	return fmt.Errorf("announce: refusing redirect from host %q to %q (would leak the api key)",
-		via[0].URL.Host, req.URL.Host)
-}
 
 // Release is one new release harbrr offers to a cross-seed tool.
 type Release struct {

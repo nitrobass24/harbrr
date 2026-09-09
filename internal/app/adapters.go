@@ -22,11 +22,13 @@ import (
 	"github.com/autobrr/harbrr/internal/torznab"
 )
 
-// appSyncClient is the HTTP client app-sync drivers use to reach the *arr/qui apps.
-// A bounded timeout keeps a hung app from stalling a sync. It is the default
-// client for New; WithHTTPClient overrides it (test-widening seam).
-func appSyncClient() *http.Client {
-	return &http.Client{Timeout: 30 * time.Second}
+// appClient is the one HTTP client every app-facing service shares: apps, appsync,
+// notify, download and announce all reach the *arr/qui/cross-seed apps through it. A
+// bounded timeout keeps a hung app from stalling a call, and
+// apphttp.RefuseCrossHostRedirect keeps the custom api-key headers those services
+// send from following an open redirect off the configured host.
+func appClient() *http.Client {
+	return &http.Client{Timeout: 30 * time.Second, CheckRedirect: apphttp.RefuseCrossHostRedirect}
 }
 
 // registrySource adapts the indexer registry to appsync.IndexerSource: the configured

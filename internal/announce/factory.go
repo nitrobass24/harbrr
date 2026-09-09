@@ -14,13 +14,10 @@ import (
 // memory (real .torrent files are KB-scale; this is generous).
 const maxTorrentBytes = 8 << 20 // 8 MiB
 
-// DefaultTargetFactory builds the production per-kind announce driver. client is shared by
-// the HTTP calls; fetch fetches the .torrent for qui's apply step (nil falls back to an
-// HTTP GET of the release's /dl URL); tags are applied to qui-injected torrents.
+// DefaultTargetFactory builds the production per-kind announce driver. client (required)
+// is shared by the HTTP calls; fetch fetches the .torrent for qui's apply step (nil falls
+// back to an HTTP GET of the release's /dl URL); tags are applied to qui-injected torrents.
 func DefaultTargetFactory(client *http.Client, fetch TorrentFetcher, tags []string) TargetFactory {
-	if client == nil {
-		client = defaultHTTPClient()
-	}
 	if fetch == nil {
 		fetch = HTTPTorrentFetcher(client)
 	}
@@ -40,9 +37,6 @@ func DefaultTargetFactory(client *http.Client, fetch TorrentFetcher, tags []stri
 // resolves the tracker link server-side and streams the torrent). The URL carries harbrr's
 // apikey; it is never logged, and a transport error is scrubbed of the URL by the caller.
 func HTTPTorrentFetcher(client *http.Client) TorrentFetcher {
-	if client == nil {
-		client = defaultHTTPClient()
-	}
 	return func(ctx context.Context, downloadURL string) ([]byte, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
 		if err != nil {
