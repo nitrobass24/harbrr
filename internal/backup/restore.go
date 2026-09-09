@@ -234,11 +234,11 @@ func (s *Service) loadProxies(ctx context.Context, q dbinterface.Execer, rows []
 func (s *Service) sealSecret(ctx context.Context, q dbinterface.Execer, id int64, disc, plaintext, label string,
 	set func(ctx context.Context, q dbinterface.Execer, id int64, enc, keyID string) error,
 ) error {
-	encrypted, keyID, err := connresource.Seal(s.keyring, id, []connresource.Secret{{Discriminator: disc, Plaintext: plaintext}})
+	encrypted, keyID, err := connresource.Seal(s.keyring, id, connresource.Secret{Discriminator: disc, Plaintext: plaintext})
 	if err != nil {
 		return fmt.Errorf("backup: seal %s secret: %w", label, err)
 	}
-	if err := set(ctx, q, id, encrypted[0], keyID); err != nil {
+	if err := set(ctx, q, id, encrypted, keyID); err != nil {
 		return fmt.Errorf("backup: set %s secret: %w", label, err)
 	}
 	return nil
@@ -399,11 +399,11 @@ func (s *Service) loadSettings(ctx context.Context, q dbinterface.Execer, instan
 	for _, st := range settings {
 		row := domain.IndexerSetting{Name: st.Name, IsSecret: st.IsSecret}
 		if st.IsSecret {
-			encrypted, keyID, err := connresource.Seal(s.keyring, instanceID, []connresource.Secret{{Discriminator: st.Name, Plaintext: st.Value}})
+			encrypted, keyID, err := connresource.Seal(s.keyring, instanceID, connresource.Secret{Discriminator: st.Name, Plaintext: st.Value})
 			if err != nil {
 				return fmt.Errorf("backup: seal setting %q: %w", st.Name, err)
 			}
-			row.ValueEncrypted, row.KeyID = encrypted[0], keyID
+			row.ValueEncrypted, row.KeyID = encrypted, keyID
 		} else {
 			row.Value = st.Value
 		}
@@ -531,11 +531,11 @@ func (s *Service) loadAnnounceConnections(ctx context.Context, q dbinterface.Exe
 // (the app/tool credential is sealed separately, on the App, by apps.Service.Resolve —
 // see resolveConnAppForLoad).
 func (s *Service) sealHarbrrKey(connID int64, harbrrKey string) (string, error) {
-	encrypted, _, err := connresource.Seal(s.keyring, connID, []connresource.Secret{{Discriminator: domain.ConnectionSecretHarbrr, Plaintext: harbrrKey}})
+	encrypted, _, err := connresource.Seal(s.keyring, connID, connresource.Secret{Discriminator: domain.ConnectionSecretHarbrr, Plaintext: harbrrKey})
 	if err != nil {
 		return "", fmt.Errorf("backup: seal harbrr key: %w", err)
 	}
-	return encrypted[0], nil
+	return encrypted, nil
 }
 
 func (s *Service) loadNotifications(ctx context.Context, q dbinterface.Execer, rows []NotificationRow) error {

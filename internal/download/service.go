@@ -86,14 +86,10 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (domain.DownloadCl
 				Settings: p.Settings, CreatedAt: now, UpdatedAt: now,
 			}
 		},
-		Insert: func(ctx context.Context, q dbinterface.Execer, c domain.DownloadClient) (int64, error) {
-			return s.repo.InsertDownloadClient(ctx, q, c)
-		},
-		// The credential is sealed on the App, not the row: the row seals nothing.
-		Secrets:    func(_ domain.DownloadClient, _ string) []connresource.Secret { return nil },
-		SetSecrets: func(context.Context, dbinterface.Execer, int64, []string, string) error { return nil },
+		Insert: s.repo.InsertDownloadClient,
+		// No Secret/SetSecret: the credential is sealed on the App, not the row.
 		// Hydrate host/username from the App so the create response matches List/Get.
-		Finalize: func(c domain.DownloadClient, id int64, _ []string, _ string) domain.DownloadClient {
+		Finalize: func(c domain.DownloadClient, id int64, _, _ string) domain.DownloadClient {
 			c.ID = id
 			if app != nil {
 				c.Host, c.Username = app.BaseURL, app.Username
@@ -133,9 +129,7 @@ type UpdateParams struct {
 // run in one transaction so two overlapping PATCHes can't lose each other's write.
 func (s *Service) Update(ctx context.Context, id int64, p UpdateParams) error {
 	return s.life.Update(ctx, id, connresource.UpdateSpec[domain.DownloadClient]{
-		Get: func(ctx context.Context, q dbinterface.Execer, id int64) (domain.DownloadClient, error) {
-			return s.repo.GetDownloadClient(ctx, q, id)
-		},
+		Get: s.repo.GetDownloadClient,
 		Patch: func(c *domain.DownloadClient) error {
 			if p.Name != nil {
 				c.Name = strings.TrimSpace(*p.Name)
@@ -146,9 +140,7 @@ func (s *Service) Update(ctx context.Context, id int64, p UpdateParams) error {
 			return validateNameKindSettings(c.Name, c.Kind, c.Settings)
 		},
 		Touch: func(c *domain.DownloadClient, now time.Time) { c.UpdatedAt = now },
-		Write: func(ctx context.Context, q dbinterface.Execer, c domain.DownloadClient) error {
-			return s.repo.UpdateDownloadClient(ctx, q, c)
-		},
+		Write: s.repo.UpdateDownloadClient,
 		Conflict: func(c domain.DownloadClient) error {
 			return fmt.Errorf("%w: a download client named %q already exists", domain.ErrConflict, c.Name)
 		},
@@ -199,12 +191,8 @@ func (s *Service) SetEnabled(ctx context.Context, id int64, enabled bool) error 
 // revoke, mirroring notify's DeleteNotification).
 func (s *Service) Delete(ctx context.Context, id int64) error {
 	return s.life.Delete(ctx, id, connresource.DeleteSpec[domain.DownloadClient]{
-		Get: func(ctx context.Context, q dbinterface.Execer, id int64) (domain.DownloadClient, error) {
-			return s.repo.GetDownloadClient(ctx, q, id)
-		},
-		Delete: func(ctx context.Context, q dbinterface.Execer, id int64) error {
-			return s.repo.DeleteDownloadClient(ctx, q, id)
-		},
+		Get:    s.repo.GetDownloadClient,
+		Delete: s.repo.DeleteDownloadClient,
 	})
 }
 

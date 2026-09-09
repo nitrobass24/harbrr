@@ -1,13 +1,13 @@
-// Package connresource extracts the lifecycle shared by harbrr's five
+// Package connresource extracts the lifecycle shared by harbrr's
 // encrypted-secret resources into one generic module: an optional key mint with
 // fail-closed orphan revoke plus insert-then-seal on create, a single-tx
-// read/hook/patch/rotate/write on update, and a get/delete/fail-closed revoke on
+// read/patch/rotate/write on update, and a get/delete/fail-closed revoke on
 // delete.
 //
-// Three of the five are connection resources — appsync connections, announce
+// Three of the adopters are connection resources — appsync connections, announce
 // connections, notification targets — each a link from harbrr to a remote
 // service, two of which mint a dedicated harbrr key the remote side calls back
-// with. The other two, proxy and solver, are referenced infra resources: a
+// with. Proxy and solver are referenced infra resources: a
 // transport or anti-bot endpoint an indexer instance points at, not a
 // harbrr-to-remote-service connection, and they mint nothing. Proxy and solver
 // adopt Lifecycle for Create and Update only — their Delete stays a bare repo
@@ -23,10 +23,10 @@
 // existing repositories; Lifecycle only sequences them and owns the encryption
 // and revoke steps.
 //
-// Hook tripwire: exactly one optional in-tx hook exists today — appsync's
-// sync-profile reference check, on both create and update. If a second or third
-// caller wants a hook, that is the signal to stop extending this package and
-// redesign, not to grow it into a framework.
+// Single-secret tripwire: a resource seals at most one secret on its own row, so
+// the specs carry one Secret, not a list, and no in-tx hook. A second secret on
+// one row is the signal to stop extending this package and redesign, not to grow
+// it back into a framework.
 package connresource
 
 import (
@@ -47,25 +47,21 @@ type KeyMinter interface {
 	RevokeAPIKey(ctx context.Context, id int64) error
 }
 
-// Secret is one encrypted-at-rest value bound to a resource: Discriminator is
-// the AAD label distinguishing it from a resource's other secrets (e.g. "app",
-// "harbrr", "url") and Plaintext is the value to seal.
+// Secret is the encrypted-at-rest value bound to a resource: Discriminator is the
+// AAD label naming which secret this is (e.g. "app", "harbrr", "url") and
+// Plaintext is the value to seal.
 type Secret struct {
 	Discriminator string
 	Plaintext     string
 }
 
-// Seal encrypts each secret under (id, discriminator) in order and returns the
-// ciphertexts (in plain's order) plus the keyring's key id — the one home for
-// the per-secret seal loop that Lifecycle.Create and backup/restore both run.
-func Seal(kr *secrets.Keyring, id int64, plain []Secret) ([]string, string, error) {
-	encrypted := make([]string, len(plain))
-	for i, sec := range plain {
-		enc, err := kr.Encrypt(id, sec.Discriminator, sec.Plaintext)
-		if err != nil {
-			return nil, "", fmt.Errorf("connresource: encrypt %s: %w", sec.Discriminator, err)
-		}
-		encrypted[i] = enc
+// Seal encrypts sec under (id, sec.Discriminator) and returns the ciphertext plus
+// the keyring's key id — the one home for the seal step that Lifecycle.Create and
+// backup/restore both run.
+func Seal(kr *secrets.Keyring, id int64, sec Secret) (string, string, error) {
+	enc, err := kr.Encrypt(id, sec.Discriminator, sec.Plaintext)
+	if err != nil {
+		return "", "", fmt.Errorf("connresource: encrypt %s: %w", sec.Discriminator, err)
 	}
-	return encrypted, kr.KeyID(), nil
+	return enc, kr.KeyID(), nil
 }

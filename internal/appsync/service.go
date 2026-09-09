@@ -120,25 +120,23 @@ func (s *Service) CreateConnection(ctx context.Context, p CreateConnectionParams
 				SyncProfileID: p.SyncProfileID, CreatedAt: now, UpdatedAt: now,
 			}
 		},
-		Hook: func(ctx context.Context, q dbinterface.Execer, conn *domain.AppConnection) error {
-			// Re-validated against this same transaction (not the bare s.db handle
-			// used by the advisory pre-check above), so a concurrent profile delete
-			// can't slip between the check and the insert below.
-			return s.validateProfileRef(ctx, q, conn.SyncProfileID)
-		},
 		Insert: func(ctx context.Context, q dbinterface.Execer, conn domain.AppConnection) (int64, error) {
+			// The profile ref is re-validated against this same transaction (not the
+			// bare s.db handle used by the advisory pre-check above), so a concurrent
+			// profile delete can't slip between the check and the insert.
+			if err := s.validateProfileRef(ctx, q, conn.SyncProfileID); err != nil {
+				return 0, err
+			}
 			return s.repo.InsertConnection(ctx, q, conn)
 		},
 		// Only the minted harbrr key is sealed on the connection; the app credential
 		// lives on the App (base_url is written for the (kind, base_url) unique index).
-		Secrets: func(_ domain.AppConnection, mintedPlain string) []connresource.Secret {
-			return []connresource.Secret{{Discriminator: domain.ConnectionSecretHarbrr, Plaintext: mintedPlain}}
+		Secret: func(_ domain.AppConnection, mintedPlain string) connresource.Secret {
+			return connresource.Secret{Discriminator: domain.ConnectionSecretHarbrr, Plaintext: mintedPlain}
 		},
-		SetSecrets: func(ctx context.Context, q dbinterface.Execer, id int64, encrypted []string, keyID string) error {
-			return s.repo.SetConnectionSecrets(ctx, q, id, encrypted[0], keyID)
-		},
-		Finalize: func(conn domain.AppConnection, id int64, encrypted []string, keyID string) domain.AppConnection {
-			conn.ID, conn.HarbrrAPIKeyEncrypted, conn.KeyID = id, encrypted[0], keyID
+		SetSecret: s.repo.SetConnectionSecrets,
+		Finalize: func(conn domain.AppConnection, id int64, encrypted, keyID string) domain.AppConnection {
+			conn.ID, conn.HarbrrAPIKeyEncrypted, conn.KeyID = id, encrypted, keyID
 			return conn
 		},
 		// The conflict IS about the App now (uniqueness moved to app_id): close over the
@@ -177,23 +175,21 @@ type UpdateConnectionParams struct {
 func (s *Service) UpdateConnection(ctx context.Context, id int64, p UpdateConnectionParams) error {
 	return s.life.Update(ctx, id, connresource.UpdateSpec[domain.AppConnection]{
 		Get: func(ctx context.Context, q dbinterface.Execer, id int64) (domain.AppConnection, error) {
-			return s.repo.GetConnection(ctx, q, id)
-		},
-		Hook: func(ctx context.Context, q dbinterface.Execer, _ *domain.AppConnection) error {
 			// A new profile ref is validated for existence before it is applied, so a
-			// bad ref is a 400, not a stored orphan.
-			if !p.SyncProfileID.Present {
-				return nil
+			// bad ref is a 400, not a stored orphan — against this same transaction,
+			// so a concurrent profile delete can't slip between the check and the write.
+			if p.SyncProfileID.Present {
+				if err := s.validateProfileRef(ctx, q, p.SyncProfileID.Value); err != nil {
+					return domain.AppConnection{}, err
+				}
 			}
-			return s.validateProfileRef(ctx, q, p.SyncProfileID.Value)
+			return s.repo.GetConnection(ctx, q, id)
 		},
 		Patch: func(conn *domain.AppConnection) error {
 			return applyUpdate(conn, p)
 		},
 		Touch: func(conn *domain.AppConnection, now time.Time) { conn.UpdatedAt = now },
-		Write: func(ctx context.Context, q dbinterface.Execer, conn domain.AppConnection) error {
-			return s.repo.UpdateConnection(ctx, q, conn)
-		},
+		Write: s.repo.UpdateConnection,
 		// No Conflict callback: UpdateConnectionParams never changes AppID/kind, so a
 		// UNIQUE(app_id) violation can never occur from this Write (uniqueness moved off
 		// (kind, base_url) — the only fields an update could theoretically collide on —
@@ -226,22 +222,13 @@ func (s *Service) validateInstanceIDs(ctx context.Context, instanceIDs []int64) 
 
 // DeleteConnection removes the connection (ledger cascades) and revokes its minted key.
 func (s *Service) DeleteConnection(ctx context.Context, id int64) error {
+	// Fail closed (Lifecycle.Delete surfaces a revoke failure): the row is gone,
+	// but a still-valid minted key would keep authorizing the feed.
 	return s.life.Delete(ctx, id, connresource.DeleteSpec[domain.AppConnection]{
-		Get: func(ctx context.Context, q dbinterface.Execer, id int64) (domain.AppConnection, error) {
-			return s.repo.GetConnection(ctx, q, id)
-		},
-		Delete: func(ctx context.Context, q dbinterface.Execer, id int64) error {
-			return s.repo.DeleteConnection(ctx, q, id)
-		},
+		Get:         s.repo.GetConnection,
+		Delete:      s.repo.DeleteConnection,
 		Minter:      s.minter,
 		MintedKeyID: func(conn domain.AppConnection) int64 { return conn.HarbrrAPIKeyID },
-		// Fail closed (parity with internal/announce): the row is gone, but a
-		// still-valid minted key would keep authorizing the feed, so surface a
-		// revoke failure instead of swallowing it.
-		RevokeFailMsg: func(_ domain.AppConnection, keyID int64, revokeErr error) error {
-			return fmt.Errorf("appsync: connection deleted but its harbrr key (%d) could not be revoked — revoke it manually: %w",
-				keyID, revokeErr)
-		},
 	})
 }
 

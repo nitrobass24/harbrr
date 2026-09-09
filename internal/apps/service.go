@@ -110,17 +110,13 @@ func (s *Service) create(ctx context.Context, ref Ref) (domain.App, error) {
 				HarbrrURL: strings.TrimSpace(ref.HarbrrURL), Enabled: true, CreatedAt: now, UpdatedAt: now,
 			}
 		},
-		Insert: func(ctx context.Context, q dbinterface.Execer, a domain.App) (int64, error) {
-			return s.repo.InsertApp(ctx, q, a)
+		Insert: s.repo.InsertApp,
+		Secret: func(_ domain.App, _ string) connresource.Secret {
+			return connresource.Secret{Discriminator: domain.AppSecret, Plaintext: ref.APIKey}
 		},
-		Secrets: func(_ domain.App, _ string) []connresource.Secret {
-			return []connresource.Secret{{Discriminator: domain.AppSecret, Plaintext: ref.APIKey}}
-		},
-		SetSecrets: func(ctx context.Context, q dbinterface.Execer, id int64, encrypted []string, keyID string) error {
-			return s.repo.SetAppSecret(ctx, q, id, encrypted[0], keyID)
-		},
-		Finalize: func(a domain.App, id int64, encrypted []string, keyID string) domain.App {
-			a.ID, a.APIKeyEncrypted, a.KeyID = id, encrypted[0], keyID
+		SetSecret: s.repo.SetAppSecret,
+		Finalize: func(a domain.App, id int64, encrypted, keyID string) domain.App {
+			a.ID, a.APIKeyEncrypted, a.KeyID = id, encrypted, keyID
 			return a
 		},
 		Conflict: func(a domain.App) error {
@@ -221,9 +217,7 @@ type UpdateParams struct {
 // each other's write (the connresource.Update precedent).
 func (s *Service) UpdateCredential(ctx context.Context, id int64, p UpdateParams) error {
 	return s.life.Update(ctx, id, connresource.UpdateSpec[domain.App]{
-		Get: func(ctx context.Context, q dbinterface.Execer, id int64) (domain.App, error) {
-			return s.repo.GetApp(ctx, q, id)
-		},
+		Get:   s.repo.GetApp,
 		Patch: func(a *domain.App) error { return applyAppPatch(a, p) },
 		Rotate: func(_ *domain.App) (connresource.Secret, bool, error) {
 			if p.APIKey == nil {
@@ -243,9 +237,7 @@ func (s *Service) UpdateCredential(ctx context.Context, id int64, p UpdateParams
 		},
 		Apply: func(a *domain.App, encrypted, keyID string) { a.APIKeyEncrypted, a.KeyID = encrypted, keyID },
 		Touch: func(a *domain.App, now time.Time) { a.UpdatedAt = now },
-		Write: func(ctx context.Context, q dbinterface.Execer, a domain.App) error {
-			return s.repo.UpdateApp(ctx, q, a)
-		},
+		Write: s.repo.UpdateApp,
 		Conflict: func(a domain.App) error {
 			return fmt.Errorf("%w: %s at %s", domain.ErrConflict, a.Kind, apphttp.RedactURL(a.BaseURL))
 		},

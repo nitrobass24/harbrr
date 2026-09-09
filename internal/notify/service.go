@@ -104,17 +104,13 @@ func (s *Service) CreateNotification(ctx context.Context, p CreateNotificationPa
 				CreatedAt:       now, UpdatedAt: now,
 			}
 		},
-		Insert: func(ctx context.Context, q dbinterface.Execer, n domain.Notification) (int64, error) {
-			return s.repo.InsertNotification(ctx, q, n)
+		Insert: s.repo.InsertNotification,
+		Secret: func(_ domain.Notification, _ string) connresource.Secret {
+			return connresource.Secret{Discriminator: domain.NotificationSecretURL, Plaintext: p.URL}
 		},
-		Secrets: func(_ domain.Notification, _ string) []connresource.Secret {
-			return []connresource.Secret{{Discriminator: domain.NotificationSecretURL, Plaintext: p.URL}}
-		},
-		SetSecrets: func(ctx context.Context, q dbinterface.Execer, id int64, encrypted []string, keyID string) error {
-			return s.repo.SetNotificationSecret(ctx, q, id, encrypted[0], keyID)
-		},
-		Finalize: func(n domain.Notification, id int64, encrypted []string, keyID string) domain.Notification {
-			n.ID, n.URLEncrypted, n.KeyID = id, encrypted[0], keyID
+		SetSecret: s.repo.SetNotificationSecret,
+		Finalize: func(n domain.Notification, id int64, encrypted, keyID string) domain.Notification {
+			n.ID, n.URLEncrypted, n.KeyID = id, encrypted, keyID
 			return n
 		},
 	})
@@ -136,9 +132,7 @@ type UpdateNotificationParams struct {
 // UpdateConnection).
 func (s *Service) UpdateNotification(ctx context.Context, id int64, p UpdateNotificationParams) error {
 	return s.life.Update(ctx, id, connresource.UpdateSpec[domain.Notification]{
-		Get: func(ctx context.Context, q dbinterface.Execer, id int64) (domain.Notification, error) {
-			return s.repo.GetNotification(ctx, q, id)
-		},
+		Get: s.repo.GetNotification,
 		Patch: func(n *domain.Notification) error {
 			if p.Name != nil {
 				name := strings.TrimSpace(*p.Name)
@@ -167,9 +161,7 @@ func (s *Service) UpdateNotification(ctx context.Context, id int64, p UpdateNoti
 		},
 		Apply: func(n *domain.Notification, encrypted, keyID string) { n.URLEncrypted, n.KeyID = encrypted, keyID },
 		Touch: func(n *domain.Notification, now time.Time) { n.UpdatedAt = now },
-		Write: func(ctx context.Context, q dbinterface.Execer, n domain.Notification) error {
-			return s.repo.UpdateNotification(ctx, q, n)
-		},
+		Write: s.repo.UpdateNotification,
 	})
 }
 
@@ -203,12 +195,8 @@ func (s *Service) SetEnabled(ctx context.Context, id int64, enabled bool) error 
 // nothing, so this is a plain get-then-delete with no revoke step.
 func (s *Service) DeleteNotification(ctx context.Context, id int64) error {
 	return s.life.Delete(ctx, id, connresource.DeleteSpec[domain.Notification]{
-		Get: func(ctx context.Context, q dbinterface.Execer, id int64) (domain.Notification, error) {
-			return s.repo.GetNotification(ctx, q, id)
-		},
-		Delete: func(ctx context.Context, q dbinterface.Execer, id int64) error {
-			return s.repo.DeleteNotification(ctx, q, id)
-		},
+		Get:    s.repo.GetNotification,
+		Delete: s.repo.DeleteNotification,
 	})
 }
 
