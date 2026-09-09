@@ -128,14 +128,17 @@ func APIEnvelopeError(family string, e *APIError, apikey string, quotaCode int) 
 	if strings.EqualFold(desc, "Request limit reached") {
 		return &search.RateLimitedError{StatusCode: 0}
 	}
-	code, _ := strconv.Atoi(strings.TrimSpace(e.Code))
+	// The code attribute is server-controlled text too: scrub it like the description so
+	// an upstream that echoes the key there cannot land it in a persisted health event.
+	codeText := apphttp.ScrubValues(strings.TrimSpace(e.Code), []string{apikey})
+	code, _ := strconv.Atoi(codeText)
 	if quotaCode != 0 && code == quotaCode {
 		return &search.QuotaExceededError{Detail: fmt.Sprintf("%s: api error (code %d): %s", family, code, desc)}
 	}
 	if (code >= errorCodeAuthLow && code <= errorCodeAuthHigh) || MentionsAPIKey(desc) {
-		return fmt.Errorf("%s: auth failed (code %s): %s: %w", family, e.Code, desc, login.ErrLoginFailed)
+		return fmt.Errorf("%s: auth failed (code %s): %s: %w", family, codeText, desc, login.ErrLoginFailed)
 	}
-	return fmt.Errorf("%s: api error (code %s): %s: %w", family, e.Code, desc, search.ErrParseError)
+	return fmt.Errorf("%s: api error (code %s): %s: %w", family, codeText, desc, search.ErrParseError)
 }
 
 // NormalizeAPIPath resolves a configured Newznab/Torznab API path against the family's
