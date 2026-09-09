@@ -356,8 +356,8 @@ func TestAppClientRefusesAuthenticatedCrossHostRedirect(t *testing.T) {
 	if resp != nil {
 		resp.Body.Close()
 	}
-	if err == nil {
-		t.Fatal("Do err = nil, want the cross-host redirect refused")
+	if err == nil || !strings.Contains(err.Error(), "refusing redirect") {
+		t.Fatalf("Do err = %v, want the cross-host redirect refused by the policy", err)
 	}
 	if landedKey != "" {
 		t.Error("api key reached the redirect target")

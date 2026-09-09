@@ -64,8 +64,10 @@ func TestRedirectPolicy(t *testing.T) {
 
 // TestRefuseCrossHostRedirect drives the app-facing policy through a real http.Client
 // against httptest servers: an authenticated (any-header) hop to another hostname is
-// refused and the header never lands there; a header-less hop and a same-hostname hop
-// (different port) are followed; the stdlib 10-hop cap survives the custom policy.
+// refused and the header never lands there; a header-less hop is followed but the
+// Referer Go adds (the original URL, query included) is dropped so a secret in the query
+// never lands either; a same-hostname hop (different port) is followed; the stdlib
+// 10-hop cap survives the custom policy.
 func TestRefuseCrossHostRedirect(t *testing.T) {
 	t.Parallel()
 	const keyHeader = "X-API-Key"
@@ -79,20 +81,21 @@ func TestRefuseCrossHostRedirect(t *testing.T) {
 		wantErr     bool
 		wantLanded  bool // the redirect target was reached
 		wantKeySent bool // ...and the api key arrived with it
+		wantReferer bool // ...and the Referer (original URL incl. query) arrived with it
 	}{
 		{name: "authenticated cross-host refused", crossHost: true, spoofHost: true, withHeader: true, wantErr: true},
-		{name: "header-less cross-host followed", crossHost: true, spoofHost: true, wantLanded: true},
-		{name: "same hostname different port followed", crossHost: true, withHeader: true, wantLanded: true, wantKeySent: true},
-		{name: "same host followed", withHeader: true, wantLanded: true, wantKeySent: true},
+		{name: "header-less cross-host followed without Referer", crossHost: true, spoofHost: true, wantLanded: true},
+		{name: "same hostname different port followed", crossHost: true, withHeader: true, wantLanded: true, wantKeySent: true, wantReferer: true},
+		{name: "same host followed", withHeader: true, wantLanded: true, wantKeySent: true, wantReferer: true},
 		{name: "ten-hop cap trips", withHeader: true, loop: true, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			var landed bool
-			var landedKey string
+			var landedKey, landedReferer string
 			landing := func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
-				landed, landedKey = true, r.Header.Get(keyHeader)
+				landed, landedKey, landedReferer = true, r.Header.Get(keyHeader), r.Header.Get("Referer")
 				w.WriteHeader(stdhttp.StatusOK)
 			}
 			other := httptest.NewServer(stdhttp.HandlerFunc(landing))
@@ -120,7 +123,7 @@ func TestRefuseCrossHostRedirect(t *testing.T) {
 			if tt.spoofHost {
 				target = strings.Replace(target, "127.0.0.1", "localhost", 1)
 			}
-			req, err := stdhttp.NewRequestWithContext(context.Background(), stdhttp.MethodGet, target+"/", nil)
+			req, err := stdhttp.NewRequestWithContext(context.Background(), stdhttp.MethodGet, target+"/?apikey=q_secret", nil)
 			if err != nil {
 				t.Fatalf("building request: %v", err)
 			}
@@ -141,7 +144,13 @@ func TestRefuseCrossHostRedirect(t *testing.T) {
 			if (landedKey != "") != tt.wantKeySent {
 				t.Errorf("api key delivered to redirect target = %v, want %v", landedKey != "", tt.wantKeySent)
 			}
-			if err != nil && (strings.Contains(err.Error(), "k_secret") || strings.Contains(err.Error(), "?")) {
+			if (landedReferer != "") != tt.wantReferer {
+				t.Errorf("Referer delivered to redirect target = %q, want present %v", landedReferer, tt.wantReferer)
+			}
+			if landed && !tt.wantReferer && strings.Contains(landedReferer, "q_secret") {
+				t.Errorf("query secret leaked via Referer: %q", landedReferer)
+			}
+			if err != nil && (strings.Contains(err.Error(), "k_secret") || strings.Contains(err.Error(), "q_secret") || strings.Contains(err.Error(), "?")) {
 				t.Errorf("error carries more than hosts: %v", err)
 			}
 		})
