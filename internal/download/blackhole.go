@@ -23,12 +23,13 @@ const (
 	// a separate, larger ceiling.
 	maxNZBFetchBytes = 64 << 20 // 64 MiB
 
-	// maxBlackholeNameRunes bounds the release-name-derived filename so an absurdly
-	// long name can't produce an unwieldy (or filesystem-rejected) path. It is much
+	// maxBlackholeNameBytes bounds the release-name-derived filename (in encoded bytes,
+	// so multibyte names stay under the 255-byte filesystem limit too) so an absurdly
+	// long name can't produce an unwieldy or filesystem-rejected path. It is much
 	// higher than an upload job's bound because these names are real paths sharing one
 	// watch folder: a scene release name routinely runs past 60 characters, and two
 	// that agreed on the first 60 would land on the same file and overwrite each other.
-	maxBlackholeNameRunes = 200
+	maxBlackholeNameBytes = 200
 )
 
 // errMagnetNotSaved is returned by Add when a magnet-only release arrives and
@@ -97,7 +98,7 @@ func (d *blackholeDriver) Add(ctx context.Context, p Payload, _ AddOptions) erro
 		if !d.settings.SaveMagnetFiles {
 			return errMagnetNotSaved
 		}
-		return writeAtomic(dir, releaseFilename(p.Name, ".magnet", maxBlackholeNameRunes), []byte(p.URL+"\n"))
+		return writeAtomic(dir, releaseFilename(p.Name, ".magnet", maxBlackholeNameBytes), []byte(p.URL+"\n"))
 	}
 
 	data := p.Bytes
@@ -109,7 +110,7 @@ func (d *blackholeDriver) Add(ctx context.Context, p Payload, _ AddOptions) erro
 			return err
 		}
 	}
-	return writeAtomic(dir, releaseFilename(p.Name, ext, maxBlackholeNameRunes), data)
+	return writeAtomic(dir, releaseFilename(p.Name, ext, maxBlackholeNameBytes), data)
 }
 
 // dirForProtocol resolves a payload's protocol to its configured dir,

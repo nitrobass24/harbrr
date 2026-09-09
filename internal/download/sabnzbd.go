@@ -96,7 +96,7 @@ func (d *sabnzbdDriver) Add(ctx context.Context, p Payload, opts AddOptions) err
 // scrubbing.
 func (d *sabnzbdDriver) addFile(ctx context.Context, p Payload, category string) error {
 	resp, err := d.client.AddFile(ctx, sabnzbd.AddNzbFileRequest{
-		Filename: releaseFilename(p.Name, ".nzb", maxUploadNameRunes),
+		Filename: releaseFilename(p.Name, ".nzb", maxUploadNameBytes),
 		Nzb:      p.Bytes,
 		Category: category,
 	})

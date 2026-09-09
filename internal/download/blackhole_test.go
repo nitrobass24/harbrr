@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/autobrr/harbrr/internal/domain"
 )
@@ -260,7 +261,7 @@ func TestBlackholeAdd_KeepsLongNameIntact(t *testing.T) {
 
 func TestBlackholeAdd_SanitizesName(t *testing.T) {
 	t.Parallel()
-	longName := strings.Repeat("x", maxBlackholeNameRunes+50)
+	longName := strings.Repeat("x", maxBlackholeNameBytes+50)
 	tests := []struct {
 		name string
 		in   string
@@ -268,6 +269,7 @@ func TestBlackholeAdd_SanitizesName(t *testing.T) {
 		{"path separators", "../../etc/passwd"},
 		{"windows separators", `a\b\c`},
 		{"oversized", longName},
+		{"oversized multibyte", strings.Repeat("日", maxBlackholeNameBytes)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -284,8 +286,11 @@ func TestBlackholeAdd_SanitizesName(t *testing.T) {
 			if strings.ContainsAny(names[0], `/\`) {
 				t.Errorf("filename %q retains a path separator", names[0])
 			}
-			if len(names[0]) > maxBlackholeNameRunes+len(".torrent") {
+			if len(names[0]) > maxBlackholeNameBytes+len(".torrent") {
 				t.Errorf("filename %q exceeds the length bound", names[0])
+			}
+			if !utf8.ValidString(names[0]) {
+				t.Errorf("filename %q was cut mid-rune", names[0])
 			}
 		})
 	}
