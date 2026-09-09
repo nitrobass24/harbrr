@@ -60,3 +60,22 @@ func PublishDate(raw string, clock func() time.Time) (string, error) {
 // box as Jackett's "True" sentinel; "true"/"1"/"on"/"yes" are accepted case-insensitively
 // so whatever the management API persists is read consistently).
 func CheckboxOn(v string) bool { return loader.CheckboxOn(v) }
+
+// DailyEpisodeDate parses a daily-show season/episode pair — season a four-digit year,
+// episode "MM/dd" — into the date it names, reproducing Prowlarr's
+// DateTime.TryParseExact($"{Season} {Episode}", "yyyy MM/dd"). The four-digit-year guard
+// keeps Go's lenient year parsing from matching a normal season (the month/day widths are
+// already fixed by the layout). The date is returned unformatted because the families
+// disagree on the rendering: the base episode string and BTN/FileList/Nebulance want
+// "yyyy.MM.dd", while HDBits' and BeyondHD's APIs want ISO "yyyy-MM-dd".
+func DailyEpisodeDate(season, episode string) (time.Time, bool) {
+	season, episode = strings.TrimSpace(season), strings.TrimSpace(episode)
+	if len(season) != 4 {
+		return time.Time{}, false
+	}
+	t, err := time.Parse("2006 01/02", season+" "+episode)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t, true
+}

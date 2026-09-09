@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/url"
 	"strings"
-	"time"
 	"unicode"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
@@ -55,13 +54,13 @@ func (d *driver) addSearchParams(params url.Values, q search.Query) {
 		return // no criteria → latest-torrents (set by addCommonParams)
 	}
 
-	if daily, ok := dailyDate(q.Season, q.Ep); ok {
+	if daily, ok := native.DailyEpisodeDate(q.Season, q.Ep); ok {
 		if imdb != "" {
 			return // Prowlarr skips id searches for daily episodes
 		}
 		params.Set("action", "search-torrents")
 		params.Set("type", "name")
-		params.Set("query", strings.TrimSpace(keywords+" "+daily))
+		params.Set("query", strings.TrimSpace(keywords+" "+daily.Format("2006.01.02")))
 		return
 	}
 
@@ -115,23 +114,6 @@ func distinctCategories(cats []string) string {
 		distinct = append(distinct, c)
 	}
 	return strings.Join(distinct, ",")
-}
-
-// dailyDate parses a "{season} {episode}" pair into "yyyy.MM.dd" when season is a
-// four-digit year and episode is "MM/dd", matching Prowlarr's DateTime.TryParseExact
-// with "yyyy MM/dd". The four-digit-year guard keeps Go's lenient year parsing from
-// matching a normal season.
-func dailyDate(season, episode string) (string, bool) {
-	season = strings.TrimSpace(season)
-	episode = strings.TrimSpace(episode)
-	if len(season) != 4 {
-		return "", false
-	}
-	t, err := time.Parse("2006 01/02", season+" "+episode)
-	if err != nil {
-		return "", false
-	}
-	return t.Format("2006.01.02"), true
 }
 
 // sanitizeSearchTerm reproduces SearchCriteriaBase.SanitizedSearchTerm: collapse any

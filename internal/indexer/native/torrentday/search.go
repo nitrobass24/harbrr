@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"strconv"
 	"strings"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
@@ -71,28 +70,8 @@ func (d *driver) searchTerm(q search.Query) string {
 	if season == "" && ep == "" {
 		return keyword
 	}
-	term := strings.TrimSpace(keyword + " " + episodeSearchString(season, ep))
+	term := strings.TrimSpace(keyword + " " + q.EpisodeSearchString())
 	return strings.TrimSpace(term)
-}
-
-// episodeSearchString reproduces the SxxExx rendering: a season with no episode is
-// "S{season:00}"; a season+episode is "S{season:00}E{episode:00}"; a seasonless query
-// is empty. Non-numeric season/episode values fall back to the raw value.
-func episodeSearchString(season, episode string) string {
-	if season == "" || season == "0" {
-		return ""
-	}
-	seasonPart := season
-	if n, err := strconv.Atoi(season); err == nil {
-		seasonPart = fmt.Sprintf("%02d", n)
-	}
-	if episode == "" {
-		return "S" + seasonPart
-	}
-	if n, err := strconv.Atoi(episode); err == nil {
-		return fmt.Sprintf("S%sE%02d", seasonPart, n)
-	}
-	return "S" + seasonPart + "E" + episode
 }
 
 // distinct returns the input with duplicate tracker categories removed, preserving

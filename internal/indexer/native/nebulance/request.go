@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
@@ -110,11 +109,11 @@ func searchParams(q search.Query) (url.Values, bool) {
 	if term != "" {
 		params.Set("release", term)
 	}
-	if date, daily := dailyDate(q.Season, q.Ep); daily {
+	if date, daily := native.DailyEpisodeDate(q.Season, q.Ep); daily {
 		if term != "" {
 			params.Set("name", term)
 		}
-		params.Set("release", date)
+		params.Set("release", date.Format("2006.01.02"))
 	} else {
 		setEpisodeParams(params, q.Season, q.Ep)
 	}
@@ -148,19 +147,6 @@ func unsupportedSeasonOnly(params url.Values) bool {
 
 func tooShort(value string) bool {
 	return value != "" && utf8.RuneCountInString(value) < 3
-}
-
-func dailyDate(season, episode string) (string, bool) {
-	season = strings.TrimSpace(season)
-	episode = strings.TrimSpace(episode)
-	if len(season) != 4 || len(episode) != 5 {
-		return "", false
-	}
-	parsed, err := time.Parse("2006 01/02", season+" "+episode)
-	if err != nil {
-		return "", false
-	}
-	return parsed.Format("2006.01.02"), true
 }
 
 func positiveID(raw string) string {

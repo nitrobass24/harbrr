@@ -2,12 +2,10 @@ package avistaz
 
 import (
 	"context"
-	"fmt"
 	stdhttp "net/http"
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 	"unicode"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
@@ -156,45 +154,7 @@ func (d *driver) episodeSearchTerm(q search.Query) string {
 	if d.profile.episodeOverride && (season == "" || season == "0") && ep != "" {
 		return "E" + ep
 	}
-	return episodeSearchString(season, ep)
-}
-
-// episodeSearchString reproduces TvSearchCriteria.EpisodeSearchString: a seasonless
-// query is empty; a "{year} {MM/dd}" pair is a daily date "yyyy.MM.dd"; a season with
-// no episode is "S{season:00}"; otherwise "S{season:00}E{episode:00}" (the episode
-// coerced to an int, falling back to the raw episode when it is not numeric).
-func episodeSearchString(season, episode string) string {
-	if season == "" || season == "0" {
-		return ""
-	}
-	if daily, ok := dailyDate(season, episode); ok {
-		return daily
-	}
-	seasonPart := season
-	if n, err := strconv.Atoi(season); err == nil {
-		seasonPart = fmt.Sprintf("%02d", n)
-	}
-	if episode == "" {
-		return "S" + seasonPart
-	}
-	if n, err := strconv.Atoi(episode); err == nil {
-		return fmt.Sprintf("S%sE%02d", seasonPart, n)
-	}
-	return "S" + seasonPart + "E" + episode
-}
-
-// dailyDate parses a "{year} {MM/dd}" season/episode pair (a daily show) into
-// "yyyy.MM.dd", matching the DateTime.TryParseExact in EpisodeSearchString. The
-// four-digit-year guard keeps Go's lenient year parsing from matching a normal season.
-func dailyDate(season, episode string) (string, bool) {
-	if len(season) != 4 {
-		return "", false
-	}
-	t, err := time.Parse("2006 01/02", season+" "+episode)
-	if err != nil {
-		return "", false
-	}
-	return t.Format("2006.01.02"), true
+	return q.EpisodeSearchString()
 }
 
 // sanitizeSearchTerm reproduces SearchCriteriaBase.SanitizedSearchTerm: collapse any

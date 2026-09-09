@@ -182,22 +182,6 @@ func TestSearchTransportErrorHostOnly(t *testing.T) {
 	assertNoSecret(t, apphttp.RedactError(err))
 }
 
-func TestEpisodeSearchString(t *testing.T) {
-	t.Parallel()
-	cases := []struct{ season, ep, want string }{
-		{"", "", ""},
-		{"0", "5", ""},
-		{"1", "", "S01"},
-		{"1", "2", "S01E02"},
-		{"12", "5", "S12E05"},
-	}
-	for _, tc := range cases {
-		if got := episodeSearchString(tc.season, tc.ep); got != tc.want {
-			t.Errorf("episodeSearchString(%q,%q) = %q, want %q", tc.season, tc.ep, got, tc.want)
-		}
-	}
-}
-
 func TestFreeleechOnly(t *testing.T) {
 	t.Parallel()
 	if !freeleechOnly(map[string]string{"freeleech_only": "True"}) {

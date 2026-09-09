@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -140,11 +139,15 @@ func setSearchCriteria(tq *torrentQuery, q search.Query) {
 	// SanitizedTvSearchString appends the formatted episode string ("S01E02"/"S01"/daily) to
 	// the keyword, so the API constrains to the specific episode rather than the whole series.
 	if positiveInt(q.Season) > 0 || strings.TrimSpace(q.Ep) != "" {
-		tq.Search = strings.TrimSpace(keywords + " " + episodeSearchString(q.Season, q.Ep))
+		tq.Search = strings.TrimSpace(keywords + " " + q.EpisodeSearchString())
 		return
 	}
 	tq.Search = sanitizeMovieTerm(keywords)
 }
+
+// dailyLayout is the ISO date string HDBits' API wants for a daily-episode search
+// (Prowlarr's "yyyy-MM-dd"), unlike the base episode string's "yyyy.MM.dd".
+const dailyLayout = "2006-01-02"
 
 // setTvdbCriteria fills the tvdb object for a tvdb-id query. A daily episode (season is a
 // four-digit year, episode is "MM/dd") drops tvdb.season/episode and sets a "yyyy-MM-dd"
@@ -153,9 +156,9 @@ func setSearchCriteria(tq *torrentQuery, q search.Query) {
 // tvdb-id query (non-daily) relies purely on tvdb.id+season+episode — adding the free-text
 // term here would over-filter and diverge from Prowlarr's result set.
 func setTvdbCriteria(tq *torrentQuery, q search.Query, tvdb int, _ string) {
-	if daily, ok := dailyDate(q.Season, q.Ep); ok {
+	if daily, ok := native.DailyEpisodeDate(q.Season, q.Ep); ok {
 		tq.Tvdb = &tvdbQuery{ID: tvdb}
-		tq.Search = daily
+		tq.Search = daily.Format(dailyLayout)
 		return
 	}
 	tvdbq := &tvdbQuery{ID: tvdb}
@@ -207,39 +210,4 @@ func positiveInt(raw string) int {
 		return 0
 	}
 	return n
-}
-
-// episodeSearchString formats the season/episode component Prowlarr appends to a no-id TV
-// search term (TvSearchCriteria.EpisodeSearchString): a daily episode becomes "yyyy.MM.dd";
-// a season+episode becomes "S%02dE%02d"; a season alone becomes "S%02d"; anything else is
-// empty. The episode int comes from q.Ep (a non-numeric episode yields just the season).
-func episodeSearchString(season, ep string) string {
-	if daily, ok := dailyDate(season, ep); ok {
-		return strings.ReplaceAll(daily, "-", ".")
-	}
-	s := positiveInt(season)
-	if s <= 0 {
-		return ""
-	}
-	if e := positiveInt(ep); strings.TrimSpace(ep) != "" && e > 0 {
-		return fmt.Sprintf("S%02dE%02d", s, e)
-	}
-	return fmt.Sprintf("S%02d", s)
-}
-
-// dailyDate parses a "{season} {episode}" pair into "yyyy-MM-dd" when season is a
-// four-digit year and episode is "MM/dd", matching Prowlarr's DateTime.TryParseExact with
-// "yyyy MM/dd" (the HDBits daily search sends an ISO date string). The four-digit-year
-// guard keeps Go's lenient year parsing from matching a normal season.
-func dailyDate(season, episode string) (string, bool) {
-	season = strings.TrimSpace(season)
-	episode = strings.TrimSpace(episode)
-	if len(season) != 4 {
-		return "", false
-	}
-	t, err := time.Parse("2006 01/02", season+" "+episode)
-	if err != nil {
-		return "", false
-	}
-	return t.Format("2006-01-02"), true
 }

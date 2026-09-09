@@ -191,20 +191,3 @@ func TestSearchEmptyResult(t *testing.T) {
 		t.Errorf("got %d releases, want 0", len(releases))
 	}
 }
-
-// TestEpisodeSearchString covers the SxxExx rendering used in the search term.
-func TestEpisodeSearchString(t *testing.T) {
-	t.Parallel()
-	cases := []struct{ season, ep, want string }{
-		{"", "", ""},
-		{"0", "5", ""},
-		{"1", "", "S01"},
-		{"1", "2", "S01E02"},
-		{"12", "5", "S12E05"},
-	}
-	for _, tc := range cases {
-		if got := episodeSearchString(tc.season, tc.ep); got != tc.want {
-			t.Errorf("episodeSearchString(%q,%q) = %q, want %q", tc.season, tc.ep, got, tc.want)
-		}
-	}
-}

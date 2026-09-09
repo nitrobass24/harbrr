@@ -279,23 +279,6 @@ func TestSanitizeSearchTerm(t *testing.T) {
 	}
 }
 
-func TestEpisodeSearchString(t *testing.T) {
-	t.Parallel()
-	cases := []struct{ season, ep, want string }{
-		{"", "", ""},
-		{"0", "5", ""},                  // seasonless (base) -> empty
-		{"1", "", "S01"},                // season only
-		{"1", "2", "S01E02"},            // standard
-		{"12", "5", "S12E05"},           // two-digit season, padded episode
-		{"2021", "05/13", "2021.05.13"}, // daily
-	}
-	for _, tc := range cases {
-		if got := episodeSearchString(tc.season, tc.ep); got != tc.want {
-			t.Errorf("episodeSearchString(%q,%q) = %q, want %q", tc.season, tc.ep, got, tc.want)
-		}
-	}
-}
-
 func TestEpisodeSearchTermOverride(t *testing.T) {
 	t.Parallel()
 	q := search.Query{Ep: "323"} // seasonless episode

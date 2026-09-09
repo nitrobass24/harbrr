@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -157,8 +156,8 @@ func positiveInt(raw string) int {
 // season+episode becomes "S%02dE%02d"; a season alone becomes "S%02d"; anything else is
 // empty.
 func episodeSearchString(season, ep string) string {
-	if daily, ok := dailyDate(season, ep); ok {
-		return daily
+	if daily, ok := native.DailyEpisodeDate(season, ep); ok {
+		return daily.Format("2006-01-02")
 	}
 	s := positiveInt(season)
 	if s <= 0 {
@@ -168,21 +167,4 @@ func episodeSearchString(season, ep string) string {
 		return fmt.Sprintf("S%02dE%02d", s, e)
 	}
 	return fmt.Sprintf("S%02d", s)
-}
-
-// dailyDate parses a "{season} {episode}" pair into "yyyy-MM-dd" when season is a
-// four-digit year and episode is "MM/dd", matching Prowlarr's DateTime.TryParseExact with
-// "yyyy MM/dd". The four-digit-year guard keeps Go's lenient year parsing from matching a
-// normal season.
-func dailyDate(season, episode string) (string, bool) {
-	season = strings.TrimSpace(season)
-	episode = strings.TrimSpace(episode)
-	if len(season) != 4 {
-		return "", false
-	}
-	t, err := time.Parse("2006 01/02", season+" "+episode)
-	if err != nil {
-		return "", false
-	}
-	return t.Format("2006-01-02"), true
 }
