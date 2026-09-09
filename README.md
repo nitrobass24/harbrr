@@ -141,7 +141,7 @@ docker run -d \
 
 The image runs non-root, exposes port 7478, ships a `/healthz` check, and already invokes
 `harbrr serve --host 0.0.0.0 --data-dir /config`. `:latest` follows the newest release; pin a
-version tag (e.g. `ghcr.io/autobrr/harbrr:0.1.0-alpha`, no `v` prefix) if you'd rather update
+version tag (e.g. `ghcr.io/autobrr/harbrr:0.2.0-alpha`, no `v` prefix) if you'd rather update
 deliberately.
 
 ### Linux / macOS / Windows / FreeBSD (prebuilt binary)
