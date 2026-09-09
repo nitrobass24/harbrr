@@ -1,6 +1,7 @@
 package announce
 
 import (
+	"net/http"
 	"testing"
 	"time"
 )
@@ -70,8 +71,8 @@ func TestTargetAnnounceTimeouts(t *testing.T) {
 		target Target
 		want   time.Duration
 	}{
-		{"qui", NewQui("http://qui:7476", "k", nil, nil, nil), 120 * time.Second},
-		{"crossseed-v6", NewCrossSeedV6("http://cs:2468", "k", nil), 10 * time.Second},
+		{"qui", NewQui("http://qui:7476", "k", &http.Client{}, nil, nil), 120 * time.Second},
+		{"crossseed-v6", NewCrossSeedV6("http://cs:2468", "k", &http.Client{}), 10 * time.Second},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -90,7 +91,7 @@ func TestTargetAnnounceTimeouts(t *testing.T) {
 // the way it always was.
 func TestQuiWidensClientTimeout(t *testing.T) {
 	t.Parallel()
-	shared := defaultHTTPClient() // the production shape: a 30s wall
+	shared := &http.Client{Timeout: 30 * time.Second} // the production shape: a 30s wall
 	q, ok := NewQui("http://qui:7476", "k", shared, nil, nil).(*quiAnnouncer)
 	if !ok {
 		t.Fatal("NewQui did not return a *quiAnnouncer")
@@ -101,7 +102,7 @@ func TestQuiWidensClientTimeout(t *testing.T) {
 	if q.probeClient.Client != shared {
 		t.Error("Probe must run on the injected client, unchanged")
 	}
-	if shared.Timeout != httpClientTimeout {
-		t.Errorf("the shared client was mutated: Timeout = %v, want %v", shared.Timeout, httpClientTimeout)
+	if shared.Timeout != 30*time.Second {
+		t.Errorf("the shared client was mutated: Timeout = %v, want 30s", shared.Timeout)
 	}
 }

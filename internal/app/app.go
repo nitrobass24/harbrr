@@ -96,7 +96,7 @@ type App struct {
 // sink (wired back after announce exists — see initSyncServices) -> the
 // persisted log level -> proxy/solver -> the mounted HTTP handlers.
 func New(ctx context.Context, deps Deps) (*App, error) {
-	httpClient := appSyncClient()
+	httpClient := appClient()
 
 	a := &App{cfg: deps.Config, log: deps.Logger}
 

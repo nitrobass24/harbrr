@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -324,3 +325,44 @@ func (g gatedTarget) Announce(ctx context.Context, _ announce.Release) (announce
 func (g gatedTarget) Probe(context.Context) error { return nil }
 
 func (g gatedTarget) AnnounceTimeout() time.Duration { return fakeAnnounceTimeout }
+
+// TestAppClientRefusesAuthenticatedCrossHostRedirect pins the WIRING: the client the
+// composition root hands every app-facing service must refuse an authenticated redirect
+// off the configured host, so a custom api-key header can never follow an open redirect
+// (#615). The policy itself is proven in internal/http.
+func TestAppClientRefusesAuthenticatedCrossHostRedirect(t *testing.T) {
+	t.Parallel()
+	var landedKey string
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		landedKey = r.Header.Get("X-API-Key")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer other.Close()
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/", http.StatusFound)
+	}))
+	defer origin.Close()
+
+	// httptest binds 127.0.0.1 for both; address the origin as "localhost" so the hop
+	// crosses hostnames the way a real open redirect would.
+	target := strings.Replace(origin.URL, "127.0.0.1", "localhost", 1)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, target+"/", nil)
+	if err != nil {
+		t.Fatalf("building request: %v", err)
+	}
+	req.Header.Set("X-API-Key", "k_secret")
+
+	resp, err := appClient().Do(req)
+	if resp != nil {
+		resp.Body.Close()
+	}
+	if err == nil {
+		t.Fatal("Do err = nil, want the cross-host redirect refused")
+	}
+	if landedKey != "" {
+		t.Error("api key reached the redirect target")
+	}
+	if strings.Contains(err.Error(), "k_secret") {
+		t.Errorf("error leaked the api key: %v", err)
+	}
+}

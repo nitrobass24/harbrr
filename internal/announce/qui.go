@@ -78,9 +78,6 @@ var _ Target = (*quiAnnouncer)(nil)
 // NewQui builds a qui cross-seed announce Target. fetch fetches the .torrent bytes for a
 // matched release through harbrr's /dl; tags are applied to every injected torrent.
 func NewQui(baseURL, apiKey string, client *http.Client, fetch TorrentFetcher, tags []string) Target {
-	if client == nil {
-		client = defaultHTTPClient()
-	}
 	return &quiAnnouncer{
 		JSONClient:  newClient("qui", baseURL, apiKey, widenTimeout(client, quiAnnounceTimeout)),
 		probeClient: newClient("qui", baseURL, apiKey, client),

@@ -10,62 +10,6 @@ import (
 	"testing"
 )
 
-// TestDefaultClientRedirectHostGuard proves the shared client refuses to follow a redirect
-// onto a different host (so the custom X-API-Key never leaves the configured host, since Go
-// only auto-strips Authorization/Cookie cross-origin) while still following a same-host one.
-func TestDefaultClientRedirectHostGuard(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name        string
-		crossHost   bool // the redirect points at a different host than the origin
-		wantErr     bool
-		wantKeySent bool // the api key reached the redirect target
-	}{
-		{name: "cross-host redirect refused", crossHost: true, wantErr: true, wantKeySent: false},
-		{name: "same-host redirect followed", crossHost: false, wantErr: false, wantKeySent: true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			var landedKey string
-			// landing records whether the api key arrived and returns a clean 2xx so a
-			// followed redirect completes without error.
-			landing := func(w http.ResponseWriter, r *http.Request) {
-				landedKey = r.Header.Get(apiKeyHeader)
-				w.WriteHeader(http.StatusOK)
-			}
-			other := httptest.NewServer(http.HandlerFunc(landing))
-			defer other.Close()
-
-			var origin *httptest.Server
-			origin = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/landing" { // the same-host redirect target
-					landing(w, r)
-					return
-				}
-				dest := origin.URL + "/landing"
-				if tt.crossHost {
-					dest = other.URL + "/landing"
-				}
-				http.Redirect(w, r, dest, http.StatusFound)
-			}))
-			defer origin.Close()
-
-			tgt := NewCrossSeedV6(origin.URL, "cs_secret", defaultHTTPClient())
-			_, err := tgt.Announce(context.Background(), sampleRelease())
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("Announce err = %v, wantErr %v", err, tt.wantErr)
-			}
-			if (landedKey != "") != tt.wantKeySent {
-				t.Errorf("api key delivered to redirect target = %v, want %v", landedKey != "", tt.wantKeySent)
-			}
-			if err != nil && strings.Contains(err.Error(), "cs_secret") {
-				t.Errorf("error leaked the api key: %v", err)
-			}
-		})
-	}
-}
-
 const testAPIKey = "qui_secretkey"
 
 func sampleRelease() Release {

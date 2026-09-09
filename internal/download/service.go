@@ -32,14 +32,11 @@ type Service struct {
 	life   *connresource.Lifecycle[domain.DownloadClient]
 }
 
-// NewService wires the download service. client is shared by drivers thin enough
-// to use one (nil installs a timeout-bounded default); clock is injectable for
-// deterministic tests (assigning to the returned Service's clock field also
-// retunes its Lifecycle, which reads clock through an indirection).
+// NewService wires the download service. client (required) is shared by drivers thin
+// enough to use one; clock is injectable for deterministic tests (assigning to the
+// returned Service's clock field also retunes its Lifecycle, which reads clock through
+// an indirection).
 func NewService(db dbinterface.Querier, appsSvc *apps.Service, keyring *secrets.Keyring, client *http.Client) *Service {
-	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
-	}
 	s := &Service{db: db, apps: appsSvc, client: client, clock: time.Now}
 	s.life = connresource.New[domain.DownloadClient](db, keyring, func() time.Time { return s.clock() })
 	return s

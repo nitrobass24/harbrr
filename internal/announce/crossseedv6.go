@@ -48,9 +48,6 @@ var _ Target = (*csv6Announcer)(nil)
 
 // NewCrossSeedV6 builds a cross-seed v6 announce Target.
 func NewCrossSeedV6(baseURL, apiKey string, client *http.Client) Target {
-	if client == nil {
-		client = defaultHTTPClient()
-	}
 	return &csv6Announcer{JSONClient: newClient("cross-seed", baseURL, apiKey, client)}
 }
 
