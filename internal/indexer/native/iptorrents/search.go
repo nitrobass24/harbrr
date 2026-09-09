@@ -41,7 +41,7 @@ func (d *driver) buildSearchURL(q search.Query) string {
 	for _, cat := range q.Categories {
 		params.Set(cat, "")
 	}
-	if freeleechOnly(d.Cfg) {
+	if native.CheckboxOn(d.Cfg["freeleech_only"]) {
 		params.Set("free", "on")
 	}
 	imdb := native.CanonicalIMDBID(q.IMDBID)
@@ -80,8 +80,3 @@ func (d *driver) searchTerm(q search.Query) string {
 
 // sphinx wraps a term in IPTorrents' Sphinx boolean grouping `+(term)`.
 func sphinx(term string) string { return "+(" + term + ")" }
-
-// freeleechOnly reports whether the freeleech_only checkbox is enabled.
-func freeleechOnly(cfg map[string]string) bool {
-	return native.CheckboxOn(cfg["freeleech_only"])
-}

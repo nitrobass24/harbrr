@@ -150,11 +150,10 @@ func tooShort(value string) bool {
 }
 
 func positiveID(raw string) string {
-	value, ok := nonNegativeInt(raw)
-	if !ok || value <= 0 {
-		return ""
+	if value := native.PositiveInt(raw); value > 0 {
+		return strconv.Itoa(value)
 	}
-	return strconv.Itoa(value)
+	return ""
 }
 
 func nonNegativeInt(raw string) (int, bool) {

@@ -64,7 +64,7 @@ func (d *driver) buildSearchURL(q search.Query) string {
 	params.Set("in", "1")
 	params.Set("type", typ)
 	params.Set("limit", strconv.Itoa(pageSize))
-	if freeleechOnly(d.Cfg) {
+	if native.CheckboxOn(d.Cfg["freeleech_only"]) {
 		params.Add("discount[]", "1")
 	}
 	d.addQueryParams(params, q, d.classify(q, typ))
@@ -144,9 +144,4 @@ func (d *driver) episodeSearchTerm(q search.Query) string {
 		return "E" + ep
 	}
 	return q.EpisodeSearchString()
-}
-
-// freeleechOnly reports whether the freeleech_only checkbox is enabled.
-func freeleechOnly(cfg map[string]string) bool {
-	return native.CheckboxOn(cfg["freeleech_only"])
 }

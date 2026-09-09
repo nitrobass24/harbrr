@@ -8,12 +8,15 @@ import (
 	"strings"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/dateparse"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
+
+// authFailurePhrases are the words a Gazelle error message uses for a rejected
+// credential, so such a failure surfaces as a login error rather than a parse error.
+var authFailurePhrases = []string{"credential", "api key", "apikey", "authorization", "authenticat", "unauthorized"}
 
 // defaultCatID is the tracker category id used when a result's Category is null or
 // "Select Category" — Prowlarr's MapTrackerCatToNewznab("1") default. What "1" maps
@@ -132,22 +135,10 @@ func (d *driver) parseBrowse(body []byte, requestCookie string) ([]*normalizer.R
 // before it reaches the error string.
 func (d *driver) classifyStatusError(status, msg, requestCookie string) error {
 	scrubbed := d.scrubCredentials(msg, requestCookie)
-	if looksLikeAuthFailure(scrubbed) {
+	if native.MentionsAny(scrubbed, authFailurePhrases...) {
 		return fmt.Errorf("gazelle: browse status %q: %s: %w", status, scrubbed, login.ErrLoginFailed)
 	}
 	return fmt.Errorf("gazelle: browse status %q: %s: %w", status, scrubbed, search.ErrParseError)
-}
-
-// looksLikeAuthFailure reports whether a Gazelle error message indicates a rejected
-// credential (so the failure is surfaced as a login error rather than a parse error).
-func looksLikeAuthFailure(msg string) bool {
-	lower := strings.ToLower(msg)
-	for _, phrase := range []string{"credential", "api key", "apikey", "authorization", "authenticat", "unauthorized"} {
-		if strings.Contains(lower, phrase) {
-			return true
-		}
-	}
-	return false
 }
 
 // flattenGroup turns one browse group into releases: a MUSIC group (Torrents != nil)
@@ -377,10 +368,7 @@ func (d *driver) categories(category *string) []int {
 // torrent's datetime ("2012-04-14 15:57:00"), a non-music unix-seconds string, and a
 // fuzzy value ("now") via the date parser. An unparseable value yields the empty string.
 func (d *driver) publishDate(value string) string {
-	if strings.TrimSpace(value) == "" {
-		return ""
-	}
-	out, err := dateparse.New(dateparse.WithClock(d.Clock)).ParseRelTime(value)
+	out, err := native.PublishDate(value, d.Clock)
 	if err != nil {
 		return ""
 	}

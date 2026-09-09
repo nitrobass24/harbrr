@@ -182,18 +182,6 @@ func TestSearchTransportErrorHostOnly(t *testing.T) {
 	assertNoSecret(t, apphttp.RedactError(err))
 }
 
-func TestFreeleechOnly(t *testing.T) {
-	t.Parallel()
-	if !freeleechOnly(map[string]string{"freeleech_only": "True"}) {
-		t.Error("freeleechOnly(True) = false, want true")
-	}
-	for _, v := range []string{"", "false"} {
-		if freeleechOnly(map[string]string{"freeleech_only": v}) {
-			t.Errorf("freeleechOnly(%q) = true, want false", v)
-		}
-	}
-}
-
 func cfgOr(cfg map[string]string) map[string]string {
 	if cfg == nil {
 		return map[string]string{"cookie": credCookie, "user_agent": credUA}

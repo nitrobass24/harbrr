@@ -44,7 +44,7 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 // get), never the URL, so the URL carries no secret.
 func (d *driver) buildSearchURL(q search.Query) string {
 	params := url.Values{}
-	params.Set("tor[text]", strings.TrimSpace(searchTerm(q)))
+	params.Set("tor[text]", strings.TrimSpace(q.Keywords))
 	params.Set("tor[searchType]", "all")
 	params.Set("tor[searchIn]", "torrents")
 	params.Set("tor[sortType]", "default")
@@ -58,26 +58,19 @@ func (d *driver) buildSearchURL(q search.Query) string {
 	return d.BaseURL + searchPath + "?" + params.Encode()
 }
 
-// searchTerm is the free-text keyword. harbrr's search.Query carries the book author/
-// title as Keywords already, so the keyword is forwarded as-is (Prowlarr sends the raw
-// search term).
-func searchTerm(q search.Query) string {
-	return q.Keywords
-}
-
 // addSearchIn sets the tor[srchIn][…] flags. title/author/narrator are always on
 // (Prowlarr's defaults); description/series/filenames are user toggles.
 func (d *driver) addSearchIn(params url.Values) {
 	params.Set("tor[srchIn][title]", "true")
 	params.Set("tor[srchIn][author]", "true")
 	params.Set("tor[srchIn][narrator]", "true")
-	if boolSetting(d.Cfg["search_in_description"]) {
+	if native.CheckboxOn(d.Cfg["search_in_description"]) {
 		params.Set("tor[srchIn][description]", "true")
 	}
-	if boolSetting(d.Cfg["search_in_series"]) {
+	if native.CheckboxOn(d.Cfg["search_in_series"]) {
 		params.Set("tor[srchIn][series]", "true")
 	}
-	if boolSetting(d.Cfg["search_in_filenames"]) {
+	if native.CheckboxOn(d.Cfg["search_in_filenames"]) {
 		params.Set("tor[srchIn][filenames]", "true")
 	}
 }
@@ -93,6 +86,3 @@ func addCategories(params url.Values, cats []string) {
 		params.Set("tor[cat]["+strconv.Itoa(i)+"]", c)
 	}
 }
-
-// boolSetting reports whether a checkbox setting is enabled.
-func boolSetting(v string) bool { return native.CheckboxOn(v) }

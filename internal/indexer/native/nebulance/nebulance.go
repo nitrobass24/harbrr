@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
@@ -101,12 +100,7 @@ func (d *driver) DownloadNeedsAuth() bool { return false }
 // SupportsOffsetPaging reports that NBL accepts page and per_page upstream.
 func (d *driver) SupportsOffsetPaging() bool { return true }
 
-// Test verifies the configured API key with a one-result browse request. It returns
-// [login.ErrLoginFailed] when Nebulance rejects the credentials.
-func (d *driver) Test(ctx context.Context) error {
-	if strings.TrimSpace(d.Cfg["apikey"]) == "" {
-		return errAPIKeyRequired
-	}
-	_, err := d.Search(ctx, search.Query{Limit: 1})
-	return err
-}
+// Test verifies the configured API key with an empty browse request (New already
+// rejects a blank key). It returns [login.ErrLoginFailed] when Nebulance rejects the
+// credentials.
+func (d *driver) Test(ctx context.Context) error { return native.TestViaSearch(ctx, d) }

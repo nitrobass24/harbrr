@@ -220,15 +220,3 @@ func TestSearchTransportErrorHostOnly(t *testing.T) {
 	}
 	assertNoSecret(t, msg)
 }
-
-func TestBoolSetting(t *testing.T) {
-	t.Parallel()
-	if !boolSetting("True") {
-		t.Error("boolSetting(True) = false, want true")
-	}
-	for _, v := range []string{"", "false"} {
-		if boolSetting(v) {
-			t.Errorf("boolSetting(%q) = true, want false", v)
-		}
-	}
-}

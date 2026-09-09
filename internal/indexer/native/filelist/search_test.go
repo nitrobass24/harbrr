@@ -286,23 +286,6 @@ func TestTestAction(t *testing.T) {
 	}
 }
 
-func TestFreeleechOnly(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		value string
-		want  bool
-	}{
-		{"True", true},
-		{"", false},
-		{"false", false},
-	}
-	for _, tt := range tests {
-		if got := freeleechOnly(map[string]string{"freeleech_only": tt.value}); got != tt.want {
-			t.Errorf("freeleechOnly(%q) = %v, want %v", tt.value, got, tt.want)
-		}
-	}
-}
-
 // assertNoPasskeyInURL proves the raw passkey value never appears in a URL (the search
 // passkey rides as a header; a download URL carries it as a query param but that URL
 // only goes to /dl, never a recorded search request). It also confirms the redactors

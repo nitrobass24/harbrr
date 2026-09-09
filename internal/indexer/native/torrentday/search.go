@@ -50,7 +50,7 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 func (d *driver) buildSearchURL(q search.Query) string {
 	tokens := make([]string, 0, len(q.Categories)+2)
 	tokens = append(tokens, q.Categories...)
-	if freeleechOnly(d.Cfg) {
+	if native.CheckboxOn(d.Cfg["freeleech_only"]) {
 		tokens = append(tokens, freeleechToken)
 	}
 	tokens = append(tokens, "q="+url.QueryEscape(d.searchTerm(q)))
@@ -73,3 +73,11 @@ func (d *driver) searchTerm(q search.Query) string {
 	term := strings.TrimSpace(keyword + " " + q.EpisodeSearchString())
 	return strings.TrimSpace(term)
 }
+
+// Test verifies the configured session cookie still authenticates (the management
+// "test indexer" action) by issuing an empty browse query. A good cookie returns 200 with
+// a JSON array; a stale cookie redirects to /login.php (or returns 401/403). Search stamps
+// the context WithNoRedirectFollow, so that redirect surfaces as a raw 3xx that
+// isLoginRedirect maps to login.ErrLoginFailed (the registry records an auth_failure health
+// event) instead of being followed to the login page and misread as a parse error.
+func (d *driver) Test(ctx context.Context) error { return native.TestViaSearch(ctx, d) }

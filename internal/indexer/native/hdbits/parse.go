@@ -100,7 +100,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	}
 
 	sortByID(resp.Data)
-	freeOnly := freeleechOnly(d.Cfg)
+	freeOnly := native.CheckboxOn(d.Cfg["freeleech_only"])
 	useFilenames := useFilenames(d.Cfg)
 	releases := make([]*normalizer.Release, 0, len(resp.Data))
 	for i := range resp.Data {
@@ -262,12 +262,6 @@ func (d *driver) detailsURL(id string) string {
 	params := url.Values{}
 	params.Set("id", id)
 	return d.BaseURL + detailsPath + "?" + params.Encode()
-}
-
-// freeleechOnly reports whether the freeleech_only checkbox is enabled (Prowlarr's
-// FreeleechOnly, default false).
-func freeleechOnly(cfg map[string]string) bool {
-	return native.CheckboxOn(cfg["freeleech_only"])
 }
 
 // useFilenames reports whether filename-derived titles are used (Prowlarr's UseFilenames,

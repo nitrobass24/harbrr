@@ -44,22 +44,6 @@ func TestNewRequiresAPIKey(t *testing.T) {
 	}
 }
 
-func TestTestRequiresAPIKeyBeforeRequest(t *testing.T) {
-	t.Parallel()
-	doer := &scriptDoer{handler: func(*stdhttp.Request) (*stdhttp.Response, error) {
-		t.Fatal("Test issued a request without an API key")
-		return nil, errors.New("unexpected request")
-	}}
-	driver := liveDriver(t, doer)
-	driver.Cfg["apikey"] = ""
-	if err := driver.Test(context.Background()); !errors.Is(err, errAPIKeyRequired) {
-		t.Errorf("Test err = %v, want errAPIKeyRequired", err)
-	}
-	if len(doer.reqs) != 0 {
-		t.Errorf("Test requests = %d, want 0", len(doer.reqs))
-	}
-}
-
 func TestTestConfiguredUnauthorizedRemainsAuthFailure(t *testing.T) {
 	t.Parallel()
 	driver := liveDriver(t, &scriptDoer{handler: func(*stdhttp.Request) (*stdhttp.Response, error) {

@@ -97,6 +97,17 @@ func FirstStandardCat(ids []int) []int {
 	return nil
 }
 
+// PositiveInt parses raw as a non-negative base-10 int: blank, unparseable or negative
+// yields 0. It is the "did the query give me a usable id/season?" read the TV families do
+// on search.Query's string fields, where 0 and absent are the same thing.
+func PositiveInt(raw string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return 0
+	}
+	return max(n, 0)
+}
+
 // SanitizeSearchTerm reproduces Prowlarr's SearchCriteriaBase.SanitizedSearchTerm:
 // collapse any run of Unicode dash punctuation to a single '-', normalise the
 // grave/acute/curly single quotes to a plain apostrophe, then keep only letters, digits,

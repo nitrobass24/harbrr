@@ -287,20 +287,3 @@ func TestDerivedType(t *testing.T) {
 		}
 	}
 }
-
-func TestFreeleechOnly(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		value string
-		want  bool
-	}{
-		{"True", true},
-		{"", false},
-		{"false", false},
-	}
-	for _, tt := range tests {
-		if got := freeleechOnly(map[string]string{"freeleech_only": tt.value}); got != tt.want {
-			t.Errorf("freeleechOnly(%q) = %v, want %v", tt.value, got, tt.want)
-		}
-	}
-}

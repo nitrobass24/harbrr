@@ -128,7 +128,7 @@ func setSearchCriteria(tq *torrentQuery, q search.Query) {
 		tq.Search = keywords
 		return
 	}
-	if tvdb := positiveInt(q.TVDBID); tvdb > 0 {
+	if tvdb := native.PositiveInt(q.TVDBID); tvdb > 0 {
 		setTvdbCriteria(tq, q, tvdb, keywords)
 		return
 	}
@@ -138,7 +138,7 @@ func setSearchCriteria(tq *torrentQuery, q search.Query) {
 	// A season/episode signal (without an id) is a TV search: Prowlarr's
 	// SanitizedTvSearchString appends the formatted episode string ("S01E02"/"S01"/daily) to
 	// the keyword, so the API constrains to the specific episode rather than the whole series.
-	if positiveInt(q.Season) > 0 || strings.TrimSpace(q.Ep) != "" {
+	if native.PositiveInt(q.Season) > 0 || strings.TrimSpace(q.Ep) != "" {
 		tq.Search = strings.TrimSpace(keywords + " " + q.EpisodeSearchString())
 		return
 	}
@@ -162,7 +162,7 @@ func setTvdbCriteria(tq *torrentQuery, q search.Query, tvdb int, _ string) {
 		return
 	}
 	tvdbq := &tvdbQuery{ID: tvdb}
-	if season := positiveInt(q.Season); season > 0 {
+	if season := native.PositiveInt(q.Season); season > 0 {
 		tvdbq.Season = season
 	}
 	if ep := strings.TrimSpace(q.Ep); ep != "" {
@@ -200,14 +200,4 @@ func (d *driver) categoryParam(q search.Query) []int {
 // trimmed.
 func sanitizeMovieTerm(term string) string {
 	return strings.TrimSpace(nonWordRun.ReplaceAllString(term, " "))
-}
-
-// positiveInt parses raw as a non-negative base-10 int; a blank or unparseable value (or
-// a negative) yields 0.
-func positiveInt(raw string) int {
-	n, err := strconv.Atoi(strings.TrimSpace(raw))
-	if err != nil || n < 0 {
-		return 0
-	}
-	return n
 }

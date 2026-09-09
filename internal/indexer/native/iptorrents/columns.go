@@ -1,7 +1,6 @@
 package iptorrents
 
 import (
-	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -111,84 +110,4 @@ func cleanTitle(title string) string {
 	title = titleControlChars.ReplaceAllString(title, "")
 	title = titleRequestTag.ReplaceAllString(title, "")
 	return strings.Trim(strings.TrimSpace(title), " -:")
-}
-
-// parseSizeBytes reproduces Jackett/Prowlarr's ParseUtil.GetBytes: the numeric part
-// keeps digits/'.'/',' (',' -> '.', extra '.' are thousands separators dropped), the
-// unit is the letters only with 'i' stripped, and the byte count is value*multiplier
-// computed and truncated in float32 (KB→MB→GB→TB by Contains). An unrecognised unit is
-// a raw byte count; empty/"-" coerce to 0.
-func parseSizeBytes(s string) int64 {
-	val := coerceFloat32(normalizeDecimal(keepNumeric(s)))
-	unit := strings.ReplaceAll(strings.ToLower(lettersOnly(s)), "i", "")
-	const step float32 = 1024
-	switch {
-	case strings.Contains(unit, "kb"):
-		return truncFloat32(val * step)
-	case strings.Contains(unit, "mb"):
-		return truncFloat32(val * step * step)
-	case strings.Contains(unit, "gb"):
-		return truncFloat32(val * step * step * step)
-	case strings.Contains(unit, "tb"):
-		return truncFloat32(val * step * step * step * step)
-	default:
-		return truncFloat32(val)
-	}
-}
-
-// keepNumeric keeps only digits, '.' and ',' from s (GetBytes's pre-CoerceFloat scan).
-func keepNumeric(s string) string {
-	return strings.Map(func(r rune) rune {
-		if (r >= '0' && r <= '9') || r == '.' || r == ',' {
-			return r
-		}
-		return -1
-	}, s)
-}
-
-// normalizeDecimal maps ',' to '.', then treats all but the last '.' as thousands
-// separators and drops them (so "1.018,29" -> "1018.29").
-func normalizeDecimal(s string) string {
-	s = strings.ReplaceAll(s, ",", ".")
-	if strings.Count(s, ".") <= 1 {
-		return s
-	}
-	last := strings.LastIndex(s, ".")
-	return strings.ReplaceAll(s[:last], ".", "") + s[last:]
-}
-
-// lettersOnly returns the ASCII letters of s (GetBytes's unit extraction).
-func lettersOnly(s string) string {
-	return strings.Map(func(r rune) rune {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
-			return r
-		}
-		return -1
-	}, s)
-}
-
-// coerceFloat32 parses s as a float32, returning 0 on empty/unparseable input (CoerceFloat).
-func coerceFloat32(s string) float32 {
-	if s == "" {
-		return 0
-	}
-	f, err := strconv.ParseFloat(s, 32)
-	if err != nil {
-		return 0
-	}
-	return float32(f)
-}
-
-// truncFloat32 truncates a float32 byte count toward zero into an int64, clamping
-// non-finite/overflowing values rather than panicking (the C# (long) cast).
-func truncFloat32(v float32) int64 {
-	t := math.Trunc(float64(v))
-	switch {
-	case math.IsNaN(t) || t <= math.MinInt64:
-		return 0
-	case t >= math.MaxInt64:
-		return math.MaxInt64
-	default:
-		return int64(t)
-	}
 }

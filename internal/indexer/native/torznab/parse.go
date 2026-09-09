@@ -102,9 +102,9 @@ func (d *driver) toRelease(it *item, catMap *mapper.CategoryMap) *normalizer.Rel
 		Categories:           it.category(catMap),
 		Grabs:                native.ParseInt64(strings.TrimSpace(it.Grabs)),
 		Files:                it.files(),
-		Seeders:              nonNegative(it.attrInt("seeders")),
+		Seeders:              max(it.attrInt("seeders"), 0),
 		Leechers:             it.attrInt("leechers"),
-		Peers:                nonNegative(it.attrInt("peers")),
+		Peers:                max(it.attrInt("peers"), 0),
 		PublishDate:          d.publishDate(it.PubDate),
 		DownloadVolumeFactor: attrFactor(it.attr("downloadvolumefactor"), 0),
 		UploadVolumeFactor:   attrFactor(it.attr("uploadvolumefactor"), 1),
@@ -145,14 +145,14 @@ func (it *item) bittorrentEnclosureURL() string {
 // attribute — Jackett's base ResultFromFeedItem attr-then-element fallback, with the
 // enclosure length as the final fallback (mirroring the newznab sibling's GetSize).
 func (it *item) size() int64 {
-	if n := parsePositiveInt64(it.attr("size")); n > 0 {
+	if n := native.ParseInt64(it.attr("size")); n > 0 {
 		return n
 	}
-	if n := parsePositiveInt64(strings.TrimSpace(it.Size)); n > 0 {
+	if n := native.ParseInt64(strings.TrimSpace(it.Size)); n > 0 {
 		return n
 	}
 	for i := range it.Enclosures {
-		if n := parsePositiveInt64(strings.TrimSpace(it.Enclosures[i].Length)); n > 0 {
+		if n := native.ParseInt64(strings.TrimSpace(it.Enclosures[i].Length)); n > 0 {
 			return n
 		}
 	}
@@ -162,23 +162,10 @@ func (it *item) size() int64 {
 // files returns the release's file count: the torznab:attr "files" when present, else
 // the plain <files> child element — Jackett's base ResultFromFeedItem fallback.
 func (it *item) files() int64 {
-	if n := parsePositiveInt64(it.attr("files")); n > 0 {
+	if n := native.ParseInt64(it.attr("files")); n > 0 {
 		return n
 	}
-	return parsePositiveInt64(strings.TrimSpace(it.Files))
-}
-
-// parsePositiveInt64 parses s as a base-10 int64, returning 0 on blank/unparseable/
-// non-positive input.
-func parsePositiveInt64(s string) int64 {
-	if s == "" {
-		return 0
-	}
-	n, err := strconv.ParseInt(s, 10, 64)
-	if err != nil || n <= 0 {
-		return 0
-	}
-	return n
+	return max(native.ParseInt64(it.Files), 0)
 }
 
 // category resolves the release's single category id: the LAST numeric <category>
@@ -213,17 +200,6 @@ func (it *item) lastNumericCategory() string {
 	return last
 }
 
-// nonNegative clamps a parsed seeders/peers value to 0 when it is not strictly
-// positive — Jackett's MoreThanTVAPI override (`release.Seeders > 0 ? release.Seeders :
-// 0`, likewise for Peers). Absent attrs already parse to 0 via attrInt, so this only
-// changes behavior for an explicit non-positive value.
-func nonNegative(v int64) int64 {
-	if v > 0 {
-		return v
-	}
-	return 0
-}
-
 // attrFactor parses a DVF/UVF attr value, falling back to fallback when the attr is
 // absent, unparseable, or not strictly positive — Jackett's MoreThanTVAPI override
 // (`release.DownloadVolumeFactor > 0 ? release.DownloadVolumeFactor : 0`, likewise
@@ -243,14 +219,10 @@ func attrFactor(raw string, fallback float64) float64 {
 // "imdbid" attr — Jackett's base ResultFromFeedItem preference order. A missing or
 // unparseable value yields "".
 func (it *item) imdbID() string {
-	if n := parsePositiveInt64(it.attr("imdb")); n > 0 {
-		return fmt.Sprintf("tt%07d", n)
+	if id := native.CanonicalIMDBID(it.attr("imdb")); id != "" {
+		return id
 	}
-	digits := strings.TrimPrefix(strings.ToLower(it.attr("imdbid")), "tt")
-	if n := parsePositiveInt64(digits); n > 0 {
-		return fmt.Sprintf("tt%07d", n)
-	}
-	return ""
+	return native.CanonicalIMDBID(it.attr("imdbid"))
 }
 
 // publishDate renders the item's <pubDate> as a canonical RFC3339 string via the

@@ -66,7 +66,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 		return nil, fmt.Errorf("torrentday: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
 	}
 
-	freeOnly := freeleechOnly(d.Cfg)
+	freeOnly := native.CheckboxOn(d.Cfg["freeleech_only"])
 	releases := make([]*normalizer.Release, 0, len(rows))
 	for i := range rows {
 		if freeOnly && float64WithDefault(rows[i].DownloadMultiplier, 1) != 0 {
@@ -131,11 +131,6 @@ func (d *driver) downloadURL(id int64) string {
 // detailsURL rebuilds the Prowlarr info URL: {base}details.php?id=<id>.
 func (d *driver) detailsURL(id int64) string {
 	return d.BaseURL + detailsPath + "?id=" + strconv.FormatInt(id, 10)
-}
-
-// freeleechOnly reports whether the freeleech_only checkbox is enabled.
-func freeleechOnly(cfg map[string]string) bool {
-	return native.CheckboxOn(cfg["freeleech_only"])
 }
 
 // float64WithDefault parses f as a float64; a blank (absent) field yields def — the

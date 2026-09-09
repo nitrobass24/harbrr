@@ -89,12 +89,7 @@ func (d *driver) addCommonParams(params url.Values, q search.Query) {
 	if cats := strings.Join(q.Categories, ","); cats != "" {
 		params.Set("category", cats)
 	}
-	if freeleechOnly(d.Cfg) {
+	if native.CheckboxOn(d.Cfg["freeleech_only"]) {
 		params.Set("freeleech", "1")
 	}
-}
-
-// freeleechOnly reports whether the freeleech_only checkbox is enabled.
-func freeleechOnly(cfg map[string]string) bool {
-	return native.CheckboxOn(cfg["freeleech_only"])
 }

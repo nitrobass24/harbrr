@@ -140,16 +140,6 @@ func tmdbParam(raw string) string {
 	return "movie/" + s
 }
 
-// positiveInt parses raw as a non-negative base-10 int; a blank or unparseable value (or a
-// negative) yields 0.
-func positiveInt(raw string) int {
-	n, err := strconv.Atoi(strings.TrimSpace(raw))
-	if err != nil || n < 0 {
-		return 0
-	}
-	return n
-}
-
 // episodeSearchString formats the season/episode component appended to a TV search term: a
 // daily episode (season a four-digit year, episode "MM/dd") becomes "yyyy-MM-dd" (Prowlarr
 // rewrites the term to "<term> yyyy-MM-dd" when the episode parses as a date); a
@@ -159,11 +149,11 @@ func episodeSearchString(season, ep string) string {
 	if daily, ok := native.DailyEpisodeDate(season, ep); ok {
 		return daily.Format("2006-01-02")
 	}
-	s := positiveInt(season)
+	s := native.PositiveInt(season)
 	if s <= 0 {
 		return ""
 	}
-	if e := positiveInt(ep); strings.TrimSpace(ep) != "" && e > 0 {
+	if e := native.PositiveInt(ep); strings.TrimSpace(ep) != "" && e > 0 {
 		return fmt.Sprintf("S%02dE%02d", s, e)
 	}
 	return fmt.Sprintf("S%02d", s)
