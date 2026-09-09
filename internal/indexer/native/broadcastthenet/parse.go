@@ -18,12 +18,8 @@ import (
 
 // tvCategory is the newznab TV root (5000); the parser falls back to it when a
 // torrent's Resolution maps to no specific TV/SD|HD|UHD category (Prowlarr
-// SetCapabilities). It also bounds the "canonical" newznab id range used to discard
-// the mapper's synthesised 1:1 custom category (those ids are ≥ 100000).
-const (
-	tvCategory      = 5000
-	customCatCutoff = 100000
-)
+// SetCapabilities).
+const tvCategory = 5000
 
 // invalidAPIKeyCode is the JSON-RPC error code BTN returns for a rejected API key
 // ({"error":{"code":-32001,"message":"Invalid API Key"}}); it maps to a login failure.
@@ -188,10 +184,8 @@ func (d *driver) toRelease(t *btnTorrent) *normalizer.Release {
 // discarding the mapper's synthesised 1:1 custom id. An unmapped/blank resolution falls
 // back to the TV root (5000), matching Prowlarr (which emits exactly one category).
 func (d *driver) categories(resolution string) []int {
-	for _, c := range d.Caps.CategoryMap.MapTrackerCatDescToNewznab(resolution) {
-		if c < customCatCutoff {
-			return []int{c}
-		}
+	if cats := native.FirstStandardCat(d.Caps.CategoryMap.MapTrackerCatDescToNewznab(resolution)); cats != nil {
+		return cats
 	}
 	return []int{tvCategory}
 }

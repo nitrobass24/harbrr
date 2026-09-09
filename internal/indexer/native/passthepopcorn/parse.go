@@ -13,12 +13,6 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
-// customCatCutoff bounds the canonical newznab id range. The caps map carries a
-// description on every entry, so the mapper synthesises a 1:1 custom category
-// (id + CustomCategoryOffset = 100000); the parser keeps only the canonical id and
-// discards that synthetic one (mirroring gazelle/broadcastthenet).
-const customCatCutoff = 100000
-
 // defaultCatID is the tracker category id used when a movie-group's CategoryId is
 // blank: PTP is movie-only and every CategoryId 1-6 maps to Movies, so an absent id
 // degrades to "1" (Feature Film -> Movies 2000) rather than no category.
@@ -179,21 +173,10 @@ func (d *driver) categories(categoryID string) []int {
 	if id == "" {
 		id = defaultCatID
 	}
-	if mapped := canonical(d.Caps.CategoryMap.MapTrackerCatToNewznab(id)); mapped != nil {
+	if mapped := native.FirstStandardCat(d.Caps.CategoryMap.MapTrackerCatToNewznab(id)); mapped != nil {
 		return mapped
 	}
-	return canonical(d.Caps.CategoryMap.MapTrackerCatToNewznab(defaultCatID))
-}
-
-// canonical keeps only the canonical newznab category id, dropping the mapper's
-// synthesised 1:1 custom id (>= 100000), so each release carries exactly one category.
-func canonical(ids []int) []int {
-	for _, id := range ids {
-		if id < customCatCutoff {
-			return []int{id}
-		}
-	}
-	return nil
+	return native.FirstStandardCat(d.Caps.CategoryMap.MapTrackerCatToNewznab(defaultCatID))
 }
 
 // downloadVolumeFactor maps PTP's FreeleechType to the download volume factor, matching

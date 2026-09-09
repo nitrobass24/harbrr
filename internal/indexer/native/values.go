@@ -9,6 +9,7 @@ import (
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/dateparse"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 )
 
 // CanonicalIMDBID returns "tt%07d" for any recognisable IMDB id form ("tt0133093",
@@ -79,6 +80,21 @@ func DailyEpisodeDate(season, episode string) (time.Time, bool) {
 		return time.Time{}, false
 	}
 	return t, true
+}
+
+// FirstStandardCat returns the first STANDARD newznab category id in ids as a
+// one-element slice, or nil when ids carries none. The caps mapper resolves one tracker
+// category to both its standard newznab id and Jackett's synthesised 1:1 custom category
+// (mapper.CustomCategoryOffset and above); Prowlarr emits exactly one category per
+// release, so every native family keeps the standard id and drops the synthetic one. A
+// family with a fallback category applies it to the nil.
+func FirstStandardCat(ids []int) []int {
+	for _, id := range ids {
+		if id < mapper.CustomCategoryOffset {
+			return []int{id}
+		}
+	}
+	return nil
 }
 
 // SanitizeSearchTerm reproduces Prowlarr's SearchCriteriaBase.SanitizedSearchTerm:

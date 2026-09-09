@@ -14,8 +14,6 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
-const customCategoryOffset = 100000
-
 type apiResponse struct {
 	CurrentPage  int64     `json:"current_page"`
 	TotalPages   int64     `json:"total_pages"`
@@ -141,11 +139,8 @@ func (d *driver) toRelease(row *apiRow) (*normalizer.Release, error) {
 }
 
 func (d *driver) categories(title string) []int {
-	trackerCategory := qualityCategory(title)
-	for _, category := range d.Caps.CategoryMap.MapTrackerCatToNewznab(trackerCategory) {
-		if category < customCategoryOffset {
-			return []int{category}
-		}
+	if cats := native.FirstStandardCat(d.Caps.CategoryMap.MapTrackerCatToNewznab(qualityCategory(title))); cats != nil {
+		return cats
 	}
 	return []int{5000}
 }

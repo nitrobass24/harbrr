@@ -35,10 +35,6 @@ const (
 	fullDiscMedium = 1
 	// internalOrigin is type_origin 1 (an internal/half-leech release).
 	internalOrigin = 1
-	// customCatCutoff bounds the canonical newznab id range: the mapper synthesises a 1:1
-	// custom category at ids >= 100000, which is discarded so each release carries exactly
-	// one newznab category (matching Prowlarr).
-	customCatCutoff = 100000
 )
 
 // halfLeechMediums is Prowlarr's _halfLeechMediums set (HdBitsMedium Bluray=1, Capture=4,
@@ -197,15 +193,10 @@ func stripTorrentExt(name string) string {
 }
 
 // categories returns the single canonical newznab category for a type_category int. The
-// mapper also synthesises a 1:1 custom id (>= customCatCutoff) which is discarded so the
+// mapper also synthesises a 1:1 custom id which native.FirstStandardCat discards so the
 // release carries exactly one category (matching Prowlarr, which emits one).
 func (d *driver) categories(typeCategory int64) []int {
-	for _, c := range d.Caps.CategoryMap.MapTrackerCatToNewznab(strconv.FormatInt(typeCategory, 10)) {
-		if c < customCatCutoff {
-			return []int{c}
-		}
-	}
-	return nil
+	return native.FirstStandardCat(d.Caps.CategoryMap.MapTrackerCatToNewznab(strconv.FormatInt(typeCategory, 10)))
 }
 
 // downloadVolumeFactor reproduces Prowlarr's GetDownloadVolumeFactor: freeleech is free (0),

@@ -14,6 +14,7 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/dateparse"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
@@ -28,12 +29,6 @@ const (
 	// torrentTypeWanted keeps only TorrentType=="TORRENT" rows (Prowlarr filters the
 	// group's torrent map to TorrentType.ToUpperInvariant() == "TORRENT").
 	torrentTypeWanted = "TORRENT"
-
-	// customCatCutoff bounds the canonical newznab id range. The caps map carries a
-	// description on every entry, so the mapper synthesises a 1:1 custom category
-	// (id + CustomCategoryOffset = 100000); the parser keeps only canonical ids and
-	// discards the synthetic ones (mirroring gazelle/broadcastthenet).
-	customCatCutoff = 100000
 
 	// minimumSeedTimeSeconds is the fixed MinimumSeedTime Prowlarr sets on every GGn
 	// release: 80 hours (3 days + 8 hours).
@@ -408,7 +403,7 @@ func (d *driver) publishDate(value string) string {
 func canonical(ids []int) []int {
 	var out []int
 	for _, id := range ids {
-		if id < customCatCutoff {
+		if id < mapper.CustomCategoryOffset {
 			out = append(out, id)
 		}
 	}

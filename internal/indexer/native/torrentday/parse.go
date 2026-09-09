@@ -112,15 +112,10 @@ func (d *driver) toRelease(row *torrentDayRow) *normalizer.Release {
 
 // categories maps a row's tracker category id (`c`) to its newznab category through the
 // caps, keeping only the canonical newznab id and discarding the mapper's synthesised
-// 1:1 custom id (those ids are >= customCatCutoff). An unmapped id yields no category
+// 1:1 custom id (native.FirstStandardCat). An unmapped id yields no category
 // (an uncategorised release) rather than failing the page.
 func (d *driver) categories(c native.FlexString) []int {
-	for _, id := range d.Caps.CategoryMap.MapTrackerCatToNewznab(c.Str()) {
-		if id < customCatCutoff {
-			return []int{id}
-		}
-	}
-	return nil
+	return native.FirstStandardCat(d.Caps.CategoryMap.MapTrackerCatToNewznab(c.Str()))
 }
 
 // downloadURL rebuilds the Prowlarr download URL: {base}download.php/<id>/<id>.torrent.
@@ -157,8 +152,3 @@ func float64WithDefault(f native.FlexString, def float64) float64 {
 	}
 	return n
 }
-
-// customCatCutoff bounds the canonical newznab id range: the mapper synthesises a 1:1
-// custom category per tracker id with an id >= this cutoff; the parser discards it so
-// each release carries exactly one canonical category (mirrors broadcastthenet).
-const customCatCutoff = 100000

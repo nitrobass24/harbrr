@@ -171,7 +171,7 @@ func TestParseFreeleechOnlyFilter(t *testing.T) {
 }
 
 // TestCategories proves the `c` id resolves to a single canonical newznab category (the
-// synthetic >= customCatCutoff custom id is discarded) and an unmapped id yields no
+// synthetic custom id is discarded) and an unmapped id yields no
 // category.
 func TestCategories(t *testing.T) {
 	t.Parallel()
