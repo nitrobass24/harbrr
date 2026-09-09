@@ -142,7 +142,7 @@ func (rt *router) updateConnection(w http.ResponseWriter, r *http.Request) {
 	if err := rt.AppSync.UpdateConnection(r.Context(), id, appsync.UpdateConnectionParams{
 		Name:      req.Name,
 		SyncLevel: req.SyncLevel, FreeleechMode: req.FreeleechMode,
-		SyncProfileID: req.SyncProfileID.toAppSync(),
+		SyncProfileID: req.SyncProfileID.toDomain(),
 	}); err != nil {
 		rt.writeServiceError(w, "update connection", err)
 		return

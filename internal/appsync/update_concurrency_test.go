@@ -36,7 +36,7 @@ func TestUpdateConnectionConcurrentProfileDeleteIsClean(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			attachErr = f.svc.UpdateConnection(ctx, f.conn.ID, UpdateConnectionParams{
-				SyncProfileID: RefUpdate{Present: true, Value: &tv.ID},
+				SyncProfileID: domain.RefUpdate{Present: true, Value: &tv.ID},
 			})
 		}()
 		var deleteErr error

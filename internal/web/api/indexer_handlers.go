@@ -10,7 +10,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/autobrr/harbrr/internal/appsync"
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
@@ -37,15 +36,11 @@ func (o *optionalRef) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-func (o optionalRef) toRegistry() registry.RefUpdate {
-	return registry.RefUpdate{Present: o.present, Value: o.value}
-}
-
-// toAppSync maps the same tri-state onto appsync.RefUpdate (the connection PATCH's
-// sync-profile reference). appsync redeclares RefUpdate rather than importing registry,
-// so the two mappers are parallel by design.
-func (o optionalRef) toAppSync() appsync.RefUpdate {
-	return appsync.RefUpdate{Present: o.present, Value: o.value}
+// toDomain maps the decoded tri-state onto the shared domain.RefUpdate the service
+// layers patch references with (the indexer PATCH's proxy/solver, the connection
+// PATCH's sync profile).
+func (o optionalRef) toDomain() domain.RefUpdate {
+	return domain.RefUpdate{Present: o.present, Value: o.value}
 }
 
 // definitionSummary is the API view of an available definition (for the add form).
@@ -307,7 +302,7 @@ func (rt *router) updateIndexer(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := rt.Registry.Update(r.Context(), slug, registry.UpdateParams{
 		Name: req.Name, BaseURL: req.BaseURL, Settings: req.Settings,
-		ProxyID: req.ProxyID.toRegistry(), SolverID: req.SolverID.toRegistry(),
+		ProxyID: req.ProxyID.toDomain(), SolverID: req.SolverID.toDomain(),
 		Priority: req.Priority, MinSeeders: req.MinSeeders, SyncCategories: req.SyncCategories,
 		EnableRss: req.EnableRss, EnableAutomaticSearch: req.EnableAutomaticSearch,
 		EnableInteractiveSearch: req.EnableInteractiveSearch,
@@ -530,9 +525,10 @@ func (rt *router) allIndexerStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// toFleetIndexerStatus maps a registry FleetStatus to its API view, reusing
-// statusEvent for the most recent event (nil when the indexer has none).
-func toFleetIndexerStatus(st registry.FleetStatus) fleetIndexerStatus {
+// toFleetIndexerStatus maps one registry HealthStatus from the fleet roll-up to its
+// API view, reusing statusEvent for the most recent event (nil when the indexer has
+// none).
+func toFleetIndexerStatus(st registry.HealthStatus) fleetIndexerStatus {
 	fs := fleetIndexerStatus{
 		Slug: st.Slug, Status: st.Status,
 		DisabledTill: st.DisabledTill, FailingSince: st.FailingSince,

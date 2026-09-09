@@ -1,6 +1,10 @@
 package registry
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/autobrr/harbrr/internal/domain"
+)
 
 // resolveRef is the server side of the presence-aware PATCH: an absent update must
 // keep the instance's current reference, a present-but-nil update clears it, and a
@@ -13,15 +17,15 @@ func TestResolveRef(t *testing.T) {
 	next := int64(9)
 	tests := []struct {
 		name    string
-		update  RefUpdate
+		update  domain.RefUpdate
 		current *int64
 		want    *int64
 	}{
-		{name: "absent keeps current", update: RefUpdate{}, current: &cur, want: &cur},
-		{name: "absent keeps nil current", update: RefUpdate{}, current: nil, want: nil},
-		{name: "present nil clears", update: RefUpdate{Present: true, Value: nil}, current: &cur, want: nil},
-		{name: "present value sets", update: RefUpdate{Present: true, Value: &next}, current: &cur, want: &next},
-		{name: "present value sets over nil current", update: RefUpdate{Present: true, Value: &next}, current: nil, want: &next},
+		{name: "absent keeps current", update: domain.RefUpdate{}, current: &cur, want: &cur},
+		{name: "absent keeps nil current", update: domain.RefUpdate{}, current: nil, want: nil},
+		{name: "present nil clears", update: domain.RefUpdate{Present: true, Value: nil}, current: &cur, want: nil},
+		{name: "present value sets", update: domain.RefUpdate{Present: true, Value: &next}, current: &cur, want: &next},
+		{name: "present value sets over nil current", update: domain.RefUpdate{Present: true, Value: &next}, current: nil, want: &next},
 	}
 
 	for _, tt := range tests {

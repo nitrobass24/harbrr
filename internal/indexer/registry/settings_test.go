@@ -152,10 +152,10 @@ func TestResolveInstanceSettings(t *testing.T) {
 			if s.Budget.unit != tt.wantUnit {
 				t.Errorf("Budget.unit = %q, want %q", s.Budget.unit, tt.wantUnit)
 			}
-			checkLimit(t, "query", s.Budget.query, tt.wantQuery)
-			checkLimit(t, "grab", s.Budget.grab, tt.wantGrab)
-			if s.Budget.queryDetected != tt.wantQueryD {
-				t.Errorf("Budget.queryDetected = %v, want %v", s.Budget.queryDetected, tt.wantQueryD)
+			checkLimit(t, "query", s.Budget.kinds[budgetKindQuery].limit, tt.wantQuery)
+			checkLimit(t, "grab", s.Budget.kinds[budgetKindGrab].limit, tt.wantGrab)
+			if got := s.Budget.kinds[budgetKindQuery].detected; got != tt.wantQueryD {
+				t.Errorf("Budget query detected = %v, want %v", got, tt.wantQueryD)
 			}
 			if s.Freeleech {
 				t.Error("Freeleech = true for settings with no freeleech key")

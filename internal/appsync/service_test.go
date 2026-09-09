@@ -563,7 +563,7 @@ func TestServiceSyncWithProfile(t *testing.T) {
 		t.Fatalf("CreateProfile: %v", err)
 	}
 	if err := f.svc.UpdateConnection(ctx, f.conn.ID, UpdateConnectionParams{
-		SyncProfileID: RefUpdate{Present: true, Value: &prof.ID},
+		SyncProfileID: domain.RefUpdate{Present: true, Value: &prof.ID},
 	}); err != nil {
 		t.Fatalf("assign profile: %v", err)
 	}
@@ -923,7 +923,7 @@ func TestServiceProfileRoutingFunctional(t *testing.T) {
 		t.Fatalf("CreateProfile: %v", err)
 	}
 	if err := f.svc.UpdateConnection(ctx, f.conn.ID, UpdateConnectionParams{
-		SyncProfileID: RefUpdate{Present: true, Value: &prof.ID},
+		SyncProfileID: domain.RefUpdate{Present: true, Value: &prof.ID},
 	}); err != nil {
 		t.Fatalf("assign profile: %v", err)
 	}

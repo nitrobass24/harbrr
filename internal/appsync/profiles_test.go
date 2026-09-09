@@ -222,7 +222,7 @@ func TestDeleteProfileRefusedWhileInUse(t *testing.T) {
 		t.Fatalf("CreateProfile: %v", err)
 	}
 	if err := f.svc.UpdateConnection(ctx, f.conn.ID, UpdateConnectionParams{
-		SyncProfileID: RefUpdate{Present: true, Value: &p.ID},
+		SyncProfileID: domain.RefUpdate{Present: true, Value: &p.ID},
 	}); err != nil {
 		t.Fatalf("assign profile: %v", err)
 	}
@@ -232,7 +232,7 @@ func TestDeleteProfileRefusedWhileInUse(t *testing.T) {
 	}
 
 	if err := f.svc.UpdateConnection(ctx, f.conn.ID, UpdateConnectionParams{
-		SyncProfileID: RefUpdate{Present: true, Value: nil},
+		SyncProfileID: domain.RefUpdate{Present: true, Value: nil},
 	}); err != nil {
 		t.Fatalf("detach: %v", err)
 	}
@@ -281,12 +281,12 @@ func TestConnectionProfileRefValidation(t *testing.T) {
 
 	// Update: an unknown ref is a 400; a present-nil clears it.
 	if err := f.svc.UpdateConnection(ctx, conn.ID, UpdateConnectionParams{
-		SyncProfileID: RefUpdate{Present: true, Value: &unknown},
+		SyncProfileID: domain.RefUpdate{Present: true, Value: &unknown},
 	}); !errors.Is(err, domain.ErrInvalid) {
 		t.Errorf("update unknown ref = %v, want domain.ErrInvalid", err)
 	}
 	if err := f.svc.UpdateConnection(ctx, conn.ID, UpdateConnectionParams{
-		SyncProfileID: RefUpdate{Present: true, Value: nil},
+		SyncProfileID: domain.RefUpdate{Present: true, Value: nil},
 	}); err != nil {
 		t.Fatalf("clear ref: %v", err)
 	}

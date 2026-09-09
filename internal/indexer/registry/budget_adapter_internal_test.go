@@ -3,6 +3,7 @@ package registry
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -69,24 +70,24 @@ func newBudgetTestAdapter(t *testing.T, inner *budgetFakeDriver, cfg map[string]
 	clk.Store(&now)
 	clock := func() time.Time { return *clk.Load() }
 
-	sc := newSearchCache(db, cacheTuning{enabled: true, ttl: ttlConfig{rss: time.Hour, keyword: time.Hour, thin: time.Hour}, cleanup: time.Hour}, clock, zerolog.Nop())
+	sc := NewSearchCacheFromConfig(db, CacheConfigView{Enabled: true, RSSTTL: time.Hour, KeywordTTL: time.Hour, ThinTTL: time.Hour, CleanupInterval: time.Hour}, clock, zerolog.Nop())
 	budget := newRequestBudget(db, clock, zerolog.Nop())
 
 	a := &indexerAdapter{
-		info:         core.IndexerInfo{ID: "fake"},
-		inner:        inner,
-		instanceID:   instID,
-		settings:     instanceSettings{Budget: resolveBudgetLimits(cfg)},
-		cache:        sc,
-		db:           db,
-		health:       database.Health{},
-		stats:        newIndexerStats(db, clock, zerolog.Nop()),
-		budget:       budget,
-		circuit:      database.Circuit{},
-		circuitLocks: &circuitLocks{},
-		startedAt:    now,
-		clock:        clock,
-		log:          zerolog.Nop(),
+		info:       core.IndexerInfo{ID: "fake"},
+		inner:      inner,
+		instanceID: instID,
+		settings:   instanceSettings{Budget: resolveBudgetLimits(cfg)},
+		cache:      sc,
+		db:         db,
+		health:     database.Health{},
+		stats:      newIndexerStats(db, clock, zerolog.Nop()),
+		budget:     budget,
+		circuit:    database.Circuit{},
+		circuitMu:  &sync.Mutex{},
+		startedAt:  now,
+		clock:      clock,
+		log:        zerolog.Nop(),
 	}
 	return a, &clk
 }
@@ -449,7 +450,7 @@ func TestAdapterSearch_BudgetExhaustionDoesNotTripBreaker(t *testing.T) {
 	t.Parallel()
 	inner := &budgetFakeDriver{}
 	a, _ := newBudgetTestAdapter(t, inner, nil)
-	a.cache.tuning.Load().ttl.negative = time.Minute // arm the breaker
+	a.cache.tuning.Load().NegativeTTL = time.Minute // arm the breaker
 	a.budget.MarkQuotaSpent(context.Background(), a.instanceID, a.settings.Budget, budgetKindQuery, a.clock())
 
 	if _, err := a.Search(context.Background(), search.Query{Keywords: "x"}); !errors.Is(err, core.ErrBudgetExhausted) {

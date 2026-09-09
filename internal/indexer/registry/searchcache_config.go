@@ -12,18 +12,11 @@ import (
 	"github.com/autobrr/harbrr/internal/database"
 )
 
-// cacheTuning is the live, atomically-swapped search-cache configuration. The
-// SearchCache reads it per request (resolveTTL, shouldRefreshAhead, the enabled
-// gate), so the global knobs are runtime-tunable via SetConfig without a restart.
-type cacheTuning struct {
-	enabled   bool
-	ttl       ttlConfig
-	refreshAt int           // refresh-ahead percentage of TTL (e.g. 80)
-	cleanup   time.Duration // how often the background ticker reaps expired entries
-}
-
-// CacheConfigView is the API-facing snapshot of the live cache tuning (durations
-// are formatted to/parsed from strings at the handler boundary).
+// CacheConfigView is the live, atomically-swapped search-cache configuration and
+// the API-facing snapshot of it (durations are formatted to/parsed from strings at
+// the handler boundary). The SearchCache reads it per request (resolveTTL,
+// shouldRefreshAhead, the enabled gate), so the global knobs are runtime-tunable
+// via UpdateConfig without a restart.
 type CacheConfigView struct {
 	Enabled         bool
 	RSSTTL          time.Duration
@@ -31,7 +24,11 @@ type CacheConfigView struct {
 	ThinTTL         time.Duration
 	ThinThreshold   int
 	RefreshAheadPct int
-	// NegativeTTL is the negative-result circuit-breaker window; 0 disables the breaker.
+	// NegativeTTL is the negative-result circuit-breaker window: after a live search
+	// to an instance fails, a MISS for that instance short-circuits to the recorded
+	// error for this long instead of re-driving the tracker. Zero disables the breaker
+	// (the legacy behavior — every consumer re-hits a failing tracker). It is a breaker
+	// window, not a cache-entry TTL, so resolveTTL never reads it.
 	NegativeTTL time.Duration
 	// CleanupInterval is how often the background ticker reaps expired entries.
 	CleanupInterval time.Duration
@@ -83,28 +80,6 @@ var (
 	errCleanupInterval  = fmt.Errorf("%w: cleanup_interval must be at least %s", ErrInvalidCacheConfig, MinCleanupInterval)
 )
 
-func (t cacheTuning) view() CacheConfigView {
-	return CacheConfigView{
-		Enabled:         t.enabled,
-		RSSTTL:          t.ttl.rss,
-		KeywordTTL:      t.ttl.keyword,
-		ThinTTL:         t.ttl.thin,
-		ThinThreshold:   t.ttl.thinThreshold,
-		RefreshAheadPct: t.refreshAt,
-		NegativeTTL:     t.ttl.negative,
-		CleanupInterval: t.cleanup,
-	}
-}
-
-func (v CacheConfigView) tuning() cacheTuning {
-	return cacheTuning{
-		enabled:   v.Enabled,
-		ttl:       ttlConfig{rss: v.RSSTTL, keyword: v.KeywordTTL, thin: v.ThinTTL, thinThreshold: v.ThinThreshold, negative: v.NegativeTTL},
-		refreshAt: v.RefreshAheadPct,
-		cleanup:   v.CleanupInterval,
-	}
-}
-
 // Validate reports whether the proposed config is usable; the handler maps the
 // returned error to a 400.
 func (v CacheConfigView) Validate() error {
@@ -125,14 +100,14 @@ func (v CacheConfigView) Validate() error {
 
 // Enabled reports whether caching is currently on (read by the stats endpoint and
 // the per-request gate).
-func (c *SearchCache) Enabled() bool { return c.tuning.Load().enabled }
+func (c *SearchCache) Enabled() bool { return c.tuning.Load().Enabled }
 
 // Config returns the live cache tuning (GET /api/cache/config).
-func (c *SearchCache) Config() CacheConfigView { return c.tuning.Load().view() }
+func (c *SearchCache) Config() CacheConfigView { return *c.tuning.Load() }
 
 // CleanupInterval returns the live expired-entry reap interval. The cleanup ticker
 // re-reads it each cycle so a runtime change takes effect without a restart.
-func (c *SearchCache) CleanupInterval() time.Duration { return c.tuning.Load().cleanup }
+func (c *SearchCache) CleanupInterval() time.Duration { return c.tuning.Load().CleanupInterval }
 
 // UpdateConfig applies a partial patch: it merges the supplied fields onto the live
 // config, validates the result (returning a wrapped ErrInvalidCacheConfig on a bad
@@ -144,7 +119,7 @@ func (c *SearchCache) UpdateConfig(ctx context.Context, p CacheConfigPatch) (Cac
 	c.cfgMu.Lock()
 	defer c.cfgMu.Unlock()
 
-	v := c.tuning.Load().view()
+	v := *c.tuning.Load()
 	kv := map[string]string{}
 	if p.Enabled != nil {
 		v.Enabled = *p.Enabled
@@ -185,8 +160,7 @@ func (c *SearchCache) UpdateConfig(ctx context.Context, p CacheConfigPatch) (Cac
 	if err := c.persistConfig(ctx, kv); err != nil {
 		return CacheConfigView{}, err
 	}
-	t := v.tuning()
-	c.tuning.Store(&t)
+	c.tuning.Store(&v)
 	return v, nil
 }
 
@@ -225,7 +199,7 @@ func (c *SearchCache) LoadOverrides(ctx context.Context) error {
 	}
 	c.cfgMu.Lock()
 	defer c.cfgMu.Unlock()
-	v := c.tuning.Load().view() // start from the current (config-seeded) view
+	v := *c.tuning.Load() // start from the current (config-seeded) view
 	if s, ok := all[keyCacheEnabled]; ok {
 		if b, err := strconv.ParseBool(s); err == nil {
 			v.Enabled = b
@@ -239,8 +213,7 @@ func (c *SearchCache) LoadOverrides(ctx context.Context) error {
 	applyDurNonNeg(all, keyCacheNegativeTTL, &v.NegativeTTL)
 	applyDur(all, keyCacheCleanup, &v.CleanupInterval)
 	if v.Validate() == nil { // keep the seed if an overlaid view is invalid
-		t := v.tuning()
-		c.tuning.Store(&t)
+		c.tuning.Store(&v)
 	}
 	return nil
 }

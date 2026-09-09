@@ -55,7 +55,7 @@ func (c *SearchCache) probe(inner core.Indexer, instanceID int64, cfg map[string
 // runs the live search directly (no read or write-back); otherwise it routes through the
 // cache over the inner fake's Search seam, keyed by the inner's paging capability.
 func (p *cacheProbe) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
-	if !p.cache.tuning.Load().enabled {
+	if !p.cache.tuning.Load().Enabled {
 		return p.cache.fetchLive(ctx, p.instanceID, p.inner.Search, q)
 	}
 	return p.cache.search(ctx, p.instanceID, p.settings, p.builtEpoch, p.inner.Search, p.inner.SupportsOffsetPaging(), q)

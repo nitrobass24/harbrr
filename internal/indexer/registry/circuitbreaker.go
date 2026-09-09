@@ -2,7 +2,6 @@ package registry
 
 import (
 	"errors"
-	"sync"
 	"time"
 
 	"github.com/autobrr/harbrr/internal/database"
@@ -28,21 +27,6 @@ var circuitPeriods = []time.Duration{
 
 // maxCircuitLevel is the top rung of circuitPeriods.
 var maxCircuitLevel = len(circuitPeriods) - 1
-
-// circuitLocks serializes a circuit's read-modify-write per instance id so two
-// concurrent failures (or a failure racing a recovery) on the same indexer can't both
-// read the same level and clobber each other's escalation update. harbrr is single
-// process, so an in-memory per-instance mutex is sufficient; a shared set (not a mutex
-// on the adapter) so it survives an adapter rebuild for the same instance.
-type circuitLocks struct{ m sync.Map }
-
-// lock acquires the per-instance mutex and returns its unlock.
-func (l *circuitLocks) lock(instanceID int64) func() {
-	v, _ := l.m.LoadOrStore(instanceID, &sync.Mutex{})
-	mu, _ := v.(*sync.Mutex)
-	mu.Lock()
-	return mu.Unlock
-}
 
 // startupGrace is how long after the registry boots a qualifying failure's disable
 // window is capped, so a rocky first poll of every configured indexer doesn't nuke

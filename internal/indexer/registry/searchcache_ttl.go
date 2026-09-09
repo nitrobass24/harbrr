@@ -7,24 +7,6 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
 
-// ttlConfig holds the resolved TTL tiers for the search-results cache. rss is the
-// TTL for an empty/RSS poll, keyword for a real search; thin is the short clamp
-// applied when a search returns few results (so a near-empty page is not pinned
-// for the full keyword TTL). thinThreshold is the inclusive result count at or
-// below which the thin clamp applies.
-type ttlConfig struct {
-	rss           time.Duration
-	keyword       time.Duration
-	thin          time.Duration
-	thinThreshold int
-	// negative is the negative-result circuit-breaker window: after a live search to
-	// an instance fails, a MISS for that instance short-circuits to the recorded error
-	// for this long instead of re-driving the tracker. Zero disables the breaker (the
-	// legacy behavior — every consumer re-hits a failing tracker). It is a breaker
-	// window, not a cache-entry TTL, so resolveTTL never reads it.
-	negative time.Duration
-}
-
 // resolveTTL picks the cache TTL for one search. The base TTL is the instance's
 // resolved "cache_ttl" override (s.CacheTTL, non-zero when the setting was present
 // and positive — resolveCacheTTL), else the rss tier for an empty query or the
@@ -33,16 +15,16 @@ type ttlConfig struct {
 // lengthen, and it applies even over an explicit cache_ttl override on a thin
 // result. Finally, an empty query's TTL is floored to the instance's resolved
 // warm interval — see warmFloor.
-func (c ttlConfig) resolveTTL(s instanceSettings, q search.Query, count int) time.Duration {
-	base := c.keyword
+func (v CacheConfigView) resolveTTL(s instanceSettings, q search.Query, count int) time.Duration {
+	base := v.KeywordTTL
 	if isEmptyQuery(q) {
-		base = c.rss
+		base = v.RSSTTL
 	}
 	if s.CacheTTL > 0 {
 		base = s.CacheTTL
 	}
-	if count <= c.thinThreshold {
-		base = min(base, c.thin)
+	if count <= v.ThinThreshold {
+		base = min(base, v.ThinTTL)
 	}
 	return warmFloor(s, q, base)
 }

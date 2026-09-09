@@ -13,12 +13,13 @@ import (
 // refresh-ahead disabled, for the external (registry_test) regression suite. It
 // exists only in test builds.
 func NewSearchCacheForTest(db dbinterface.Querier, clock func() time.Time) *SearchCache {
-	t := cacheTuning{
-		enabled:   true,
-		ttl:       ttlConfig{rss: 5 * time.Minute, keyword: 30 * time.Minute, thin: 2 * time.Minute, thinThreshold: 5},
-		refreshAt: 0,
+	v := CacheConfigView{
+		Enabled:    true,
+		RSSTTL:     5 * time.Minute,
+		KeywordTTL: 30 * time.Minute,
+		ThinTTL:    2 * time.Minute, ThinThreshold: 5,
 	}
-	return newSearchCache(db, t, clock, zerolog.Nop())
+	return NewSearchCacheFromConfig(db, v, clock, zerolog.Nop())
 }
 
 // WrapForTest serves a fake indexer through the cache's cache-aside path (via the

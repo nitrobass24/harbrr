@@ -209,7 +209,7 @@ func TestStoreCompensatingDeleteClosesCheckThenStoreWindow(t *testing.T) {
 
 	wrapped := &bumpOnFirstInsertQuerier{Querier: rawDB, instID: instID}
 	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
-	sc := newSearchCache(wrapped, cacheTuning{enabled: true, ttl: keywordTTL, cleanup: time.Hour},
+	sc := NewSearchCacheFromConfig(wrapped, testConfig(keywordTTL, 0),
 		func() time.Time { return now }, zerolog.Nop())
 	wrapped.sc = sc
 

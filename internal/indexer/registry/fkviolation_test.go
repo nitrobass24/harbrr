@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/indexer/registry"
 )
 
@@ -55,11 +56,11 @@ func TestUpdateDanglingRefIsInvalid(t *testing.T) {
 	}{
 		{
 			name:   "dangling proxyId",
-			update: registry.UpdateParams{ProxyID: registry.RefUpdate{Present: true, Value: ptrInt64(999999)}},
+			update: registry.UpdateParams{ProxyID: domain.RefUpdate{Present: true, Value: ptrInt64(999999)}},
 		},
 		{
 			name:   "dangling solverId",
-			update: registry.UpdateParams{SolverID: registry.RefUpdate{Present: true, Value: ptrInt64(888888)}},
+			update: registry.UpdateParams{SolverID: domain.RefUpdate{Present: true, Value: ptrInt64(888888)}},
 		},
 	}
 	for _, tt := range tests {

@@ -10,8 +10,8 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 )
 
-func seedTTL() ttlConfig {
-	return ttlConfig{rss: 5 * time.Minute, keyword: 30 * time.Minute, thin: 2 * time.Minute, thinThreshold: 5}
+func seedTTL() CacheConfigView {
+	return CacheConfigView{RSSTTL: 5 * time.Minute, KeywordTTL: 30 * time.Minute, ThinTTL: 2 * time.Minute, ThinThreshold: 5}
 }
 
 // fullPatch builds a patch that sets every field — a full replace, for tests that
@@ -50,8 +50,7 @@ func TestSearchCacheConfigRoundTrip(t *testing.T) {
 
 	// Reset the in-memory tuning to the seed, then LoadOverrides must restore the
 	// persisted value from app_settings.
-	seed := seedTTL()
-	reset := cacheTuning{enabled: true, ttl: seed, refreshAt: 80, cleanup: time.Hour}
+	reset := testConfig(seedTTL(), 80)
 	sc.tuning.Store(&reset)
 	if err := sc.LoadOverrides(ctx); err != nil {
 		t.Fatalf("LoadOverrides: %v", err)
@@ -150,11 +149,11 @@ func TestLoadOverridesCorruptionGuards(t *testing.T) {
 	// negSeed starts negative_ttl non-zero so a stored "0s" overlay is observably a
 	// change, not just the already-zero default.
 	negSeed := seedTTL()
-	negSeed.negative = 30 * time.Second
+	negSeed.NegativeTTL = 30 * time.Second
 
 	tests := []struct {
 		name string
-		ttl  ttlConfig
+		ttl  CacheConfigView
 		kv   map[string]string
 		want func(seed CacheConfigView) CacheConfigView
 	}{

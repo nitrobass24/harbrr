@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -84,13 +85,13 @@ func newCircuitTestAdapter(t *testing.T) (*indexerAdapter, *database.DB) {
 	t.Helper()
 	db := dbtest.OpenMigrated(t)
 	return &indexerAdapter{
-		instanceID:   insertTestInstance(t, db),
-		db:           db,
-		health:       database.Health{},
-		circuit:      database.Circuit{},
-		circuitLocks: &circuitLocks{},
-		startedAt:    circuitNow.Add(-2 * time.Hour),
-		clock:        func() time.Time { return circuitNow },
+		instanceID: insertTestInstance(t, db),
+		db:         db,
+		health:     database.Health{},
+		circuit:    database.Circuit{},
+		circuitMu:  &sync.Mutex{},
+		startedAt:  circuitNow.Add(-2 * time.Hour),
+		clock:      func() time.Time { return circuitNow },
 		// recordCircuitSuccess stamps the durable last-success instant before it touches
 		// the circuit, so the stats layer has to be wired even for a circuit-only fixture.
 		stats: newIndexerStats(db, func() time.Time { return circuitNow }, zerolog.Nop()),

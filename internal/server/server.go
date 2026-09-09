@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"time"
 
@@ -35,9 +36,9 @@ type Deps struct {
 	Logger zerolog.Logger
 }
 
-// Config is the listener + base-path configuration.
+// Config is the base-path configuration. The listener itself is opened by the
+// composition root (internal/app) and handed to Serve.
 type Config struct {
-	Addr     string
 	BasePath string
 }
 
@@ -81,7 +82,6 @@ func New(deps Deps, cfg Config) *Server {
 
 	return &Server{
 		http: &http.Server{
-			Addr:              cfg.Addr,
 			Handler:           h,
 			ReadHeaderTimeout: 10 * time.Second,
 		},
@@ -93,17 +93,19 @@ func New(deps Deps, cfg Config) *Server {
 // Handler exposes the root handler (for httptest-based end-to-end tests).
 func (s *Server) Handler() http.Handler { return s.http.Handler }
 
-// Run serves until ctx is cancelled, then shuts down gracefully.
-func (s *Server) Run(ctx context.Context) error {
+// Serve serves ln until ctx is cancelled, then shuts down gracefully (which closes
+// ln). The listener is opened by the caller so a bind failure is reported before
+// anything claims the server is up — see app.serveUntilDone.
+func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	errCh := make(chan error, 1)
-	go func() { errCh <- s.http.ListenAndServe() }()
+	go func() { errCh <- s.http.Serve(ln) }()
 
 	select {
 	case err := <-errCh:
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
-		return fmt.Errorf("server: listen: %w", err)
+		return fmt.Errorf("server: serve: %w", err)
 	case <-ctx.Done():
 		s.log.Info().Msg("server: shutting down")
 		shutCtx, cancel := context.WithTimeout(context.Background(), s.shutdown)

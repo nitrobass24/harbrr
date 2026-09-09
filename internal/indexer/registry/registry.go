@@ -50,17 +50,17 @@ type statusSource interface {
 // lock-heavy hot path — separated from transactional CRUD (Manager) and health/stats
 // reporting (StatsReporter).
 type Resolver struct {
-	db           dbinterface.Querier
-	instances    database.Instances
-	profiles     database.SyncProfiles
-	proxies      database.Proxies
-	solvers      database.Solvers
-	health       database.Health
-	circuit      database.Circuit
-	circuitLocks *circuitLocks
-	loader       *loader.Loader
-	keyring      secretsKeyring
-	clock        func() time.Time
+	db        dbinterface.Querier
+	instances database.Instances
+	profiles  database.SyncProfiles
+	proxies   database.Proxies
+	solvers   database.Solvers
+	health    database.Health
+	circuit   database.Circuit
+	circuitMu *sync.Mutex
+	loader    *loader.Loader
+	keyring   secretsKeyring
+	clock     func() time.Time
 	// startedAt is the registry's boot time (captured in New, after WithClock
 	// applies), used only to compute the circuit breaker's startup grace window.
 	startedAt time.Time
@@ -268,7 +268,7 @@ func New(db dbinterface.Querier, ldr *loader.Loader, keyring secretsKeyring, fam
 	// Captured last (after the options loop finalizes clock) so an injected test clock
 	// establishes the startup-grace reference point instead of the wall clock.
 	res.startedAt = res.clock()
-	res.circuitLocks = &circuitLocks{}
+	res.circuitMu = &sync.Mutex{}
 	// Manager and StatsReporter are built last, from the resolver's finalized handles: the
 	// same clock and the same *IndexerStats pointer. Manager reaches the resolver only
 	// through the two narrow cleanup seams (serveEvicter / instanceForgetter), both
@@ -613,21 +613,21 @@ func (r *Resolver) buildAdapterAt(ctx context.Context, slug, probeHost string) (
 	// only knowable once the inner is built — and before the adapter is published.
 	is.applyWarmCapability(inner.SupportsOffsetPaging(), inner.ConsumesSearchMode())
 	return &indexerAdapter{
-		info:         indexerInfo(inst, def),
-		inner:        inner,
-		skipQuery:    skipQuery,
-		instanceID:   inst.ID,
-		settings:     is,
-		builtEpoch:   builtEpoch,
-		db:           r.db,
-		health:       r.health,
-		circuit:      r.circuit,
-		circuitLocks: r.circuitLocks,
-		startedAt:    r.startedAt,
-		healthSink:   r.healthSink,
-		stats:        r.stats,
-		budget:       r.budget,
-		diagnostics:  r.diagnostics,
+		info:        indexerInfo(inst, def),
+		inner:       inner,
+		skipQuery:   skipQuery,
+		instanceID:  inst.ID,
+		settings:    is,
+		builtEpoch:  builtEpoch,
+		db:          r.db,
+		health:      r.health,
+		circuit:     r.circuit,
+		circuitMu:   r.circuitMu,
+		startedAt:   r.startedAt,
+		healthSink:  r.healthSink,
+		stats:       r.stats,
+		budget:      r.budget,
+		diagnostics: r.diagnostics,
 		failover: func(ctx context.Context) (string, error) {
 			return r.failover(ctx, inst, def, baseURL)
 		},
@@ -814,8 +814,7 @@ func (r *Resolver) InvalidateAll() {
 	r.mu.Unlock()
 }
 
-// ForgetInstances runs the per-instance eviction fan-out (search-cache epoch bump,
-// cache counters, stats, budget) for each id — the same sequence Manager.Delete
+// ForgetInstances runs forgetInstance for each id — the same fan-out Manager.Delete
 // performs for one deleted instance. It backs the backup-restore path, where EVERY
 // instance is wiped and re-inserted under a new id: the caller captures the
 // pre-import ids and forgets them all after the import commits, so no in-memory
@@ -823,10 +822,7 @@ func (r *Resolver) InvalidateAll() {
 // restore, and no in-flight write-back from a pre-restore adapter can land under it.
 func (r *Resolver) ForgetInstances(ctx context.Context, ids ...int64) {
 	for _, id := range ids {
-		r.invalidateSearchCache(ctx, id)
-		r.forgetCacheCounters(id)
-		r.forgetStats(id)
-		r.forgetBudget(id)
+		r.forgetInstance(ctx, id)
 	}
 }
 
@@ -846,32 +842,23 @@ func (r *Resolver) invalidateSearchCache(ctx context.Context, instanceID int64) 
 	}
 }
 
-// forgetCacheCounters drops a deleted instance's in-memory cache counters so the
-// global totals stay equal to the sum of the surviving rows and FlushCounters stops
-// re-Upserting a cascade-deleted row. No-op when caching is off.
-func (r *Resolver) forgetCacheCounters(instanceID int64) {
-	if r.searchCache == nil {
-		return
+// forgetInstance drops everything keyed by a dead instance id, in one call — the
+// instanceForgetter seam the Manager calls after a committed Delete, keeping it
+// ignorant of the search cache, *IndexerStats, the budget and the diagnostics ring:
+//   - the cached search results and the epoch bump that rejects an in-flight
+//     write-back (nil-guarded, best-effort — invalidateSearchCache);
+//   - the in-memory cache counters, so the global totals stay equal to the sum of the
+//     surviving rows and FlushCounters stops re-Upserting a cascade-deleted row;
+//   - the query/grab/latency counters;
+//   - the request-budget counters;
+//   - the captured failed fetches.
+func (r *Resolver) forgetInstance(ctx context.Context, instanceID int64) {
+	r.invalidateSearchCache(ctx, instanceID)
+	if r.searchCache != nil {
+		r.searchCache.ForgetInstance(instanceID)
 	}
-	r.searchCache.ForgetInstance(instanceID)
-}
-
-// forgetStats drops a deleted instance's in-memory query/grab/latency counters, mirroring
-// forgetCacheCounters for the durable stats layer — one of the instanceForgetter methods
-// the Manager calls after a committed Delete, keeping the Manager ignorant of *IndexerStats.
-func (r *Resolver) forgetStats(instanceID int64) {
 	r.stats.ForgetInstance(instanceID)
-}
-
-// forgetBudget drops a deleted instance's in-memory budget counters, mirroring
-// forgetStats for the request-budget tracker.
-func (r *Resolver) forgetBudget(instanceID int64) {
 	r.budget.ForgetInstance(instanceID)
-}
-
-// forgetDiagnostics drops a deleted instance's captured failed fetches, mirroring
-// forgetBudget for the memory-only diagnostics ring.
-func (r *Resolver) forgetDiagnostics(instanceID int64) {
 	r.diagnostics.ForgetInstance(instanceID)
 }
 
