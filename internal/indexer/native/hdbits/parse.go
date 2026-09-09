@@ -59,22 +59,22 @@ type hdbitsResponse struct {
 // string. native.FlexInt accepts either wire form for the remaining numerics so a type change never
 // fails the page decode.
 type hdbitsTorrent struct {
-	ID             flexString     `json:"id"`
-	Hash           string         `json:"hash"`
-	Name           string         `json:"name"`
-	Filename       string         `json:"filename"`
-	Size           native.FlexInt `json:"size"`
-	Seeders        native.FlexInt `json:"seeders"`
-	Leechers       native.FlexInt `json:"leechers"`
-	TimesCompleted native.FlexInt `json:"times_completed"`
-	NumFiles       native.FlexInt `json:"numfiles"`
-	Added          string         `json:"added"`
-	Freeleech      string         `json:"freeleech"`
-	TypeCategory   native.FlexInt `json:"type_category"`
-	TypeMedium     native.FlexInt `json:"type_medium"`
-	TypeOrigin     native.FlexInt `json:"type_origin"`
-	Imdb           *imdbInfo      `json:"imdb"`
-	Tvdb           *tvdbInfo      `json:"tvdb"`
+	ID             native.FlexString `json:"id"`
+	Hash           string            `json:"hash"`
+	Name           string            `json:"name"`
+	Filename       string            `json:"filename"`
+	Size           native.FlexInt    `json:"size"`
+	Seeders        native.FlexInt    `json:"seeders"`
+	Leechers       native.FlexInt    `json:"leechers"`
+	TimesCompleted native.FlexInt    `json:"times_completed"`
+	NumFiles       native.FlexInt    `json:"numfiles"`
+	Added          string            `json:"added"`
+	Freeleech      string            `json:"freeleech"`
+	TypeCategory   native.FlexInt    `json:"type_category"`
+	TypeMedium     native.FlexInt    `json:"type_medium"`
+	TypeOrigin     native.FlexInt    `json:"type_origin"`
+	Imdb           *imdbInfo         `json:"imdb"`
+	Tvdb           *tvdbInfo         `json:"tvdb"`
 }
 
 // imdbInfo is the nested imdb object; only id and year are used.
@@ -88,34 +88,6 @@ type imdbInfo struct {
 type tvdbInfo struct {
 	ID native.FlexInt `json:"id"`
 }
-
-// flexString unmarshals a JSON string OR number into a string. HDBits has returned torrent
-// ids in both forms; Jackett's JObject conversion and upbrr's scalar normalization accept
-// either, so a strict Go string must not reject a valid response.
-type flexString string
-
-func (s *flexString) UnmarshalJSON(b []byte) error {
-	if len(b) == 0 || string(b) == "null" {
-		*s = ""
-		return nil
-	}
-	if b[0] == '"' {
-		var str string
-		if err := json.Unmarshal(b, &str); err != nil {
-			return fmt.Errorf("hdbits: decode string field: %w", err)
-		}
-		*s = flexString(str)
-		return nil
-	}
-	var number json.Number
-	if err := json.Unmarshal(b, &number); err != nil {
-		return fmt.Errorf("hdbits: decode string field: %w", err)
-	}
-	*s = flexString(number.String())
-	return nil
-}
-
-func (s flexString) str() string { return string(s) }
 
 // parseReleases decodes an api/torrents JSON body into normalized releases. A status of 4/5
 // (AuthDataMissing/AuthFailed) maps to login.ErrLoginFailed; any other non-zero status is a
@@ -172,8 +144,8 @@ func (d *driver) toRelease(row *hdbitsTorrent, useFilenames bool) *normalizer.Re
 		ReleaseName:          strings.TrimSpace(row.Name),
 		Filename:             stripTorrentExt(strings.TrimSpace(row.Filename)),
 		InfoHash:             row.Hash,
-		Link:                 d.downloadURL(row.ID.str()),
-		Details:              d.detailsURL(row.ID.str()),
+		Link:                 d.downloadURL(row.ID.Str()),
+		Details:              d.detailsURL(row.ID.Str()),
 		Categories:           d.categories(row.TypeCategory.Int64()),
 		Size:                 row.Size.Int64(),
 		Files:                row.NumFiles.Int64(),
@@ -324,15 +296,6 @@ func useFilenames(cfg map[string]string) bool {
 // unparseable id sorts as 0, and the sort is stable so equal ids keep server order.
 func sortByID(rows []hdbitsTorrent) {
 	slices.SortStableFunc(rows, func(a, b hdbitsTorrent) int {
-		return cmp.Compare(numericID(a.ID), numericID(b.ID))
+		return cmp.Compare(a.ID.Int64(), b.ID.Int64())
 	})
-}
-
-// numericID parses a row id for the sort key; an unparseable id sorts as 0.
-func numericID(id flexString) int64 {
-	n, err := strconv.ParseInt(string(id), 10, 64)
-	if err != nil {
-		return 0
-	}
-	return n
 }

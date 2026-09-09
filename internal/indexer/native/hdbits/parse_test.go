@@ -155,7 +155,7 @@ func TestParseLinkCarriesPasskeyRedactsViaProxy(t *testing.T) {
 	}
 }
 
-// TestParseStringNumericsTolerated proves the defensive flexInt decode tolerates a fixture
+// TestParseStringNumericsTolerated proves the defensive FlexInt/FlexString decode tolerates a fixture
 // whose numerics are JSON strings, yielding the same parsed values as the bare-number form.
 func TestParseStringNumericsTolerated(t *testing.T) {
 	t.Parallel()

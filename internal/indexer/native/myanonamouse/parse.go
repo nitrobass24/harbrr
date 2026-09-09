@@ -33,43 +33,20 @@ type mamResponse struct {
 // id→name, parsed defensively in authorNames. Size is a human-readable string (e.g.
 // "1.29 GB"). Category is the tracker category id (a string).
 type mamRelease struct {
-	ID                int64         `json:"id"`
-	Title             string        `json:"title"`
-	AuthorInfo        string        `json:"author_info"`
-	Category          mamFlexString `json:"category"`
-	MainCat           mamFlexString `json:"main_cat"`
-	Added             string        `json:"added"`
-	Size              string        `json:"size"`
-	Seeders           *int64        `json:"seeders"`
-	Leechers          *int64        `json:"leechers"`
-	TimesCompleted    *int64        `json:"times_completed"`
-	NumFiles          *int64        `json:"numfiles"`
-	Free              mamFlexBool   `json:"free"`
-	PersonalFreeleech mamFlexBool   `json:"personal_freeleech"`
-	FlVIP             mamFlexBool   `json:"fl_vip"`
-}
-
-// mamFlexString unmarshals a JSON string OR number into a string. MAM's category
-// ids (category, main_cat) arrive as JSON numbers from the live API but as strings
-// in the documented contract / earlier goldens — accept both so a strict struct
-// decode doesn't reject the live body (cf. the FileList int-flags live fix #46).
-type mamFlexString string
-
-func (s *mamFlexString) UnmarshalJSON(b []byte) error {
-	if len(b) == 0 || string(b) == "null" {
-		*s = ""
-		return nil
-	}
-	if b[0] == '"' {
-		var str string
-		if err := json.Unmarshal(b, &str); err != nil {
-			return fmt.Errorf("myanonamouse: decode string id: %w", err)
-		}
-		*s = mamFlexString(str)
-		return nil
-	}
-	*s = mamFlexString(b) // a JSON number: keep its literal text as the id
-	return nil
+	ID                int64             `json:"id"`
+	Title             string            `json:"title"`
+	AuthorInfo        string            `json:"author_info"`
+	Category          native.FlexString `json:"category"`
+	MainCat           native.FlexString `json:"main_cat"`
+	Added             string            `json:"added"`
+	Size              string            `json:"size"`
+	Seeders           *int64            `json:"seeders"`
+	Leechers          *int64            `json:"leechers"`
+	TimesCompleted    *int64            `json:"times_completed"`
+	NumFiles          *int64            `json:"numfiles"`
+	Free              mamFlexBool       `json:"free"`
+	PersonalFreeleech mamFlexBool       `json:"personal_freeleech"`
+	FlVIP             mamFlexBool       `json:"fl_vip"`
 }
 
 // mamFlexBool unmarshals a JSON bool OR number (0/1) into a bool. MAM's freeleech
@@ -181,9 +158,9 @@ func (d *driver) detailsURL(row *mamRelease) string {
 // fallback when the row has no specific category. The result is de-duplicated and
 // sorted for a deterministic feed.
 func (d *driver) categories(row *mamRelease) []int {
-	id := strings.TrimSpace(string(row.Category))
+	id := row.Category.Str()
 	if id == "" {
-		id = strings.TrimSpace(string(row.MainCat))
+		id = row.MainCat.Str()
 	}
 	out := d.Caps.CategoryMap.MapTrackerCatToNewznab(id)
 	slices.Sort(out)
