@@ -145,9 +145,9 @@ func buildOneRequest(def *loader.Definition, path loader.SearchPathBlock, query 
 	if err != nil {
 		return builtRequest{}, fmt.Errorf("rendering search path: %w", err)
 	}
-	absURL, err := resolveURL(deps.BaseURL, rendered)
+	absURL, err := httpx.Resolve(deps.BaseURL, rendered)
 	if err != nil {
-		return builtRequest{}, err
+		return builtRequest{}, fmt.Errorf("resolving search path: %w", err)
 	}
 
 	pairs, err := buildInputs(def, path, query, deps)
@@ -596,23 +596,6 @@ func applySession(req *stdhttp.Request, session *login.Session) {
 	if session.UserAgent != "" && req.Header.Get("User-Agent") == "" {
 		req.Header.Set("User-Agent", session.UserAgent)
 	}
-}
-
-// resolveURL resolves a (possibly relative) rendered path against baseURL. An
-// absolute rendered URL is returned as-is. Errors redact the path.
-func resolveURL(baseURL, rendered string) (string, error) {
-	ref, err := url.Parse(rendered)
-	if err != nil {
-		return "", fmt.Errorf("parsing search path %q: %w", apphttp.SchemeHost(rendered), apphttp.RedactURLError(err))
-	}
-	if ref.IsAbs() {
-		return ref.String(), nil
-	}
-	base, err := url.Parse(baseURL)
-	if err != nil {
-		return "", fmt.Errorf("parsing base URL %q: %w", apphttp.SchemeHost(baseURL), apphttp.RedactURLError(err))
-	}
-	return base.ResolveReference(ref).String(), nil
 }
 
 // boolVal dereferences an optional bool, defaulting to false.

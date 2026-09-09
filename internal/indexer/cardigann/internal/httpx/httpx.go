@@ -3,7 +3,10 @@
 // byte-identically in both stages and are now shared here. ResolveLocation is
 // now BOTH stages' Location resolution: search used to keep its own copy that
 // returned an absolute Location verbatim, which turned out to diverge from
-// Jackett (autobrr/harbrr#329) — see the note on ResolveLocation itself.
+// Jackett (autobrr/harbrr#329) — see the note on ResolveLocation itself. Resolve
+// is the same `new Uri(base, ref)` under it, and is now every stage's
+// base-relative URL resolution (login paths and form actions, search and
+// download paths, normalizer links), which had drifted into five copies.
 // The request-issuing LOOPS (send, do, doSearchRequest, newRequest,
 // followRedirects) stay per-stage — header templating, UA-replay source, body
 // caps, and error taxonomy genuinely diverge between login and search, so
@@ -11,10 +14,13 @@
 package httpx
 
 import (
+	"fmt"
 	"maps"
 	stdhttp "net/http"
 	"net/url"
 	"strings"
+
+	apphttp "github.com/autobrr/harbrr/internal/http"
 )
 
 // Doer is the narrow HTTP seam every cardigann stage drives: satisfied by
@@ -65,15 +71,40 @@ func ResolveLocation(resp *stdhttp.Response, reqURL string) string {
 	if loc == "" {
 		return ""
 	}
-	base, err := url.Parse(reqURL)
+	resolved, err := Resolve(reqURL, loc)
 	if err != nil {
 		return ""
 	}
-	ref, err := url.Parse(loc)
+	return resolved
+}
+
+// Resolve resolves a possibly-relative reference against an absolute base,
+// reproducing Jackett's resolvePath — one `new Uri(base, ref)` with no
+// absolute/relative branch. There is deliberately no absolute-ref
+// short-circuit: ResolveReference returns an absolute ref unchanged apart from
+// dot-segment removal, which is exactly what .NET's Uri constructor does while
+// building the Uri (see the ResolveLocation note above — that is this function
+// applied to a 3xx Location header).
+//
+// A non-absolute base is an error rather than a silent garbage resolve, so a
+// caller with no base to resolve against (the normalizer's optional links) can
+// fall back to the raw reference.
+//
+// Errors are pre-redacted to scheme://host: both base and ref routinely carry a
+// passkey, and a url.Parse failure quotes its raw input.
+func Resolve(base, ref string) (string, error) {
+	b, err := url.Parse(base)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("parsing base URL %s: %w", apphttp.SchemeHost(base), apphttp.RedactURLError(err))
 	}
-	return base.ResolveReference(ref).String()
+	if !b.IsAbs() {
+		return "", fmt.Errorf("base URL %s is not absolute", apphttp.SchemeHost(base))
+	}
+	r, err := url.Parse(ref)
+	if err != nil {
+		return "", fmt.Errorf("parsing %s: %w", apphttp.SchemeHost(ref), apphttp.RedactURLError(err))
+	}
+	return b.ResolveReference(r).String(), nil
 }
 
 // WithFormContentType returns a copy of in with a form-urlencoded Content-Type

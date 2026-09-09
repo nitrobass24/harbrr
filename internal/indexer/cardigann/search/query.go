@@ -13,35 +13,41 @@ import (
 // fields the request-building and row-filter stages read. Empty fields render to
 // "" in templates (matching Jackett's null-to-empty coercion), so a zero Query is
 // a valid "raw RSS" search.
+//
+// The yaml tags are for the offline parity harness, which decodes a case spec's
+// `query:` block straight into this struct (parity.Case). They are inert to the
+// engine, which never (de)serializes a Query — but they keep the harness from
+// drifting from the real shape. Request-context fields carry `yaml:"-"`: a
+// parity case describes a tracker request, not the served page window.
 type Query struct {
 	// Keywords is the free-text search term (Jackett .Query.Q / .Keywords).
-	Keywords string
+	Keywords string `yaml:"keywords"`
 	// Categories is the resolved tracker category id list ({{ .Categories }}).
-	Categories []string
+	Categories []string `yaml:"categories"`
 
 	// ID-style query params. A non-empty value here both feeds the request
 	// templates and gates the andmatch row filter off (Jackett skips andmatch for
 	// id searches), matching ParseRowFilters.
-	IMDBID   string
-	TMDBID   string
-	TVDBID   string
-	TVMazeID string
-	TraktID  string
-	DoubanID string
-	RageID   string
+	IMDBID   string `yaml:"imdbid"`
+	TMDBID   string `yaml:"tmdbid"`
+	TVDBID   string `yaml:"tvdbid"`
+	TVMazeID string `yaml:"tvmazeid"`
+	TraktID  string `yaml:"traktid"`
+	DoubanID string `yaml:"doubanid"`
+	RageID   string `yaml:"rageid"`
 
 	// Episode/series params.
-	Season string
-	Ep     string
-	Year   string
+	Season string `yaml:"season"`
+	Ep     string `yaml:"ep"`
+	Year   string `yaml:"year"`
 
 	// Music/book params.
-	Artist    string
-	Album     string
-	Label     string
-	Track     string
-	Author    string
-	BookTitle string
+	Artist    string `yaml:"artist"`
+	Album     string `yaml:"album"`
+	Label     string `yaml:"label"`
+	Track     string `yaml:"track"`
+	Author    string `yaml:"author"`
+	BookTitle string `yaml:"booktitle"`
 
 	// Mode is the Torznab search mode (the caps key — "search", "tv-search",
 	// "movie-search", "music-search", "book-search") the caller resolved from the
@@ -51,7 +57,7 @@ type Query struct {
 	// fields alone (AnimeBytes routes music-search to its music corpus). It IS part of
 	// the search-cache key, since for such a driver the mode changes the outbound
 	// request. Empty means a general/unspecified search (treated as "search").
-	Mode string
+	Mode string `yaml:"-"`
 
 	// Offset and Limit are REQUEST CONTEXT — the served page window — never templated.
 	// The Cardigann engine ignores them entirely (queryMap does not map them, like Mode),
@@ -59,8 +65,8 @@ type Query struct {
 	// (newznab, nzbindex) forward them upstream for deep-set paging, while non-paging drivers
 	// leave them for the handler to slice the returned page. A zero Offset/Limit means "first
 	// page, default size".
-	Offset int
-	Limit  int
+	Offset int `yaml:"-"`
+	Limit  int `yaml:"-"`
 
 	// FreeleechBypass requests the full catalog from harbrr's serve-time freeleech view
 	// (the freeleech-bypass feed variant, for qui/cross-seed). It is REQUEST CONTEXT for
@@ -69,7 +75,7 @@ type Query struct {
 	// deliberately NOT part of the search-cache key — honor and bypass share one cached
 	// full-set entry, and the adapter narrows it post-cache. See
 	// website/docs/features/cross-seed-freeleech.md.
-	FreeleechBypass bool
+	FreeleechBypass bool `yaml:"-"`
 
 	// keywordsFiltered, when non-nil, is the joined keyword term after the
 	// definition's search.keywordsfilters ran over it. Set by applyKeywordsFilters

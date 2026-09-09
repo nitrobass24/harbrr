@@ -509,7 +509,7 @@ func fieldFilterBlocks(def *loader.Definition) [][]loader.FilterBlock {
 
 	out = append(out, def.Search.KeywordsFilters, def.Search.PreprocessingFilters)
 	for _, fe := range def.Search.Fields.Ordered() {
-		out = append(out, fe.Block.Filters)
+		out = append(out, fe.Value.Filters)
 	}
 	out = appendSelectorFilters(out, def.Search.Rows.DateHeaders)
 	out = appendSelectorFilters(out, def.Search.Rows.Count)

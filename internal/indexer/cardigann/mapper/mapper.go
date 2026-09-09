@@ -196,11 +196,11 @@ const defaultLimit = 100
 // Per Jackett, these have no desc, so no custom category is synthesised.
 func (b *builder) mapCategories() error {
 	for _, e := range b.def.Caps.Categories.Ordered() {
-		cat, ok := GetByName(e.Name)
+		cat, ok := GetByName(e.Value)
 		if !ok {
-			return fmt.Errorf("mapper: definition %q: caps.categories id %q references unknown category name %q", b.def.ID, e.TrackerID, e.Name)
+			return fmt.Errorf("mapper: definition %q: caps.categories id %q references unknown category name %q", b.def.ID, e.Key, e.Value)
 		}
-		b.addMapping(e.TrackerID, "", cat)
+		b.addMapping(e.Key, "", cat)
 	}
 	return nil
 }

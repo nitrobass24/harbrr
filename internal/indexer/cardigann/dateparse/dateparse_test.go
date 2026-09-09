@@ -560,7 +560,7 @@ func collectDateFormats(defs []*loader.Definition) map[string]int {
 	counts := map[string]int{}
 	for _, def := range defs {
 		for _, fe := range def.Search.Fields.Ordered() {
-			tallyFilters(counts, fe.Block.Filters)
+			tallyFilters(counts, fe.Value.Filters)
 		}
 	}
 	return counts

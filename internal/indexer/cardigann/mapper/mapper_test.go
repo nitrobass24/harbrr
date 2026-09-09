@@ -315,8 +315,8 @@ func TestCorpusSmoke(t *testing.T) {
 
 func collectUnknownNames(def *loader.Definition, unknown map[string]int) {
 	for _, e := range def.Caps.Categories.Ordered() {
-		if _, ok := GetByName(e.Name); !ok {
-			unknown[e.Name]++
+		if _, ok := GetByName(e.Value); !ok {
+			unknown[e.Value]++
 		}
 	}
 	for _, cm := range def.Caps.CategoryMappings {

@@ -107,3 +107,55 @@ func TestResolveLocation(t *testing.T) {
 		})
 	}
 }
+
+func TestResolve(t *testing.T) {
+	tests := []struct {
+		name    string
+		base    string
+		ref     string
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "relative ref resolves against base",
+			base: "https://tracker.example/a/b",
+			ref:  "../c?x=1",
+			want: "https://tracker.example/c?x=1",
+		},
+		{
+			// No absolute-ref short-circuit: an absolute ref still has its dot
+			// segments removed, which is what .NET's Uri constructor does while
+			// building the Uri — see the ResolveLocation note (autobrr/harbrr#329).
+			name: "absolute ref is canonicalized, not passed through",
+			base: "https://tracker.example/",
+			ref:  "https://mirror.example/x/../y",
+			want: "https://mirror.example/y",
+		},
+		{
+			name: "absolute ref without dot segments is unchanged",
+			base: "https://tracker.example/",
+			ref:  "https://mirror.example/y?p=1#f",
+			want: "https://mirror.example/y?p=1#f",
+		},
+		{
+			name: "protocol-relative ref keeps the base scheme",
+			base: "https://tracker.example/a",
+			ref:  "//mirror.example/y",
+			want: "https://mirror.example/y",
+		},
+		{name: "empty base is not absolute", base: "", ref: "/dl.php", wantErr: true},
+		{name: "schemeless base is not absolute", base: "tracker.example", ref: "dl.php", wantErr: true},
+		{name: "unparseable ref", base: "https://tracker.example/", ref: "://nope", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Resolve(tt.base, tt.ref)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Resolve() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && got != tt.want {
+				t.Errorf("Resolve() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

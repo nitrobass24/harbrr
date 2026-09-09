@@ -225,7 +225,7 @@ func htmlSelectors(def *loader.Definition) []string {
 		out = appendSelectorBlock(out, *d)
 	}
 	for _, fe := range def.Search.Fields.Ordered() {
-		out = appendSelectorBlock(out, fe.Block)
+		out = appendSelectorBlock(out, fe.Value)
 	}
 	return out
 }
@@ -245,8 +245,8 @@ func jsonPaths(def *loader.Definition) []string {
 		out = append(out, c.Selector)
 	}
 	for _, fe := range def.Search.Fields.Ordered() {
-		if fe.Block.Selector != "" {
-			out = append(out, fe.Block.Selector)
+		if fe.Value.Selector != "" {
+			out = append(out, fe.Value.Selector)
 		}
 	}
 	return out
