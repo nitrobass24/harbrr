@@ -5,7 +5,7 @@
 # (losing the keyfile means re-entering every tracker credential).
 #
 # Which image: `:latest` (below) follows the most recent release. Alternatives:
-#   a) Pin a version: ghcr.io/autobrr/harbrr:0.1.0-alpha
+#   a) Pin a version: ghcr.io/autobrr/harbrr:0.2.0-alpha
 #   b) Track main:    ghcr.io/autobrr/harbrr:develop  (rebuilt on every push to main)
 #   c) PR image (private): ghcr.io/autobrr/harbrr:pr-39
 #      -> `docker login ghcr.io` first (a PAT with read:packages), or make the package public.

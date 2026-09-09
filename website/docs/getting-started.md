@@ -47,7 +47,7 @@ The image already runs `harbrr serve --host 0.0.0.0 --data-dir /config`, is non-
 **Which image**: `ghcr.io/autobrr/harbrr:latest` is the normal path — it follows the most
 recent release. Alternatives:
 
-- **Pin a version** — `ghcr.io/autobrr/harbrr:0.1.0-alpha`, so an upgrade is a deliberate act.
+- **Pin a version** — `ghcr.io/autobrr/harbrr:0.2.0-alpha`, so an upgrade is a deliberate act.
 - **Track `main`** — `ghcr.io/autobrr/harbrr:develop`, rebuilt on every push to `main`.
 - **PR image** (private) — `ghcr.io/autobrr/harbrr:pr-<n>`; `docker login ghcr.io` first.
 - **Build from source** — replace `image:` with `build: .` and run from a checkout.
