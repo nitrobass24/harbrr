@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"unicode"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -85,7 +84,7 @@ func (d *driver) addQueryParams(params url.Values, q search.Query, kind searchKi
 		case q.TMDBID != "":
 			params.Set("tmdb", strings.TrimSpace(q.TMDBID))
 		default:
-			params.Set("search", strings.TrimSpace(sanitizeSearchTerm(q.Keywords)))
+			params.Set("search", strings.TrimSpace(native.SanitizeSearchTerm(q.Keywords)))
 		}
 	case kindTV:
 		ep := d.episodeSearchTerm(q)
@@ -97,10 +96,10 @@ func (d *driver) addQueryParams(params url.Values, q search.Query, kind searchKi
 			params.Set("tvdb", strings.TrimSpace(q.TVDBID))
 			params.Set("search", strings.TrimSpace(ep))
 		default:
-			params.Set("search", strings.TrimSpace(sanitizeSearchTerm(q.Keywords)+" "+ep))
+			params.Set("search", strings.TrimSpace(native.SanitizeSearchTerm(q.Keywords)+" "+ep))
 		}
 	case kindBasic:
-		params.Set("search", strings.TrimSpace(sanitizeSearchTerm(q.Keywords)))
+		params.Set("search", strings.TrimSpace(native.SanitizeSearchTerm(q.Keywords)))
 	}
 }
 
@@ -145,44 +144,6 @@ func (d *driver) episodeSearchTerm(q search.Query) string {
 		return "E" + ep
 	}
 	return q.EpisodeSearchString()
-}
-
-// sanitizeSearchTerm reproduces SearchCriteriaBase.SanitizedSearchTerm: collapse any
-// run of Unicode dash punctuation to a single '-', normalize the grave/acute/curly
-// single quotes to '\”, then keep only letters, digits, whitespace, and the
-// punctuation the Avistaz API tolerates (-._()@/'[]+%); every other rune is dropped.
-func sanitizeSearchTerm(term string) string {
-	var b strings.Builder
-	b.Grow(len(term))
-	prevDash := false
-	for _, r := range term {
-		if unicode.Is(unicode.Pd, r) { // any dash punctuation -> a single '-'
-			if !prevDash {
-				b.WriteByte('-')
-				prevDash = true
-			}
-			continue
-		}
-		prevDash = false
-		switch {
-		case r == '`', r == '´', r == '‘', r == '’':
-			b.WriteByte('\'')
-		case unicode.IsLetter(r), unicode.IsDigit(r), unicode.IsSpace(r), isSafePunct(r):
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
-
-// isSafePunct reports whether r is one of the punctuation runes Avistaz's search term
-// tolerates (the SanitizedSearchTerm whitelist, minus '-' which is handled above).
-func isSafePunct(r rune) bool {
-	switch r {
-	case '.', '_', '(', ')', '@', '/', '\'', '[', ']', '+', '%':
-		return true
-	default:
-		return false
-	}
 }
 
 // freeleechOnly reports whether the freeleech_only checkbox is enabled.

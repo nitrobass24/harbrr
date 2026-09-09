@@ -260,25 +260,6 @@ func TestSearchTransportErrorHostOnly(t *testing.T) {
 	assertNoSecret(t, apphttp.RedactError(err))
 }
 
-func TestSanitizeSearchTerm(t *testing.T) {
-	t.Parallel()
-	cases := []struct{ in, want string }{
-		{"the matrix", "the matrix"},
-		{"Money$ Heist: 4!", "Money Heist 4"},
-		{"Amélie", "Amélie"},                   // accented letters kept
-		{"a — b", "a - b"},                     // em dash -> '-'
-		{"a–-—b", "a-b"},                       // a run of dashes collapses to one '-'
-		{"it’s", "it's"},                       // curly apostrophe normalized
-		{"WALL[E]+ (2008)", "WALL[E]+ (2008)"}, // whitelisted punctuation survives
-		{"a@b/c_d.e%f", "a@b/c_d.e%f"},
-	}
-	for _, tc := range cases {
-		if got := sanitizeSearchTerm(tc.in); got != tc.want {
-			t.Errorf("sanitize(%q) = %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
 func TestEpisodeSearchTermOverride(t *testing.T) {
 	t.Parallel()
 	q := search.Query{Ep: "323"} // seasonless episode

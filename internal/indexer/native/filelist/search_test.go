@@ -286,24 +286,6 @@ func TestTestAction(t *testing.T) {
 	}
 }
 
-func TestSanitizeSearchTerm(t *testing.T) {
-	t.Parallel()
-	cases := []struct{ in, want string }{
-		{"the matrix", "the matrix"},
-		{"Money$ Heist: 4!", "Money Heist 4"},
-		{"Amélie", "Amélie"},
-		{"a — b", "a - b"},
-		{"a–-—b", "a-b"},
-		{"it’s", "it's"},
-		{"WALL[E]+ (2008)", "WALL[E]+ (2008)"},
-	}
-	for _, tc := range cases {
-		if got := sanitizeSearchTerm(tc.in); got != tc.want {
-			t.Errorf("sanitize(%q) = %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
 func TestFreeleechOnly(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/dateparse"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
@@ -78,4 +79,33 @@ func DailyEpisodeDate(season, episode string) (time.Time, bool) {
 		return time.Time{}, false
 	}
 	return t, true
+}
+
+// SanitizeSearchTerm reproduces Prowlarr's SearchCriteriaBase.SanitizedSearchTerm:
+// collapse any run of Unicode dash punctuation to a single '-', normalise the
+// grave/acute/curly single quotes to a plain apostrophe, then keep only letters, digits,
+// whitespace and the punctuation a tracker search term tolerates (-._()@/'[]+%); every
+// other rune is dropped. The '-' is absent from the whitelist below because the dash
+// branch above has already consumed it.
+func SanitizeSearchTerm(term string) string {
+	var b strings.Builder
+	b.Grow(len(term))
+	prevDash := false
+	for _, r := range term {
+		if unicode.Is(unicode.Pd, r) { // any dash punctuation -> a single '-'
+			if !prevDash {
+				b.WriteByte('-')
+				prevDash = true
+			}
+			continue
+		}
+		prevDash = false
+		switch {
+		case r == '`', r == '´', r == '‘', r == '’':
+			b.WriteByte('\'')
+		case unicode.IsLetter(r), unicode.IsDigit(r), unicode.IsSpace(r), strings.ContainsRune("._()@/'[]+%", r):
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }

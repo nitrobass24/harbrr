@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/url"
 	"strings"
-	"unicode"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -49,7 +48,7 @@ func (d *driver) buildSearchURL(q search.Query) string {
 // season/episode.
 func (d *driver) addSearchParams(params url.Values, q search.Query) {
 	imdb := native.CanonicalIMDBID(q.IMDBID)
-	keywords := strings.TrimSpace(sanitizeSearchTerm(q.Keywords))
+	keywords := strings.TrimSpace(native.SanitizeSearchTerm(q.Keywords))
 	if imdb == "" && keywords == "" {
 		return // no criteria → latest-torrents (set by addCommonParams)
 	}
@@ -92,44 +91,6 @@ func (d *driver) addCommonParams(params url.Values, q search.Query) {
 	}
 	if freeleechOnly(d.Cfg) {
 		params.Set("freeleech", "1")
-	}
-}
-
-// sanitizeSearchTerm reproduces SearchCriteriaBase.SanitizedSearchTerm: collapse any
-// run of Unicode dash punctuation to a single '-', normalize the grave/acute/curly
-// single quotes to '\”, then keep only letters, digits, whitespace, and the
-// punctuation FileList tolerates (-._()@/'[]+%); every other rune is dropped.
-func sanitizeSearchTerm(term string) string {
-	var b strings.Builder
-	b.Grow(len(term))
-	prevDash := false
-	for _, r := range term {
-		if unicode.Is(unicode.Pd, r) { // any dash punctuation -> a single '-'
-			if !prevDash {
-				b.WriteByte('-')
-				prevDash = true
-			}
-			continue
-		}
-		prevDash = false
-		switch {
-		case r == '`', r == '´', r == '‘', r == '’':
-			b.WriteByte('\'')
-		case unicode.IsLetter(r), unicode.IsDigit(r), unicode.IsSpace(r), isSafePunct(r):
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
-
-// isSafePunct reports whether r is one of the punctuation runes the sanitized search
-// term tolerates (the SanitizedSearchTerm whitelist, minus '-' which is handled above).
-func isSafePunct(r rune) bool {
-	switch r {
-	case '.', '_', '(', ')', '@', '/', '\'', '[', ']', '+', '%':
-		return true
-	default:
-		return false
 	}
 }
 
