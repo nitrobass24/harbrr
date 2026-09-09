@@ -1,6 +1,8 @@
 package newznab
 
 import (
+	"strconv"
+
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/native"
@@ -25,15 +27,15 @@ const defaultAPIPath = "/api"
 // Leaf 4 ships only the generic driver; the family is not yet wired into nativeFamilies()
 // (that is Leaf 7, together with the ~18 presets), so the registry does not surface it yet.
 func Family() native.Family {
-	return native.Family{Definition: GenericDefinition(), Factory: New}
+	return native.Family{Definition: genericDefinition(), Factory: New}
 }
 
-// GenericDefinition is the generic Newznab family definition. Protocol is usenet (the one
+// genericDefinition is the generic Newznab family definition. Protocol is usenet (the one
 // native family that is not torrent), so the serializer omits torrent-only fields and the
 // normalizer relaxes the seeders-required validation (Leaves 2 & 3). It is never
 // schema-validated (no login/search/download block) — it exists so mapper.Build, the
 // credential store (IsSecret), indexerInfo, and the addable-indexer list all work.
-func GenericDefinition() *loader.Definition {
+func genericDefinition() *loader.Definition {
 	delay := requestDelaySeconds
 	return &loader.Definition{
 		ID:           "newznab",
@@ -73,7 +75,7 @@ func placeholderCaps() loader.Caps {
 			continue
 		}
 		mappings = append(mappings, loader.CategoryMapping{
-			ID:   loader.Scalar{Value: itoa(c.ID), Set: true},
+			ID:   loader.Scalar{Value: strconv.Itoa(c.ID), Set: true},
 			Cat:  c.Name,
 			Desc: c.Name,
 		})

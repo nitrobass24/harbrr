@@ -42,39 +42,32 @@ type driver struct {
 
 var _ native.Driver = (*driver)(nil)
 
-// profile is the per-site behaviour New resolves from the definition id: the fixed
-// API path (empty means the cfg-driven apiPath setting — the generic entry), the
-// apikey policy, and the download-sealing posture.
-type profile struct {
-	apiPath       string
-	policy        keyPolicy
-	needsResolver bool
-}
-
-// profileFor resolves a definition id against the preset table. Anything not in the
+// siteFor resolves a definition id against the preset table. Anything not in the
 // table is the generic entry ("torznab"): optional unvalidated key, cfg-driven
 // apiPath, and sealed downloads (an unknown server's links are not known NOT to carry
 // credentials, so over-sealing is the safe default).
-func profileFor(id string) profile {
+func siteFor(id string) preset {
 	if pr, ok := presetByID(id); ok {
-		return profile{apiPath: pr.apiPath, policy: pr.keyPolicy, needsResolver: pr.needsResolver}
+		return pr
 	}
-	return profile{policy: keyOptional, needsResolver: true}
+	return preset{keyPolicy: keyOptional, needsResolver: true}
 }
 
 // New is the native.Factory shared by the generic entry and every preset. It
-// validates the configured apikey per the site's policy before building the transport
-// scaffold, so a misconfigured instance never issues a single request.
+// validates the configured apikey per the site's key policy before building the
+// transport scaffold, so a misconfigured instance never issues a single request —
+// keyRequired must be non-empty (length undocumented: Prowlarr validates nothing, so
+// neither does harbrr), while keyOptional and keyNone accept anything.
 func New(p native.Params) (native.Driver, error) {
 	if p.Def == nil {
 		return nil, errors.New("torznab: nil definition")
 	}
-	prof := profileFor(p.Def.ID)
+	site := siteFor(p.Def.ID)
 	apikey := strings.TrimSpace(p.Cfg["apikey"])
-	if err := validateAPIKey(prof.policy, p.Def.ID, apikey); err != nil {
-		return nil, err
-	}
-	if prof.policy == keyNone {
+	switch {
+	case site.keyPolicy == keyRequired && apikey == "":
+		return nil, fmt.Errorf("torznab: %q requires an API key and none is configured", p.Def.ID)
+	case site.keyPolicy == keyNone:
 		// A keyless public feed: drop any stray configured value so it never rides a
 		// request (there is no apikey setting to have set it through anyway).
 		apikey = ""
@@ -90,38 +83,12 @@ func New(p native.Params) (native.Driver, error) {
 	if err != nil {
 		return nil, err
 	}
-	apiPath := prof.apiPath
+	// A preset's apiPath is a site fact; the generic entry's is the cfg setting.
+	apiPath := site.apiPath
 	if apiPath == "" {
-		apiPath = normalizeAPIPath(p.Cfg["apiPath"])
+		apiPath = native.NormalizeAPIPath(p.Cfg["apiPath"], defaultAPIPath)
 	}
-	return &driver{Base: base, apikey: apikey, apiPath: apiPath, needsResolver: prof.needsResolver}, nil
-}
-
-// validateAPIKey enforces a site's key policy at construction: keyRequired is
-// non-empty (length undocumented — Prowlarr validates nothing, so neither does
-// harbrr); keyOptional and keyNone accept anything. Errors are clear and
-// secret-free.
-func validateAPIKey(policy keyPolicy, defID, apikey string) error {
-	if policy == keyRequired && apikey == "" {
-		return fmt.Errorf("torznab: %q requires an API key and none is configured", defID)
-	}
-	return nil
-}
-
-// normalizeAPIPath resolves the generic entry's apiPath setting: a blank value
-// defaults to "/api" (Prowlarr's NewznabSettings default, inherited by
-// TorznabSettings); a trailing slash is stripped; a missing leading slash is added so
-// {base}{apiPath} joins correctly — the newznab sibling's idiom.
-func normalizeAPIPath(raw string) string {
-	p := strings.TrimSpace(raw)
-	if p == "" {
-		p = defaultAPIPath
-	}
-	p = strings.TrimRight(p, "/")
-	if !strings.HasPrefix(p, "/") {
-		p = "/" + p
-	}
-	return p
+	return &driver{Base: base, apikey: apikey, apiPath: apiPath, needsResolver: site.needsResolver}, nil
 }
 
 // NeedsResolver is per-site: true when the site's download links carry URL

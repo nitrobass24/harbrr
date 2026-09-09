@@ -119,7 +119,7 @@ func famID(f native.Family) string {
 // rest, redacted by the API) and that apiPath defaults to /api.
 func TestSettingsApikeyIsSecret(t *testing.T) {
 	t.Parallel()
-	def := GenericDefinition()
+	def := genericDefinition()
 	got := map[string]loader.SettingsField{}
 	for _, s := range def.Settings {
 		got[s.Name] = s
@@ -159,7 +159,7 @@ func TestPlaceholderCaps(t *testing.T) {
 
 func caps(t *testing.T) *mapper.Capabilities {
 	t.Helper()
-	d, err := New(native.Params{Def: GenericDefinition()})
+	d, err := New(native.Params{Def: genericDefinition()})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

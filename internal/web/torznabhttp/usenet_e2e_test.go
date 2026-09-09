@@ -168,7 +168,7 @@ func (u *usenetIndexer) Grab(ctx context.Context, link string) (*search.GrabResu
 // proxy enabled (WithDLToken) so apikey-bearing .nzb links are routed through /dl.
 func newUsenetE2EHandler(t *testing.T, stub *usenetStub) http.Handler {
 	t.Helper()
-	def := newznab.GenericDefinition()
+	def := newznab.Family().Definition
 	drv, err := newznab.New(native.Params{
 		Def:     def,
 		Cfg:     map[string]string{"apikey": usenetUpstreamAPIKey, "apiPath": "/api"},

@@ -29,7 +29,7 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 	catMap := d.activeCategoryMap(ctx)
 
 	rawurl := d.buildSearchURL(q)
-	resp, err := d.get(ctx, rawurl)
+	resp, err := d.getXML(ctx, rawurl)
 	if err != nil {
 		return nil, err
 	}
@@ -46,19 +46,16 @@ func (d *driver) activeCategoryMap(ctx context.Context) *mapper.CategoryMap {
 	return d.Caps.CategoryMap
 }
 
-// get issues the Newznab API GET. The URL embeds the apikey, so a build or transport error
-// surfaces only its scheme://host through native.Base (the apikey-bearing query is
-// dropped); the apikey can never leak through the wrapped *url.Error. The caller owns the
-// returned body and interprets the status.
-func (d *driver) get(ctx context.Context, rawurl string) (*native.Response, error) {
+// getXML issues one of the driver's XML API GETs — t=search, t=caps and t=user are the
+// same request shape, so they share it. The URL embeds the apikey, so a build or
+// transport error surfaces only its scheme://host through native.Base (the
+// apikey-bearing query is dropped); the apikey can never leak through the wrapped
+// *url.Error. The caller owns the returned body and interprets the status.
+func (d *driver) getXML(ctx context.Context, rawurl string) (*native.Response, error) {
 	req, err := d.NewRequest(ctx, stdhttp.MethodGet, rawurl, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/rss+xml, application/xml, text/xml")
-	resp, err := d.Do(ctx, req, native.ClassifyRateLimit403)
-	if err != nil {
-		return resp, err
-	}
-	return resp, nil
+	return d.Do(ctx, req, native.ClassifyRateLimit403)
 }

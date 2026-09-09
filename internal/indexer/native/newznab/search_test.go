@@ -33,7 +33,7 @@ func stubServerDriver(t *testing.T, status int, body string, sawURL *string) (*d
 	}))
 	t.Cleanup(srv.Close)
 	d, err := New(native.Params{
-		Def:     GenericDefinition(),
+		Def:     genericDefinition(),
 		Cfg:     map[string]string{"apikey": testAPIKey, "apiPath": "/api"},
 		Doer:    srv.Client(),
 		BaseURL: srv.URL,
@@ -106,7 +106,7 @@ func TestSearchTransportErrorRedactsApikey(t *testing.T) {
 		Err: errors.New("dial tcp: connection refused"),
 	}
 	d, err := New(native.Params{
-		Def:     GenericDefinition(),
+		Def:     genericDefinition(),
 		Cfg:     map[string]string{"apikey": testAPIKey},
 		Doer:    &errorDoer{err: uerr},
 		BaseURL: baseURL,
@@ -156,7 +156,7 @@ func TestTestMethod(t *testing.T) {
 func TestSearchBodyReadErrorSurfacesCause(t *testing.T) {
 	t.Parallel()
 	d, err := New(native.Params{
-		Def:     GenericDefinition(),
+		Def:     genericDefinition(),
 		Cfg:     map[string]string{"apikey": testAPIKey},
 		Doer:    &bodyErrDoer{readErr: errors.New("unexpected EOF reading body")},
 		BaseURL: "https://news.example.test",

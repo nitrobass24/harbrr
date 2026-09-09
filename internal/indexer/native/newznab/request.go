@@ -2,7 +2,6 @@ package newznab
 
 import (
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -27,14 +26,14 @@ const (
 
 // buildSearchURL maps a search.Query onto the outbound Newznab API URL:
 //
-//	{baseUrl}{apiPath}?t={fn}&extended=1&q=...&cat=...&{id params}&limit=100&apikey=...
+//	{baseUrl}{apiPath}?apikey=...&cat=...&extended=1&{id params}&limit=100&q=...&t={fn}
 //
 // Both baseUrl and apiPath are already right-trimmed of "/". extended=1 is always sent so
 // the response carries the newznab:attr fields the parser reads. The function (t=) is
 // resolved per mode with Prowlarr's fallback-to-search rule: a mode-specific search with NO
 // mode-specific param (no ids / artist / album / author / title) resets to t=search and
-// sends only q. apikey is appended last and is secret-bearing — it MUST be redacted before
-// any URL is logged or surfaced in an error.
+// sends only q. The query is encoded with url.Values.Encode (key-sorted); apikey is
+// secret-bearing — it MUST be redacted before any URL is logged or surfaced in an error.
 func (d *driver) buildSearchURL(q search.Query) string {
 	params := url.Values{}
 	fn := d.fillModeParams(params, q)
@@ -56,7 +55,7 @@ func (d *driver) buildSearchURL(q search.Query) string {
 	if d.apikey != "" {
 		params.Set("apikey", d.apikey)
 	}
-	return strings.TrimRight(d.BaseURL, "/") + d.apiPath + "?" + encodeQuery(params)
+	return strings.TrimRight(d.BaseURL, "/") + d.apiPath + "?" + params.Encode()
 }
 
 // resolveLimit picks the upstream page size: the query's explicit limit when positive,
@@ -165,8 +164,8 @@ func normalizeMode(mode string) string {
 
 // newsnabifyTitle reproduces Prowlarr's NewsnabifyTitle: strip "+" from the raw term
 // (so a literal "+" is not carried through as if it were an encoded space) by replacing
-// it with a literal space. encodeQuery then escapes that space via url.QueryEscape, which
-// emits "+" on the wire — the x-www-form-urlencoded space form, not "%20".
+// it with a literal space. url.Values.Encode then escapes that space via url.QueryEscape,
+// which emits "+" on the wire — the x-www-form-urlencoded space form, not "%20".
 func newsnabifyTitle(raw string) string {
 	return strings.ReplaceAll(strings.TrimSpace(raw), "+", " ")
 }
@@ -225,53 +224,4 @@ func newznabifySeason(raw string) string {
 		return "00"
 	}
 	return s
-}
-
-// encodeQuery encodes url.Values WITHOUT sorting so the apikey stays last and the param
-// order is stable for tests (url.Values.Encode sorts by key, which would interleave apikey).
-// A real server ignores order; harbrr controls it only for deterministic, redaction-safe
-// output.
-func encodeQuery(params url.Values) string {
-	// Stable cosmetic order: t, extended, then the rest in a fixed sequence. Any param
-	// not in this list is appended in sorted order so a future key is never silently
-	// dropped; apikey is always emitted last (redaction-stable).
-	order := []string{
-		"t", "extended", "q", "cat",
-		"imdbid", "tmdbid", "tvdbid", "tvmazeid", "rid", "traktid",
-		"season", "ep", "artist", "album", "author", "title",
-		"offset", "limit",
-	}
-	known := map[string]bool{"apikey": true}
-	for _, k := range order {
-		known[k] = true
-	}
-	var extra []string
-	for k := range params {
-		if !known[k] {
-			extra = append(extra, k)
-		}
-	}
-	sort.Strings(extra)
-
-	var b strings.Builder
-	first := true
-	write := func(key string) {
-		for _, v := range params[key] {
-			if !first {
-				b.WriteByte('&')
-			}
-			first = false
-			b.WriteString(url.QueryEscape(key))
-			b.WriteByte('=')
-			b.WriteString(url.QueryEscape(v))
-		}
-	}
-	for _, key := range order {
-		write(key)
-	}
-	for _, key := range extra {
-		write(key)
-	}
-	write("apikey")
-	return b.String()
 }

@@ -23,7 +23,7 @@ import (
 func TestCapsBodyReadErrorSurfacesCause(t *testing.T) {
 	t.Parallel()
 	d, err := New(native.Params{
-		Def:     GenericDefinition(),
+		Def:     genericDefinition(),
 		Cfg:     map[string]string{"apikey": testAPIKey},
 		Doer:    &bodyErrDoer{readErr: errors.New("connection reset by peer")},
 		BaseURL: "https://news.example.test",
@@ -57,7 +57,7 @@ func TestCapsTransportErrorRedactsApikey(t *testing.T) {
 		Err: errors.New("dial tcp: connection refused"),
 	}
 	d, err := New(native.Params{
-		Def:     GenericDefinition(),
+		Def:     genericDefinition(),
 		Cfg:     map[string]string{"apikey": testAPIKey},
 		Doer:    &errorDoer{err: uerr},
 		BaseURL: baseURL,
@@ -288,7 +288,7 @@ func TestCapsAuthErrorEnvelope(t *testing.T) {
 func TestCapsURLCarriesApikeyButRedacts(t *testing.T) {
 	t.Parallel()
 	d := urlDriver(t)
-	raw := d.buildCapsURL()
+	raw := d.buildAPIURL("caps")
 	if !strings.Contains(raw, "t=caps") || !strings.Contains(raw, "apikey="+testAPIKey) {
 		t.Fatalf("caps URL = %q, want t=caps and the apikey", redact(raw))
 	}
@@ -317,7 +317,7 @@ func TestCapsPersistAndRehydrate(t *testing.T) {
 		return nil
 	}
 	d1, err := New(native.Params{
-		Def:            GenericDefinition(),
+		Def:            genericDefinition(),
 		Cfg:            map[string]string{"apikey": testAPIKey, "apiPath": "/api"},
 		Doer:           srv.Client(),
 		BaseURL:        srv.URL,
@@ -344,7 +344,7 @@ func TestCapsPersistAndRehydrate(t *testing.T) {
 	}
 	hits.Store(0)
 	d2, err := New(native.Params{
-		Def:     GenericDefinition(),
+		Def:     genericDefinition(),
 		Cfg:     cfg,
 		Doer:    srv.Client(),
 		BaseURL: srv.URL,
@@ -398,7 +398,7 @@ func capsServerDriverClock(t *testing.T, hits *atomic.Int64, override func(stdht
 	}))
 	t.Cleanup(srv.Close)
 	d, err := New(native.Params{
-		Def:     GenericDefinition(),
+		Def:     genericDefinition(),
 		Cfg:     map[string]string{"apikey": testAPIKey, "apiPath": "/api"},
 		Doer:    srv.Client(),
 		BaseURL: srv.URL,

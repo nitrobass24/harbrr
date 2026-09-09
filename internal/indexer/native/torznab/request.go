@@ -2,7 +2,6 @@ package torznab
 
 import (
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -28,15 +27,16 @@ const (
 
 // buildSearchURL maps a search.Query onto the outbound Torznab API URL:
 //
-//	{baseUrl}{apiPath}?t={tvsearch|movie|search}&extended=1&q=...&cat=...&imdbid=...&tvdbid=...&ep=...&season=...&limit=100&apikey=...
+//	{baseUrl}{apiPath}?apikey=...&cat=...&ep=...&extended=1&imdbid=...&limit=100&q=...&season=...&t={tvsearch|movie|search}&tvdbid=...
 //
 // reproducing Jackett's MoreThanTVAPI.PerformQuery exactly. Two deliberate
 // divergences from the newznab sibling's buildSearchURL: there is NO
 // fallback-to-search-when-no-id-param rule (t= is set directly from the query mode,
 // unconditionally), and NO "+"-to-space title rewrite (q is sent trimmed, as-is) —
-// Jackett's MoreThanTVAPI does neither. apikey is appended last and is
-// secret-bearing; every URL this returns MUST be redacted before it is logged or
-// surfaced in an error (apphttp.RedactURL / SchemeHost, used throughout get/Grab).
+// Jackett's MoreThanTVAPI does neither. The query is encoded with url.Values.Encode
+// (key-sorted); apikey is secret-bearing, so every URL this returns MUST be redacted
+// before it is logged or surfaced in an error (apphttp.RedactURL / SchemeHost, used
+// throughout get/Grab).
 func (d *driver) buildSearchURL(q search.Query) string {
 	params := url.Values{}
 	params.Set("t", resolveMode(q.Mode))
@@ -65,7 +65,7 @@ func (d *driver) buildSearchURL(q search.Query) string {
 	if d.apikey != "" {
 		params.Set("apikey", d.apikey)
 	}
-	return strings.TrimRight(d.BaseURL, "/") + d.apiPath + "?" + encodeQuery(params)
+	return strings.TrimRight(d.BaseURL, "/") + d.apiPath + "?" + params.Encode()
 }
 
 // resolveMode maps a harbrr Query.Mode to the Torznab t= function (Jackett:
@@ -118,46 +118,4 @@ func joinCategories(cats []string) string {
 		out = append(out, c)
 	}
 	return strings.Join(out, ",")
-}
-
-// encodeQuery encodes url.Values WITHOUT sorting so the apikey stays last and the
-// param order is stable for tests (url.Values.Encode sorts by key, which would
-// interleave apikey) — the same stability idiom as the newznab sibling's encodeQuery.
-// A real server ignores order; harbrr controls it only for deterministic,
-// redaction-safe output.
-func encodeQuery(params url.Values) string {
-	order := []string{"t", "extended", "q", "cat", "imdbid", "tvdbid", "ep", "season", "limit"}
-	known := map[string]bool{"apikey": true}
-	for _, k := range order {
-		known[k] = true
-	}
-	var extra []string
-	for k := range params {
-		if !known[k] {
-			extra = append(extra, k)
-		}
-	}
-	sort.Strings(extra)
-
-	var b strings.Builder
-	first := true
-	write := func(key string) {
-		for _, v := range params[key] {
-			if !first {
-				b.WriteByte('&')
-			}
-			first = false
-			b.WriteString(url.QueryEscape(key))
-			b.WriteByte('=')
-			b.WriteString(url.QueryEscape(v))
-		}
-	}
-	for _, key := range order {
-		write(key)
-	}
-	for _, key := range extra {
-		write(key)
-	}
-	write("apikey")
-	return b.String()
 }

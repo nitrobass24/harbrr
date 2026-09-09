@@ -232,7 +232,7 @@ func TestSeedBudgetSkippedWithoutPersist(t *testing.T) {
 	var userHits atomic.Int64
 	srv := userServer(t, &userHits, userResponse{body: string(readGolden(t, "user.xml"))})
 	d, err := New(native.Params{
-		Def:     GenericDefinition(),
+		Def:     genericDefinition(),
 		Cfg:     map[string]string{"apikey": testAPIKey, "apiPath": "/api"},
 		Doer:    srv.Client(),
 		BaseURL: srv.URL,
@@ -275,7 +275,7 @@ func TestSeedLimitHalfWrittenSeedStaysRetryable(t *testing.T) {
 			stored := map[string]string{}
 			var writes int
 			d, err := New(native.Params{
-				Def:     GenericDefinition(),
+				Def:     genericDefinition(),
 				Cfg:     map[string]string{"apikey": testAPIKey, "apiPath": "/api"},
 				Doer:    srv.Client(),
 				BaseURL: srv.URL,
@@ -349,7 +349,7 @@ func TestUserTransportErrorRedactsApikey(t *testing.T) {
 	t.Parallel()
 	const baseURL = "https://news.example.test"
 	d, err := New(native.Params{
-		Def: GenericDefinition(),
+		Def: genericDefinition(),
 		Cfg: map[string]string{"apikey": testAPIKey},
 		Doer: &errorDoer{err: &url.Error{
 			Op:  "Get",
@@ -433,7 +433,7 @@ func TestSeedBudgetLogsOutcome(t *testing.T) {
 			maps.Copy(settings, tt.cfg)
 			var buf bytes.Buffer
 			d, err := New(native.Params{
-				Def:     GenericDefinition(),
+				Def:     genericDefinition(),
 				Cfg:     settings,
 				Doer:    srv.Client(),
 				BaseURL: srv.URL,
@@ -503,7 +503,7 @@ func seedDriver(t *testing.T, cfg map[string]string, resp userResponse) (*driver
 	maps.Copy(settings, cfg)
 	stored := map[string]string{}
 	d, err := New(native.Params{
-		Def:     GenericDefinition(),
+		Def:     genericDefinition(),
 		Cfg:     settings,
 		Doer:    srv.Client(),
 		BaseURL: srv.URL,

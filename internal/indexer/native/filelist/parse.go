@@ -135,7 +135,7 @@ func (d *driver) toRelease(row *filelistTorrent) (*normalizer.Release, error) {
 // keeps it out of the feed) and is never logged.
 func (d *driver) downloadURL(id uint64) string {
 	params := url.Values{}
-	params.Set("id", uintToString(id))
+	params.Set("id", strconv.FormatUint(id, 10))
 	params.Set("passkey", strings.TrimSpace(d.Cfg["passkey"]))
 	return d.BaseURL + downloadPath + "?" + params.Encode()
 }
@@ -143,7 +143,7 @@ func (d *driver) downloadURL(id uint64) string {
 // detailsURL rebuilds the Prowlarr info URL: {base}details.php?id={id}.
 func (d *driver) detailsURL(id uint64) string {
 	params := url.Values{}
-	params.Set("id", uintToString(id))
+	params.Set("id", strconv.FormatUint(id, 10))
 	return d.BaseURL + detailsPath + "?" + params.Encode()
 }
 
@@ -167,8 +167,4 @@ func volumeFactor(flag int64, whenTrue, whenFalse float64) float64 {
 		return whenTrue
 	}
 	return whenFalse
-}
-
-func uintToString(n uint64) string {
-	return strconv.FormatUint(n, 10)
 }

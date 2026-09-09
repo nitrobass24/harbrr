@@ -16,7 +16,7 @@ import (
 // called directly on a golden body). The placeholder caps supply the CategoryMap.
 func parseDriver(t *testing.T) *driver {
 	t.Helper()
-	d, err := New(native.Params{Def: GenericDefinition(), BaseURL: "https://news.example.test"})
+	d, err := New(native.Params{Def: genericDefinition(), BaseURL: "https://news.example.test"})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -284,19 +284,19 @@ func TestParseMalformedBody(t *testing.T) {
 
 // TestToErrorScrubsAPIKey proves a server-echoed <error description> that reflects the
 // submitted apikey as free text is value-scrubbed before it reaches the error (and thus the
-// health-event / webhook egress). Fail-before: toError surfaced the description verbatim, so
+// health-event / webhook egress). Fail-before: the classifier surfaced the description verbatim, so
 // the apikey leaked; pass-after: the raw value is replaced with the placeholder while the
 // surrounding non-secret message is preserved.
 func TestToErrorScrubsAPIKey(t *testing.T) {
 	t.Parallel()
 	const apikey = "APIKEY-SECRET-1234"
-	e := &apiError{Code: "100", Description: "Incorrect credentials: invalid key " + apikey}
-	err := toError(e, apikey)
+	e := &native.APIError{Code: "100", Description: "Incorrect credentials: invalid key " + apikey}
+	err := native.APIEnvelopeError("newznab", e, apikey, errorCodeDailyQuota)
 	if !errors.Is(err, login.ErrLoginFailed) {
 		t.Fatalf("err = %v, want login.ErrLoginFailed", err)
 	}
 	if strings.Contains(err.Error(), apikey) {
-		t.Fatalf("toError leaked apikey: %q", err.Error())
+		t.Fatalf("APIEnvelopeError leaked apikey: %q", err.Error())
 	}
 	if !strings.Contains(err.Error(), "[redacted]") {
 		t.Errorf("expected [redacted] placeholder, got %q", err.Error())
@@ -313,7 +313,7 @@ func TestParseReleasesScrubsAPIKeyFromError(t *testing.T) {
 	t.Parallel()
 	const apikey = "APIKEY-SECRET-5678"
 	d, err := New(native.Params{
-		Def:     GenericDefinition(),
+		Def:     genericDefinition(),
 		BaseURL: "https://news.example.test",
 		Cfg:     map[string]string{"apikey": apikey},
 	})

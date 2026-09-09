@@ -174,9 +174,5 @@ func (d *driver) get(ctx context.Context, rawurl string) (*native.Response, erro
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
-	resp, err := d.Do(ctx, req, native.ClassifyRateLimit403)
-	if err != nil {
-		return resp, err
-	}
-	return resp, nil
+	return d.Do(ctx, req, native.ClassifyRateLimit403)
 }

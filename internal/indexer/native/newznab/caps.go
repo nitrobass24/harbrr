@@ -3,7 +3,6 @@ package newznab
 import (
 	"context"
 	"fmt"
-	stdhttp "net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -12,7 +11,6 @@ import (
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
-	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // capsTTL is the cache lifetime of a fetched caps document (Prowlarr caches ~7 days). Past
@@ -113,17 +111,18 @@ func (c *capsCache) current() *mapper.Capabilities {
 	return c.built
 }
 
-// fetchCaps GETs the remote ?t=caps, parses + builds the capabilities, caches them in
-// memory, and (when PersistSetting is wired) persists the raw XML + fetched-at for the
-// cross-restart cache. The caps URL embeds the apikey, so every error routes the URL through
-// apphttp.RedactURL and the apikey can never leak.
+// fetchCaps GETs the remote ?t=caps (classified like a search: a 401 is bad credentials,
+// a 403/429/503 is a rate limit, any other non-2xx an error), parses + builds the
+// capabilities, caches them in memory, and (when PersistSetting is wired) persists the
+// raw XML + fetched-at for the cross-restart cache. The caps URL embeds the apikey, so
+// every error routes the URL through apphttp.RedactURL and the apikey can never leak.
 func (d *driver) fetchCaps(ctx context.Context) (*mapper.Capabilities, error) {
-	rawurl := d.buildCapsURL()
-	body, err := d.getCaps(ctx, rawurl)
+	rawurl := d.buildAPIURL("caps")
+	resp, err := d.getXML(ctx, rawurl)
 	if err != nil {
 		return nil, err
 	}
-	root, err := parseCaps(body, d.apikey)
+	root, err := parseCaps(resp.Body, d.apikey)
 	if err != nil {
 		return nil, err
 	}
@@ -133,32 +132,12 @@ func (d *driver) fetchCaps(ctx context.Context) (*mapper.Capabilities, error) {
 	}
 	now := d.Clock()
 	d.capsCache.store(built, now)
-	d.persistCaps(ctx, body, now)
+	d.persistCaps(ctx, resp.Body, now)
 	return built, nil
 }
 
-// getCaps issues the caps GET and returns the body, classifying the status like a search: a
-// 401 is bad credentials (login.ErrLoginFailed), a 403/429/503 is a rate limit, any other
-// non-2xx is an error. Every error surfaces only the endpoint's scheme://host (the
-// apikey-bearing query is dropped).
-func (d *driver) getCaps(ctx context.Context, rawurl string) ([]byte, error) {
-	req, err := d.NewRequest(ctx, stdhttp.MethodGet, rawurl, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/rss+xml, application/xml, text/xml")
-	resp, err := d.Do(ctx, req, native.ClassifyRateLimit403)
-	if err != nil {
-		return nil, err
-	}
-	return resp.Body, nil
-}
-
-// buildCapsURL builds {baseUrl}{apiPath}?t=caps[&apikey=...].
-func (d *driver) buildCapsURL() string { return d.buildAPIURL("caps") }
-
-// buildAPIURL builds {baseUrl}{apiPath}?t={fn}[&apikey=...] for a parameterless API
-// function (t=caps, t=user). apikey is appended only when set (some servers serve caps
+// buildAPIURL builds {baseUrl}{apiPath}?[apikey=...&]t={fn} for a parameterless API
+// function (t=caps, t=user). apikey is included only when set (some servers serve caps
 // without a key). It is secret-bearing — redact before logging.
 func (d *driver) buildAPIURL(fn string) string {
 	params := url.Values{}
@@ -166,26 +145,7 @@ func (d *driver) buildAPIURL(fn string) string {
 	if d.apikey != "" {
 		params.Set("apikey", d.apikey)
 	}
-	return strings.TrimRight(d.BaseURL, "/") + d.apiPath + "?" + encodeCapsQuery(params)
-}
-
-// encodeCapsQuery encodes the caps params with t first and apikey last (stable, redaction-
-// safe order), mirroring encodeQuery for the search URL.
-func encodeCapsQuery(params url.Values) string {
-	var b []byte
-	first := true
-	for _, key := range []string{"t", "apikey"} {
-		for _, v := range params[key] {
-			if !first {
-				b = append(b, '&')
-			}
-			first = false
-			b = append(b, url.QueryEscape(key)...)
-			b = append(b, '=')
-			b = append(b, url.QueryEscape(v)...)
-		}
-	}
-	return string(b)
+	return strings.TrimRight(d.BaseURL, "/") + d.apiPath + "?" + params.Encode()
 }
 
 // persistCaps writes the raw caps XML + fetched-at back to the encrypted store when
