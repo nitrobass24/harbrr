@@ -65,12 +65,17 @@ func New(opts ...Option) *Parser {
 //  1. Collapse internal whitespace + NBSP (a deliberate lenient divergence from
 //     Jackett's trim-only NormalizeSpace; see normalizeSpace).
 //  2. Translate the .NET layout to a Go layout (TranslateLayout).
-//  3. If a language is set and the layout carries month/day NAME tokens,
-//     substitute localized names -> English so Go's time.Parse can read them.
-//  4. If the layout carries an AM/PM designator, uppercase it in the value:
+//  3. If the layout carries an AM/PM designator, uppercase it in the value:
 //     .NET ParseExact matches designators case-INsensitively ("3pm" parses),
 //     Go's "PM" reference token is uppercase-only.
-//  5. time.Parse with the translated layout.
+//  4. time.Parse the ORIGINAL value with the translated layout (parseAttempt,
+//     which also accepts colon-less zzz offsets). This is Jackett's
+//     InvariantCulture parse, so English names always win.
+//  5. Only if that fails, a language is set, and the layout carries month/day
+//     NAME tokens: substitute localized names -> English and parse again. This
+//     is harbrr's opt-in enhancement (Jackett has no culture fallback at all);
+//     parsing the original first keeps English values byte-for-byte Jackett
+//     while localized names remain usable.
 //  6. Default the date components the layout omitted (.NET DateTimeParse
 //     terminal-state defaults; see defaultMissingDate).
 //
@@ -86,24 +91,57 @@ func (p *Parser) ParseDate(value, layout string) (string, error) {
 		return "", err
 	}
 
-	if loc, ok := lookupLocale(p.lang); ok && layoutHasNameToken(goLayout) {
-		value = localizeValue(value, loc)
-	}
-
 	if strings.Contains(goLayout, "PM") {
 		value = normalizeAMPM(value)
 	}
 
-	t, err := time.Parse(goLayout, value)
-	if err != nil {
-		return "", fmt.Errorf("%w: value %q layout %q (go %q)", ErrUnparseable, value, layout, goLayout)
+	// InvariantCulture first, exactly as Jackett: the original value is parsed
+	// before any localization, so an English name always wins even when a locale
+	// table shares the spelling (fr "mar" = mardi vs English "Mar"). Localized
+	// names remain usable through the retry.
+	t, ok := parseAttempt(goLayout, value)
+	if loc, hasLoc := lookupLocale(p.lang); !ok && hasLoc && layoutHasNameToken(goLayout) {
+		t, ok = parseAttempt(goLayout, localizeValue(value, loc))
+	}
+	if !ok {
+		return "", unparseable(value, layout, goLayout, "")
 	}
 
 	now := p.now()
-	t = defaultMissingDate(t, layout, goLayout, now)
+	t, ok = defaultMissingDate(t, layout, goLayout, now)
+	if !ok {
+		return "", unparseable(value, layout, goLayout, fmt.Sprintf("day does not exist in %d", now.Year()))
+	}
 	t = rollbackFutureYearless(t, layout, goLayout, now)
 
 	return t.Format(canonicalLayout), nil
+}
+
+// parseAttempt runs time.Parse with goLayout and, on failure, once more with a
+// colon-less offset element: .NET's zzz parser treats the colon as optional
+// ("+0000" parses under Jackett's ParseExact) while Go's "-07:00" requires it.
+// The value is never regex-normalized: no-space corpus layouts
+// ("yyyy-MM-ddHH:mm:ss zzz") would false-match inside it. The boolean is false
+// when neither form parses; ParseDate builds the ErrUnparseable itself.
+func parseAttempt(goLayout, value string) (time.Time, bool) {
+	if t, err := time.Parse(goLayout, value); err == nil {
+		return t, true
+	}
+	if !strings.Contains(goLayout, "-07:00") {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(strings.Replace(goLayout, "-07:00", "-0700", 1), value)
+	return t, err == nil
+}
+
+// unparseable wraps ErrUnparseable with the value and both layouts; reason, when
+// non-empty, names the specific rejection.
+func unparseable(value, netLayout, goLayout, reason string) error {
+	err := fmt.Errorf("%w: value %q layout %q (go %q)", ErrUnparseable, value, netLayout, goLayout)
+	if reason == "" {
+		return err
+	}
+	return fmt.Errorf("%w: %s", err, reason)
 }
 
 // rollbackFutureYearless reproduces the tail of Jackett's
@@ -168,10 +206,13 @@ func layoutHasNameToken(goLayout string) bool {
 //
 // Weekday-name tokens (ddd/dddd) are not date components: they parse a name
 // without setting year/month/day, in .NET and Go alike.
-func defaultMissingDate(t time.Time, netLayout, goLayout string, ref time.Time) time.Time {
+//
+// The boolean is false when the defaulted date does not exist (see
+// defaultMissingYear).
+func defaultMissingDate(t time.Time, netLayout, goLayout string, ref time.Time) (time.Time, bool) {
 	if !layoutHasDateTokens(netLayout) {
 		return time.Date(ref.Year(), ref.Month(), ref.Day(), t.Hour(), t.Minute(),
-			t.Second(), t.Nanosecond(), t.Location())
+			t.Second(), t.Nanosecond(), t.Location()), true
 	}
 	return defaultMissingYear(t, goLayout, ref)
 }
@@ -180,12 +221,18 @@ func defaultMissingDate(t time.Time, netLayout, goLayout string, ref time.Time) 
 // token, mirroring .NET ParseExact's behavior (an absent year defaults to the
 // current year rather than year 0). Go's time.Parse defaults a missing year to
 // year 0, so we correct it explicitly.
-func defaultMissingYear(t time.Time, goLayout string, ref time.Time) time.Time {
+//
+// Go accepts Feb 29 in the parse (year 0 is a leap year) and time.Date would
+// then normalize Feb 29 of a non-leap ref year to Mar 1. .NET's ParseExact
+// validates the day against the defaulted year and throws instead, so the
+// boolean is false when the rebuilt month/day differ from the parsed ones.
+func defaultMissingYear(t time.Time, goLayout string, ref time.Time) (time.Time, bool) {
 	if strings.Contains(goLayout, "2006") || strings.Contains(goLayout, "06") {
-		return t
+		return t, true
 	}
-	return time.Date(ref.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(),
+	d := time.Date(ref.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(),
 		t.Second(), t.Nanosecond(), t.Location())
+	return d, d.Month() == t.Month() && d.Day() == t.Day()
 }
 
 // normalizeSpace trims the ends AND collapses internal whitespace runs (including

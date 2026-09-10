@@ -92,6 +92,9 @@ var netTokens = []netToken{
 	{"FFF", ".999"},
 	{"FF", ".99"},
 	{"F", ".9"},
+	// .NET's zzz parser treats the colon as optional, so ParseDate retries a
+	// failed parse with "-0700". 1-digit hours ("+5:30") remain unsupported: the
+	// corpus has none.
 	{"zzz", "-07:00"},
 	{"zz", "-07"},
 	{"K", "Z07:00"},
