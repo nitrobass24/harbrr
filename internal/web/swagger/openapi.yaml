@@ -3693,19 +3693,14 @@ components:
       properties:
         enabled: { type: boolean, description: whether caching is configured }
         entries: { type: integer, format: int64, description: number of cached search results }
-        totalHits:
-          type: integer
-          format: int64
-          description: >
-            Live sum of per-entry hit counts over rows currently cached — NOT
-            cumulative, falls (including to 0) whenever those rows are reaped. See
-            trackerHitsSaved for the cumulative headline figure.
         hits:
           type: integer
           format: int64
           description: >
-            Global cumulative cache hits (the aggregate of the per-indexer byIndexer
-            rows). Persisted across restarts.
+            The headline figure: cumulative tracker requests served from cache instead
+            of going out, aggregated over the per-indexer byIndexer rows. Persisted
+            across restarts; it never drops when cached entries are reaped — only
+            POST /api/cache/stats/reset zeroes it.
         misses:
           type: integer
           format: int64
@@ -3751,14 +3746,6 @@ components:
           format: int64
           nullable: true
           description: Unix seconds of the most-recently-used entry, or null when empty
-        trackerHitsSaved:
-          type: integer
-          format: int64
-          description: >
-            Cumulative tracker requests served from cache, persisted across restarts —
-            the headline kind-to-trackers metric. Mirrors hits; unlike totalHits it
-            never drops when cached entries are reaped — only an explicit stats
-            reset zeroes it.
         breakerSuppressed:
           type: integer
           format: int64
@@ -3802,14 +3789,12 @@ components:
         slug: { type: string, description: the indexer's configured slug (empty if unresolved) }
         name: { type: string, description: the indexer's display name (empty if unresolved) }
         entries: { type: integer, format: int64, description: durable number of cached entries for this indexer }
-        hitsSaved:
+        hits:
           type: integer
           format: int64
           description: >
             Cumulative tracker requests this indexer served from cache, persisted
-            across restarts. Mirrors hits; never drops when this indexer's cached
-            entries are reaped.
-        hits: { type: integer, format: int64, description: cumulative cache hits for this indexer (persisted across restarts) }
+            across restarts. Never drops when this indexer's cached entries are reaped.
         misses: { type: integer, format: int64, description: cumulative cache misses for this indexer (persisted across restarts) }
         hitRatio: { type: number, format: double, description: cumulative hits / (hits + misses) for this indexer }
         approxSizeBytes: { type: integer, format: int64, description: approximate cached payload size for this indexer }
@@ -3819,7 +3804,7 @@ components:
           format: int64
           nullable: true
           description: Unix seconds the breaker reopens this indexer to live traffic, or null when closed
-      required: [instanceId, entries, hitsSaved, hits, misses, hitRatio, approxSizeBytes, breakerSuppressed]
+      required: [instanceId, entries, hits, misses, hitRatio, approxSizeBytes, breakerSuppressed]
     CacheFlushResult:
       type: object
       properties:

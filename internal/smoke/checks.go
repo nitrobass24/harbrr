@@ -353,15 +353,15 @@ func grabCheck(ctx context.Context, c *http.Client, cfg Config, slug string, cat
 // cacheCheck is the dedicated cached-path check: the differential (harbrrParity) now
 // always bypasses harbrr's search cache (nocache=1, see issue #164), so this is the
 // only place the suite still exercises the normal cache-aside read path. It confirms
-// the cache serves a repeated query from cache: it reads the baseline
-// trackerHitsSaved, runs two identical (non-bypassed) harbrr searches, and asserts the
-// counter incremented. A disabled cache is a SKIP. It uses the same category-aware
-// query as the parity check (catIDs are the first-enabled indexer's categories) so it
-// exercises the keyword-search cache path rather than an empty poll.
+// the cache serves a repeated query from cache: it reads the baseline hits counter,
+// runs two identical (non-bypassed) harbrr searches, and asserts it incremented. A
+// disabled cache is a SKIP. It uses the same category-aware query as the parity check
+// (catIDs are the first-enabled indexer's categories) so it exercises the
+// keyword-search cache path rather than an empty poll.
 //
 // This runs once per suite, on a single designated tracker (the first enabled one,
-// picked by RunSuite), rather than per-tracker — cheap, and the trackerHitsSaved
-// counter is a direct signal that a request was served from cache, not an inference
+// picked by RunSuite), rather than per-tracker — cheap, and the hits counter is a
+// direct signal that a request was served from cache, not an inference
 // from result-count equality (which a re-fetched-live response could also satisfy by
 // coincidence). It does not require that tracker's differential to have passed: the
 // cache stores whatever harbrr returned, so a hit/miss verdict here is independent of
@@ -387,14 +387,14 @@ func cacheCheck(ctx context.Context, c *http.Client, cfg Config, slug string, ca
 		return skipFinding(f, apphttp.RedactError(err))
 	}
 	if after > before {
-		f.Status, f.Detail = StatusPass, fmt.Sprintf("trackerHitsSaved %d -> %d (repeat search served from cache)", before, after)
+		f.Status, f.Detail = StatusPass, fmt.Sprintf("cache hits %d -> %d (repeat search served from cache)", before, after)
 		return f
 	}
-	f.Status, f.Detail = StatusFail, fmt.Sprintf("trackerHitsSaved did not increment (%d -> %d)", before, after)
+	f.Status, f.Detail = StatusFail, fmt.Sprintf("cache hits did not increment (%d -> %d)", before, after)
 	return f
 }
 
-// cacheTrackerHits reads the cache stats' trackerHitsSaved counter and whether caching
+// cacheTrackerHits reads the cache stats' hits counter and whether caching
 // is enabled.
 func cacheTrackerHits(ctx context.Context, c *http.Client, cfg Config) (int64, bool, error) {
 	body, status, err := harbrrGet(ctx, c, cfg, "/api/cache/stats")
@@ -405,13 +405,13 @@ func cacheTrackerHits(ctx context.Context, c *http.Client, cfg Config) (int64, b
 		return 0, false, fmt.Errorf("harbrr GET /api/cache/stats: HTTP %d", status)
 	}
 	var s struct {
-		Enabled          bool  `json:"enabled"`
-		TrackerHitsSaved int64 `json:"trackerHitsSaved"`
+		Enabled bool  `json:"enabled"`
+		Hits    int64 `json:"hits"`
 	}
 	if err := json.Unmarshal(body, &s); err != nil {
 		return 0, false, fmt.Errorf("parse cache stats: %w", err)
 	}
-	return s.TrackerHitsSaved, s.Enabled, nil
+	return s.Hits, s.Enabled, nil
 }
 
 // skipFinding sets a finding to SKIP with a detail.

@@ -76,7 +76,7 @@ That means the differential no longer exercises harbrr's cache-aside read path. 
 moved to a **dedicated, single cached-path check** (`CheckCache` in the report, `cache` subtest in
 `make smoke-test`): it runs once per suite, against one designated tracker (the first enabled
 one), issuing two identical searches **without** the bypass and asserting the cache-hit counter
-(`trackerHitsSaved` from `/api/cache/stats`) incremented. That is a direct signal that the second
+(`hits` from `/api/cache/stats`) incremented. That is a direct signal that the second
 request was actually served from cache — stronger than inferring a cache hit from the two
 responses' result counts matching, which a coincidental re-fetch could also satisfy — and it's
 cheap: one tracker, not every tracker. It does not require that tracker's differential to have

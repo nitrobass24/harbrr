@@ -369,7 +369,7 @@ func TestSearchCacheStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stats empty: %v", err)
 	}
-	if empty.Entries != 0 || empty.TotalHits != 0 || empty.ApproxSizeBytes != 0 {
+	if empty.Entries != 0 || empty.ApproxSizeBytes != 0 {
 		t.Errorf("empty stats: %+v", empty)
 	}
 	if empty.Oldest != nil || empty.Newest != nil || empty.LastUsed != nil {
@@ -394,9 +394,6 @@ func TestSearchCacheStats(t *testing.T) {
 	}
 	if s.Entries != 2 {
 		t.Errorf("Entries=%d, want 2", s.Entries)
-	}
-	if s.TotalHits != 1 {
-		t.Errorf("TotalHits=%d, want 1", s.TotalHits)
 	}
 	wantSize := int64(len(older.ResultsJSON) + len(newer.ResultsJSON))
 	if s.ApproxSizeBytes != wantSize {
@@ -449,13 +446,13 @@ func TestSearchCacheStatsByInstance(t *testing.T) {
 		t.Fatalf("StatsByInstance returned %d rows, want 2", len(rows))
 	}
 	// Ordered by instance_id, so instA first.
-	if rows[0].InstanceID != instA || rows[0].Entries != 2 || rows[0].HitsSaved != 3 {
-		t.Errorf("instA stats = %+v, want entries=2 hitsSaved=3", rows[0])
+	if rows[0].InstanceID != instA || rows[0].Entries != 2 {
+		t.Errorf("instA stats = %+v, want entries=2", rows[0])
 	}
 	if rows[0].ApproxSizeBytes != int64(len(a1.ResultsJSON)+len(a2.ResultsJSON)) {
 		t.Errorf("instA size = %d, want %d", rows[0].ApproxSizeBytes, len(a1.ResultsJSON)+len(a2.ResultsJSON))
 	}
-	if rows[1].InstanceID != instB || rows[1].Entries != 1 || rows[1].HitsSaved != 0 {
-		t.Errorf("instB stats = %+v, want entries=1 hitsSaved=0", rows[1])
+	if rows[1].InstanceID != instB || rows[1].Entries != 1 {
+		t.Errorf("instB stats = %+v, want entries=1", rows[1])
 	}
 }

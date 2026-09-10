@@ -24,7 +24,7 @@ export function DashboardTiles() {
   const enabled = (connections.data ?? []).filter((c) => c.enabled).length
 
   const day = statsWindow(cache.data, "1d")
-  const saved = window24h ? day?.hits : cache.data?.trackerHitsSaved
+  const saved = window24h ? day?.hits : cache.data?.hits
   const ratio = window24h ? day?.hitRatio : cache.data?.hitRatio
   // The 24h view is an in-memory bucket ring, so on a young process it covers less
   // than a day — say so on the tile rather than let "24h" imply a full day.

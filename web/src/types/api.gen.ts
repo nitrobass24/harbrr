@@ -2542,12 +2542,7 @@ export interface components {
             entries?: number;
             /**
              * Format: int64
-             * @description Live sum of per-entry hit counts over rows currently cached — NOT cumulative, falls (including to 0) whenever those rows are reaped. See trackerHitsSaved for the cumulative headline figure.
-             */
-            totalHits?: number;
-            /**
-             * Format: int64
-             * @description Global cumulative cache hits (the aggregate of the per-indexer byIndexer rows). Persisted across restarts.
+             * @description The headline figure: cumulative tracker requests served from cache instead of going out, aggregated over the per-indexer byIndexer rows. Persisted across restarts; it never drops when cached entries are reaped — only POST /api/cache/stats/reset zeroes it.
              */
             hits?: number;
             /**
@@ -2587,11 +2582,6 @@ export interface components {
              * @description Unix seconds of the most-recently-used entry, or null when empty
              */
             lastUsedAt?: number | null;
-            /**
-             * Format: int64
-             * @description Cumulative tracker requests served from cache, persisted across restarts — the headline kind-to-trackers metric. Mirrors hits; unlike totalHits it never drops when cached entries are reaped — only an explicit stats reset zeroes it.
-             */
-            trackerHitsSaved?: number;
             /**
              * Format: int64
              * @description Cumulative count of misses short-circuited by the negative-result circuit breaker (extra tracker requests spared a failing tracker). Persisted across restarts.
@@ -2638,12 +2628,7 @@ export interface components {
             entries: number;
             /**
              * Format: int64
-             * @description Cumulative tracker requests this indexer served from cache, persisted across restarts. Mirrors hits; never drops when this indexer's cached entries are reaped.
-             */
-            hitsSaved: number;
-            /**
-             * Format: int64
-             * @description cumulative cache hits for this indexer (persisted across restarts)
+             * @description Cumulative tracker requests this indexer served from cache, persisted across restarts. Never drops when this indexer's cached entries are reaped.
              */
             hits: number;
             /**

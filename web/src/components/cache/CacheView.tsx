@@ -13,8 +13,8 @@ import { cn } from "@/lib/utils"
 import type { CacheConfig } from "@/lib/api"
 
 // Cache observability + the live-tunable knobs, the body of the Cache page.
-// trackerHitsSaved is the headline: durable tracker requests answered from
-// cache instead of hitting the tracker (the kind-to-trackers value metric).
+// hits is the headline: cumulative tracker requests answered from cache instead of
+// hitting the tracker (the kind-to-trackers value metric).
 export function CacheView() {
   const stats = useCacheStats()
   const flush = useFlushCache()
@@ -64,7 +64,7 @@ export function CacheView() {
             {stats.data.byIndexer.map((row) => (
               <div key={row.instanceId} className="flex items-baseline gap-3">
                 <span className="w-40 truncate font-medium">{row.name || row.slug || `#${row.instanceId}`}</span>
-                <span className="text-muted-foreground">saved {row.hitsSaved ?? 0}</span>
+                <span className="text-muted-foreground">saved {row.hits ?? 0}</span>
                 <span className="text-muted-foreground">
                   ratio {row.hitRatio !== undefined ? `${Math.round(row.hitRatio * 100)}%` : "—"}
                 </span>

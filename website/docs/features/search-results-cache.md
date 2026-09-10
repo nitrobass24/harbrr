@@ -207,7 +207,6 @@ harbrr exposes the cache through its management API.
 {
   "enabled": true,
   "entries": 1423,
-  "totalHits": 18240,
   "hits": 43210,
   "misses": 7001,
   "hitRatio": 0.86,
@@ -218,7 +217,6 @@ harbrr exposes the cache through its management API.
     { "window": "all", "hits": 43210, "misses": 7001, "hitRatio": 0.86 }
   ],
   "windowsSince": 1750593600,
-  "trackerHitsSaved": 43210,
   "breakerSuppressed": 37,
   "approxSizeBytes": 9123840,
   "oldestCachedAt": 1750680000,
@@ -230,7 +228,6 @@ harbrr exposes the cache through its management API.
       "slug": "redacted-tracker",
       "name": "My Tracker",
       "entries": 612,
-      "hitsSaved": 21984,
       "hits": 21984,
       "misses": 2610,
       "hitRatio": 0.89,
@@ -246,9 +243,7 @@ harbrr exposes the cache through its management API.
 |---|---|
 | `enabled` | Whether caching is on. If `false`, the other fields still appear but hold zero values and empty arrays. |
 | `entries` | How many distinct cached answers are currently stored. |
-| `trackerHitsSaved` | **This is your tracker-load saved** — the running count of tracker requests harbrr answered from cache instead of going out. Reaping/flushing entries never touches it; only an explicit [`POST /api/cache/stats/reset`](#post-apicachestatsreset) zeroes it. |
-| `totalHits` | A *different* number: the hits accumulated by the entries **currently in the store**. It falls (even to zero) when those rows are reaped by cleanup, a flush, or an indexer invalidation. Useful for "how hard is what I'm holding working"; not the headline. |
-| `hits` / `misses` | The counters behind `hitRatio` — the fleet-wide totals, and the sum of the `byIndexer` rows. A failed live search counts as neither. |
+| `hits` / `misses` | **`hits` is your tracker-load saved** — the running count of tracker requests harbrr answered from cache instead of going out. Reaping/flushing never touches it; only [`POST /api/cache/stats/reset`](#post-apicachestatsreset) zeroes it. `misses` is its counterpart behind `hitRatio`; a failed live search counts as neither. Both are fleet-wide totals — the sum of the `byIndexer` rows. |
 | `hitRatio` | `hits / (hits + misses)` — "86% of searches never touched a tracker." |
 | `windows` | The same hits/misses/ratio over each selectable view — `1d`, `7d`, `30d`, `all` — in that order, so the dashboard can switch window without refetching. `all` reads the persisted totals; the rest come from in-memory buckets. |
 | `windowsSince` | Unix time (seconds) the in-memory buckets started filling — process start, or the last stats reset. A window longer than `now - windowsSince` isn't a full period of data yet. |
@@ -259,7 +254,7 @@ harbrr exposes the cache through its management API.
 
 :::info[The counters survive a restart]
 
-`hits`, `misses`, `hitRatio`, and `trackerHitsSaved` are persisted, so a bounce doesn't
+`hits`, `misses`, and `hitRatio` are persisted, so a bounce doesn't
 reset your numbers — only [`POST /api/cache/stats/reset`](#post-apicachestatsreset) does. The
 `1d`/`7d`/`30d` windows are the exception: those buckets live in memory and start filling
 again at `windowsSince`. The stored entries themselves survive a restart too, so harbrr won't
@@ -283,8 +278,8 @@ hit/miss counters alone.
 ### `POST /api/cache/stats/reset`
 
 The mirror image: zeroes the hit, miss, and breaker-suppressed counters — and with them
-`hitRatio` and `trackerHitsSaved`, which are derived from `hits` — plus every rolling
-window, fleet-wide, and reports what it threw away:
+`hitRatio`, which is derived from `hits` — plus every rolling window, fleet-wide, and
+reports what it threw away:
 
 ```json
 { "clearedHits": 43210, "clearedMisses": 7001, "clearedBreakerSuppressed": 37 }

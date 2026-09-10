@@ -23,7 +23,7 @@ describe("DashboardTiles", () => {
       },
       "GET /api/cache/stats": {
         enabled: true,
-        trackerHitsSaved: 128,
+        hits: 128,
         hitRatio: 0.75,
         windows: [
           { window: "1d", hits: 16, misses: 16, hitRatio: 0.5 },
@@ -46,7 +46,7 @@ describe("DashboardTiles", () => {
 
     expect(await screen.findByText("1/2")).toBeTruthy() // healthy/total
     expect(screen.getByText("1 failing")).toBeTruthy() // the tri-state remainder (#389)
-    expect(await screen.findByText("128")).toBeTruthy() // trackerHitsSaved
+    expect(await screen.findByText("128")).toBeTruthy() // hits
     expect(screen.getByText("75% hit ratio · lifetime")).toBeTruthy()
     expect(await screen.findByText("Circuit breakers open")).toBeTruthy()
     expect(screen.getByText("1")).toBeTruthy() // one open breaker
