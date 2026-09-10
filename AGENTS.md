@@ -78,7 +78,9 @@ or composition/lifecycle wiring, read `docs/architecture.md`, `docs/autobrr-app-
 - Prefer **explicit error handling**; wrap with context. Keep **interfaces small (≤5 methods)**.
 - **Avoid `map[string]interface{}` / bare `any` for structured data — use typed structs.**
 - No backward-compatibility shims unless requested.
-- Tests beside code as `*_test.go`; **table-driven**, reuse fixtures. Test file writes:
+- Tests beside code as `*_test.go`. **Table-driven when a test has more than one case**; a
+  single-case regression test is fine. Reuse saved fixtures under `testdata/` for realistic
+  responses; small inline inputs in table rows are fine. Test file writes:
   `os.WriteFile(..., 0o600)`. Go 1.22+: do not add `tt := tt` in parallel subtests.
 
 ## Code shape — no god functions (enforced)

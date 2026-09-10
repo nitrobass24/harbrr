@@ -35,7 +35,8 @@ reviews:
         The Cardigann engine; its entire value is behavioral parity with Jackett on the same input.
         Flag changes that could diverge from Jackett semantics, silent error handling that could mask
         a parse difference, and logic that belongs in a different pipeline stage (keep stages
-        decoupled). Behavior changes must come with table-driven tests + fixtures. NEVER suggest
+        decoupled). Behavior changes must come with tests; parser and engine behavior is proven
+        against saved fixtures. NEVER suggest
         editing files under internal/indexer/definitions/vendor/ — divergence is absorbed in the
         engine, never in the def files.
     - path: "internal/indexer/cardigann/internal/regexadapter/**"
@@ -51,7 +52,10 @@ reviews:
         backoff. No secret may reach a log line unredacted.
     - path: "**/*_test.go"
       instructions: |
-        Tests must be table-driven and pass with `-race -count=1`; fixtures live beside the code.
+        Tests pass with `-race -count=1`. Table-driven when a test has more than one case; a
+        single-case regression test is fine, do not flag it. Saved fixtures live beside the code
+        under `testdata/` and are for realistic responses; small inline inputs in table rows are
+        fine, do not ask for them to become fixture files.
         Engine and parity tests must be offline against saved responses — flag any test that reaches
         the network.
     - path: "scripts/**"
