@@ -41,7 +41,6 @@ type SearchCacheEntry struct {
 // these are the durable row-derived figures.
 type SearchCacheStats struct {
 	Entries         int64
-	TotalHits       int64
 	ApproxSizeBytes int64
 	Oldest          *time.Time
 	Newest          *time.Time
@@ -218,14 +217,14 @@ func (SearchCacheStore) InvalidateByInstance(ctx context.Context, q dbinterface.
 // empty cache yields zero counts and nil timestamps.
 func (SearchCacheStore) Stats(ctx context.Context, q dbinterface.Execer) (SearchCacheStats, error) {
 	row := q.QueryRowContext(ctx,
-		`SELECT COUNT(*), COALESCE(SUM(hit_count), 0), COALESCE(SUM(LENGTH(results_json)), 0),
+		`SELECT COUNT(*), COALESCE(SUM(LENGTH(results_json)), 0),
 			MIN(cached_at), MAX(cached_at), MAX(last_used_at)
 			FROM search_cache`)
 	var (
 		s                        SearchCacheStats
 		oldest, newest, lastUsed sql.NullString
 	)
-	if err := row.Scan(&s.Entries, &s.TotalHits, &s.ApproxSizeBytes, &oldest, &newest, &lastUsed); err != nil {
+	if err := row.Scan(&s.Entries, &s.ApproxSizeBytes, &oldest, &newest, &lastUsed); err != nil {
 		return SearchCacheStats{}, fmt.Errorf("database: search cache stats: %w", err)
 	}
 	s.Oldest, s.Newest, s.LastUsed = timePtr(oldest), timePtr(newest), timePtr(lastUsed)
@@ -233,15 +232,11 @@ func (SearchCacheStore) Stats(ctx context.Context, q dbinterface.Execer) (Search
 }
 
 // SearchCacheInstanceStat is one instance's durable cache figures for the per-indexer
-// observability surface. HitsSaved is a live SUM of hit_count over rows CURRENTLY
-// cached for this instance (each hit is one tracker request the cache avoided) — it
-// is NOT cumulative and falls (including to 0) once those rows are reaped; the
-// caller's cumulative, restart-persisted figure lives in registry's in-memory
-// counters, not here.
+// observability surface. The cumulative, restart-persisted hit counters live in
+// registry's in-memory counters, not here.
 type SearchCacheInstanceStat struct {
 	InstanceID      int64
 	Entries         int64
-	HitsSaved       int64
 	ApproxSizeBytes int64
 }
 
@@ -250,7 +245,7 @@ type SearchCacheInstanceStat struct {
 // no live entries are absent (the caller folds in their in-memory counters).
 func (SearchCacheStore) StatsByInstance(ctx context.Context, q dbinterface.Execer) ([]SearchCacheInstanceStat, error) {
 	rows, err := q.QueryContext(ctx,
-		`SELECT instance_id, COUNT(*), COALESCE(SUM(hit_count), 0), COALESCE(SUM(LENGTH(results_json)), 0)
+		`SELECT instance_id, COUNT(*), COALESCE(SUM(LENGTH(results_json)), 0)
 			FROM search_cache GROUP BY instance_id ORDER BY instance_id`)
 	if err != nil {
 		return nil, fmt.Errorf("database: search cache stats by instance: %w", err)
@@ -259,7 +254,7 @@ func (SearchCacheStore) StatsByInstance(ctx context.Context, q dbinterface.Exece
 	var out []SearchCacheInstanceStat
 	for rows.Next() {
 		var s SearchCacheInstanceStat
-		if err := rows.Scan(&s.InstanceID, &s.Entries, &s.HitsSaved, &s.ApproxSizeBytes); err != nil {
+		if err := rows.Scan(&s.InstanceID, &s.Entries, &s.ApproxSizeBytes); err != nil {
 			return nil, fmt.Errorf("database: scan search cache instance stats: %w", err)
 		}
 		out = append(out, s)

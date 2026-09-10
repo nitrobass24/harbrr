@@ -34,8 +34,8 @@ func TestStatsByInstanceMergesDurableAndMemory(t *testing.T) {
 		t.Fatalf("rows = %d, want 1", len(rows))
 	}
 	r := rows[0]
-	if r.InstanceID != instID || r.Entries != 1 || r.HitsSaved != 1 {
-		t.Errorf("durable figures = %+v, want entries=1 hitsSaved=1", r)
+	if r.InstanceID != instID || r.Entries != 1 {
+		t.Errorf("durable figures = %+v, want entries=1", r)
 	}
 	if r.Hits != 1 || r.Misses != 1 || r.HitRatio != 0.5 {
 		t.Errorf("in-memory figures = %+v, want hits=1 misses=1 ratio=0.5", r)
@@ -130,11 +130,9 @@ func TestResetCountersClearsStats(t *testing.T) {
 
 // TestHitsMonotoneAcrossCleanup pins autobrr/harbrr#350: the cumulative,
 // restart-persisted Hits counters (global and per-instance — what the API reports as
-// trackerHitsSaved/hitsSaved) must NOT drop when a cleanup tick reaps the cache row
-// that earned them, even though the durable row-derived TotalHits/HitsSaved
-// legitimately falls to 0 once that row is gone. An operator FLUSH is held to the
-// same rule (#369 follow-up): it discards cached results, never the statistics —
-// only ResetCounters does that.
+// hits) must NOT drop when a cleanup tick reaps the cache row that earned them. An
+// operator FLUSH is held to the same rule (#369 follow-up): it discards cached
+// results, never the statistics — only ResetCounters does that.
 func TestHitsMonotoneAcrossCleanup(t *testing.T) {
 	t.Parallel()
 	sc, instID, clk := testCache(t, keywordTTL, 0)
@@ -154,15 +152,15 @@ func TestHitsMonotoneAcrossCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stats before cleanup: %v", err)
 	}
-	if before.Hits != 1 || before.TotalHits != 1 {
-		t.Fatalf("before cleanup: hits=%d totalHits=%d, want 1/1", before.Hits, before.TotalHits)
+	if before.Hits != 1 {
+		t.Fatalf("before cleanup: hits=%d, want 1", before.Hits)
 	}
 	rowsBefore, err := sc.StatsByInstance(ctx)
 	if err != nil {
 		t.Fatalf("StatsByInstance before cleanup: %v", err)
 	}
-	if len(rowsBefore) != 1 || rowsBefore[0].Hits != 1 || rowsBefore[0].HitsSaved != 1 {
-		t.Fatalf("byInstance before cleanup = %+v, want hits=1 hitsSaved=1", rowsBefore)
+	if len(rowsBefore) != 1 || rowsBefore[0].Hits != 1 {
+		t.Fatalf("byInstance before cleanup = %+v, want hits=1", rowsBefore)
 	}
 
 	// Advance past the full keyword TTL (a safe upper bound regardless of which tier
@@ -180,9 +178,6 @@ func TestHitsMonotoneAcrossCleanup(t *testing.T) {
 	if after.Hits != 1 {
 		t.Errorf("Hits after cleanup = %d, want 1 (cumulative counter must survive the reap)", after.Hits)
 	}
-	if after.TotalHits != 0 {
-		t.Errorf("TotalHits after cleanup = %d, want 0 (row-derived; its row is gone)", after.TotalHits)
-	}
 
 	rowsAfter, err := sc.StatsByInstance(ctx)
 	if err != nil {
@@ -193,9 +188,6 @@ func TestHitsMonotoneAcrossCleanup(t *testing.T) {
 	}
 	if rowsAfter[0].Hits != 1 {
 		t.Errorf("byInstance Hits after cleanup = %d, want 1 (cumulative counter must survive the reap)", rowsAfter[0].Hits)
-	}
-	if rowsAfter[0].HitsSaved != 0 {
-		t.Errorf("byInstance HitsSaved after cleanup = %d, want 0 (row-derived; its row is gone)", rowsAfter[0].HitsSaved)
 	}
 
 	// A flush is likewise result-only: the cumulative counters and the rolling

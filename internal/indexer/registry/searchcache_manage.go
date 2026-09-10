@@ -9,12 +9,10 @@ import (
 
 // SearchCacheStats is the management view of the cache: the durable row-derived
 // figures plus the hit-ratio counters. Hits/Misses/HitRatio/BreakerSuppressed survive
-// a restart (persisted via counterStore); the rest are read from the store — notably
-// TotalHits is a live SUM over rows CURRENTLY cached, so it is NOT cumulative and
-// falls (including to 0) whenever those rows are reaped.
+// a restart (persisted via counterStore); the rest are read from the store and
+// describe only what is CURRENTLY cached.
 type SearchCacheStats struct {
 	Entries         int64
-	TotalHits       int64
 	ApproxSizeBytes int64
 	OldestUnixSec   *int64
 	NewestUnixSec   *int64
@@ -51,16 +49,13 @@ type StatsWindow struct {
 }
 
 // InstanceCacheStats is one instance's merged cache observability: the durable
-// row-derived figures (HitsSaved/Entries/ApproxSizeBytes) plus the in-memory counters
-// (persisted across restarts) and the live breaker state. HitsSaved is a live SUM of
-// per-entry hit counts over rows CURRENTLY cached for this instance — it is NOT
-// cumulative and falls (including to 0) whenever those rows are reaped (cleanup,
-// flush, or an invalidation). The headline "tracker requests this indexer served
-// from cache" figure is Hits (the cumulative, restart-persisted counter below).
+// row-derived figures (Entries/ApproxSizeBytes) plus the in-memory counters
+// (persisted across restarts) and the live breaker state. The headline "tracker
+// requests this indexer served from cache" figure is Hits (the cumulative,
+// restart-persisted counter below).
 type InstanceCacheStats struct {
 	InstanceID        int64
 	Entries           int64
-	HitsSaved         int64
 	ApproxSizeBytes   int64
 	Hits              int64
 	Misses            int64
@@ -74,8 +69,8 @@ type InstanceCacheStats struct {
 // Stats returns the cache statistics: durable store figures plus the in-memory
 // hit-ratio. The store error wraps nothing secret (it has no payload to leak).
 func (c *SearchCache) Stats(ctx context.Context) (SearchCacheStats, error) {
-	// Drain buffered hit bumps first so the reported hit_count/last_used reflect
-	// hits served since the last flush rather than lagging by a cleanup interval.
+	// Drain buffered hit bumps first so the reported last_used reflects hits served
+	// since the last flush rather than lagging by a cleanup interval.
 	c.FlushTouches(ctx)
 	s, err := c.store.Stats(ctx, c.db)
 	if err != nil {
@@ -84,7 +79,6 @@ func (c *SearchCache) Stats(ctx context.Context) (SearchCacheStats, error) {
 	hits, misses := c.hits.Load(), c.misses.Load()
 	out := SearchCacheStats{
 		Entries:           s.Entries,
-		TotalHits:         s.TotalHits,
 		ApproxSizeBytes:   s.ApproxSizeBytes,
 		OldestUnixSec:     unixSecPtr(s.Oldest),
 		NewestUnixSec:     unixSecPtr(s.Newest),
@@ -117,7 +111,7 @@ func (c *SearchCache) statsWindows(now time.Time, hits, misses int64) []StatsWin
 // hit/miss/suppressed counters (persisted across restarts), and the live breaker
 // open-state into one view for the
 // per-indexer observability surface. Like Stats it flushes buffered touches first so
-// HitsSaved reflects hits served since the last flush.
+// the durable figures reflect hits served since the last flush.
 func (c *SearchCache) StatsByInstance(ctx context.Context) ([]InstanceCacheStats, error) {
 	c.FlushTouches(ctx)
 	durable, err := c.store.StatsByInstance(ctx, c.db)
@@ -127,8 +121,7 @@ func (c *SearchCache) StatsByInstance(ctx context.Context) ([]InstanceCacheStats
 	merged := make(map[int64]*InstanceCacheStats, len(durable))
 	for _, d := range durable {
 		merged[d.InstanceID] = &InstanceCacheStats{
-			InstanceID: d.InstanceID, Entries: d.Entries,
-			HitsSaved: d.HitsSaved, ApproxSizeBytes: d.ApproxSizeBytes,
+			InstanceID: d.InstanceID, Entries: d.Entries, ApproxSizeBytes: d.ApproxSizeBytes,
 		}
 	}
 	now := c.clock()

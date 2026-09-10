@@ -116,7 +116,7 @@ describe("CacheView", () => {
     const now = Math.floor(Date.now() / 1000)
     renderCacheView({
       enabled: true,
-      trackerHitsSaved: 128,
+      hits: 128,
       hitRatio: 0.75,
       entries: 12,
       oldestCachedAt: now - 3600,
@@ -145,7 +145,7 @@ describe("CacheView", () => {
     const now = Math.floor(Date.now() / 1000)
     renderCacheView({
       enabled: true,
-      trackerHitsSaved: 128,
+      hits: 128,
       hitRatio: 0.75,
       entries: 12,
       windows: [

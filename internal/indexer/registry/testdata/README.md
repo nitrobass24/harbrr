@@ -132,9 +132,9 @@ These behaviours are pinned by tests in `internal/indexer/registry`
     `core/gates.go`; pinned by `registry/degenerate_gate_e2e_test.go`,
     `cardigann/search/degenerate_test.go`, `web/torznabhttp/handler_test.go`,
     `web/torznabhttp/aggregate_test.go`).
-- **Per-indexer cache observability.** `GET /api/cache/stats` exposes `trackerHitsSaved`
-  (durable tracker requests served from cache), `breakerSuppressed`, and a `byIndexer[]`
-  breakdown (hit ratio, hits saved, breaker open-state) — harbrr-additive metrics with no
+- **Per-indexer cache observability.** `GET /api/cache/stats` exposes `hits`
+  (cumulative tracker requests served from cache), `breakerSuppressed`, and a `byIndexer[]`
+  breakdown (hit ratio, hits, breaker open-state) — harbrr-additive metrics with no
   Jackett analogue. The surface reads only counts/timestamps and the indexer slug/name,
   never the cached payload. `[Accepted]` (`searchcache_manage.go`,
   `database/searchcache.go`; pinned by `searchcache_stats_internal_test.go`).
