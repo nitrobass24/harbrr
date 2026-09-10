@@ -2,6 +2,7 @@ package torznab
 
 import (
 	"context"
+	"errors"
 	"io"
 	stdhttp "net/http"
 	"net/http/httptest"
@@ -264,5 +265,41 @@ func TestLiveCapsPersistAndRehydrate(t *testing.T) {
 	}
 	if hits.Load() != 0 {
 		t.Errorf("rehydrated driver fetched caps %d times, want 0 (served from the persisted cache)", hits.Load())
+	}
+}
+
+// TestLiveCapsPersistSkipsTimestampWhenCacheWriteFails proves a failed caps-XML write never
+// advances the fetched-at stamp: a stale document paired with a fresh stamp would rehydrate
+// as "fresh" and suppress the refresh for a whole TTL, whereas a missing stamp only forces an
+// early refetch.
+func TestLiveCapsPersistSkipsTimestampWhenCacheWriteFails(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, _ *stdhttp.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = io.WriteString(w, liveCaps)
+	}))
+	t.Cleanup(srv.Close)
+
+	stored := map[string]string{}
+	d, err := New(native.Params{
+		Def:     genericDefinition(),
+		Cfg:     map[string]string{"apikey": testAPIKey, "apiPath": "/api"},
+		Doer:    srv.Client(),
+		BaseURL: srv.URL,
+		Clock:   fixedClock,
+		PersistSetting: func(_ context.Context, name, value string) error {
+			if name == native.SettingCapsCache {
+				return errors.New("disk full")
+			}
+			stored[name] = value
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	d.Capabilities()
+	if _, ok := stored[native.SettingCapsFetchedAt]; ok {
+		t.Fatalf("fetched-at was persisted after the caps write failed: %+v", stored)
 	}
 }

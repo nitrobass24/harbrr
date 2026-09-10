@@ -179,12 +179,17 @@ func (c *NzbCaps) Cached() *mapper.Capabilities {
 
 // persist writes the raw caps XML + fetched-at back to the encrypted store when the hook is
 // wired, so the cache survives a restart. A persist failure is non-fatal (the in-memory
-// cache is authoritative); it is swallowed like MyAnonamouse's rotation write.
+// cache is authoritative); it is swallowed like MyAnonamouse's rotation write. The
+// timestamp is written only after the XML landed: a stale document paired with a fresh
+// timestamp would rehydrate as "fresh" and suppress the refresh for a whole TTL, whereas a
+// missing timestamp merely forces an early refetch.
 func (c *NzbCaps) persist(ctx context.Context, rawXML []byte, now time.Time) {
 	if c.p.Persist == nil {
 		return
 	}
-	_ = c.p.Persist(ctx, SettingCapsCache, string(rawXML))
+	if err := c.p.Persist(ctx, SettingCapsCache, string(rawXML)); err != nil {
+		return
+	}
 	_ = c.p.Persist(ctx, SettingCapsFetchedAt, strconv.FormatInt(now.Unix(), 10))
 }
 
