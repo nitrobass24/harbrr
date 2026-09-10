@@ -37,8 +37,9 @@ func backfillDateHeader(def *loader.Definition, sel *selector.Engine, row select
 		}
 		// Match found: Jackett breaks the walk here and runs FromUnknown on the
 		// value. applyImplicitDate is the same DateTimeUtil.FromUnknown a `date`
-		// field uses; a parse error is a per-row failure that drops the row.
-		parsed, err := applyImplicitDate("date", value, deps)
+		// field uses; a parse error (an empty header included) is a per-row
+		// failure that drops the row.
+		parsed, err := applyImplicitDate("date", value, false, deps)
 		if err != nil {
 			return fmt.Errorf("dateheaders: %w", err)
 		}

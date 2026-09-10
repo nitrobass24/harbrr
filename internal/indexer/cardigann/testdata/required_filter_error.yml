@@ -1,0 +1,39 @@
+---
+id: required_filter_error
+name: Required Filter Error Fixture
+description: "A required field whose filter throws: Jackett's row-level catch drops the row."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://rowsemantics.invalid/
+
+caps:
+  categorymappings:
+    - {id: 1, cat: Movies}
+  modes:
+    search: [q]
+
+search:
+  path: /list
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: li.item
+  fields:
+    title:
+      selector: span.title
+    category:
+      text: "1"
+    download:
+      selector: a.dl
+      attribute: href
+    size:
+      selector: span.size
+    seeders:
+      selector: span.seeders
+    leechers:
+      selector: span.status
+      filters:
+        - name: split
+          args: ["/", 1]

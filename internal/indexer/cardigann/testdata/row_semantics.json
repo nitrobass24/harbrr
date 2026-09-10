@@ -1,0 +1,22 @@
+{
+  "results": [
+    {
+      "name": "Well Formed Row",
+      "url": "https://json.invalid/dl/1.torrent",
+      "kind": "movie",
+      "bytes": 1073741824,
+      "seeders": 9,
+      "status": "5/3",
+      "added": "2 hours ago"
+    },
+    {
+      "name": "Malformed Row",
+      "url": "https://json.invalid/dl/2.torrent",
+      "kind": "movie",
+      "bytes": 2147483648,
+      "seeders": 4,
+      "status": "-",
+      "added": ""
+    }
+  ]
+}

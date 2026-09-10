@@ -1,0 +1,37 @@
+---
+id: optional_empty_date
+name: Optional Empty Date Fixture
+description: "An optional date resolving to empty: the field is skipped and the row survives without a PublishDate."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://rowsemantics.invalid/
+
+caps:
+  categorymappings:
+    - {id: 1, cat: Movies}
+  modes:
+    search: [q]
+
+search:
+  path: /list
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: li.item
+  fields:
+    title:
+      selector: span.title
+    category:
+      text: "1"
+    download:
+      selector: a.dl
+      attribute: href
+    size:
+      selector: span.size
+    seeders:
+      selector: span.seeders
+    date:
+      selector: span.date
+      optional: true

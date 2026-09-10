@@ -1,0 +1,43 @@
+---
+id: optional_filter_error_json
+name: Optional Filter Error JSON Fixture
+description: "JSON loop: an optional field whose filter throws keeps the row, default NOT applied."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://rowsemantics.invalid/
+
+caps:
+  categorymappings:
+    - {id: "movie", cat: Movies}
+  modes:
+    search: [q]
+
+search:
+  paths:
+    - path: /api/v1/search
+      response:
+        type: json
+  inputs:
+    query: "{{ .Keywords }}"
+  rows:
+    selector: results
+  fields:
+    title:
+      selector: name
+    download:
+      selector: url
+    category:
+      selector: kind
+    size:
+      selector: bytes
+    seeders:
+      selector: seeders
+    leechers:
+      selector: status
+      optional: true
+      default: "99"
+      filters:
+        - name: split
+          args: ["/", 1]

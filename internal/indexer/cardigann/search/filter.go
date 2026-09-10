@@ -85,10 +85,17 @@ func (r *FilterRegistry) buildOps() map[string]filterFunc {
 
 // dateOp dispatches dateparse/timeparse to the injected parseDate. The layout
 // is the first filter arg (Jackett casts Filter.Args to a single string).
+//
+// A value the layout does not parse is passed through UNCHANGED: Jackett's
+// dateparse filter catches the FormatException, logs it at debug, and leaves
+// Data as it was (CardigannIndexer.applyFilters). The raw value then reaches the
+// implicit date step (applyImplicitDate → parseRelTime, Jackett's FromUnknown),
+// which gets its chance at relative/fuzzy forms ("2 hours ago", "Today 10:15")
+// a fixed layout cannot express — and rejects what it cannot parse there.
 func (r *FilterRegistry) dateOp(value string, args []string) (string, error) {
 	out, err := r.parseDate(value, firstArg(args))
 	if err != nil {
-		return "", fmt.Errorf("dateparse filter: %w", err)
+		return value, nil
 	}
 	return out, nil
 }

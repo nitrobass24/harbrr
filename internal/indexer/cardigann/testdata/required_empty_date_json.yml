@@ -1,0 +1,38 @@
+---
+id: required_empty_date_json
+name: Required Empty Date JSON Fixture
+description: "JSON loop: a required date resolving to empty aborts the whole parse."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://rowsemantics.invalid/
+
+caps:
+  categorymappings:
+    - {id: "movie", cat: Movies}
+  modes:
+    search: [q]
+
+search:
+  paths:
+    - path: /api/v1/search
+      response:
+        type: json
+  inputs:
+    query: "{{ .Keywords }}"
+  rows:
+    selector: results
+  fields:
+    title:
+      selector: name
+    download:
+      selector: url
+    category:
+      selector: kind
+    size:
+      selector: bytes
+    seeders:
+      selector: seeders
+    date:
+      selector: added
