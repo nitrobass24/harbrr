@@ -23,7 +23,7 @@ updates:
     groups:
       actions:
         patterns: ["*"]
-  - package-ecosystem: "npm" # bun lockfile in web/
+  - package-ecosystem: "bun" # bun.lock in web/
     directory: "/web"
     schedule:
       interval: "weekly"
@@ -39,7 +39,7 @@ updates:
       # and that PR's CI is the revisit gate — see autobrr/harbrr#213.
       - dependency-name: "typescript"
         versions: ["7.0.x"]
-  - package-ecosystem: "npm" # bun lockfile in website/ (the docs site)
+  - package-ecosystem: "bun" # bun.lock in website/ (the docs site)
     directory: "/website"
     schedule:
       interval: "weekly"
