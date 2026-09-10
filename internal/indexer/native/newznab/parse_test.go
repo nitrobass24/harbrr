@@ -115,9 +115,9 @@ func TestParseReleases(t *testing.T) {
 	if movie.Grabs != 42 || movie.Files != 7 {
 		t.Errorf("grabs/files = %d/%d, want 42/7", movie.Grabs, movie.Files)
 	}
-	// usenetdate overrides pubDate.
-	if movie.PublishDate != "Sun, 01 Jan 2023 10:00:00 +0000" {
-		t.Errorf("PublishDate = %q, want the usenetdate value", movie.PublishDate)
+	// usenetdate overrides pubDate, normalized to the RFC3339 form the serializer parses.
+	if movie.PublishDate != "2023-01-01T10:00:00Z" {
+		t.Errorf("PublishDate = %q, want the usenetdate value as RFC3339", movie.PublishDate)
 	}
 	if movie.IMDBID != "0133093" || movie.TMDBID != 603 {
 		t.Errorf("ids = %q/%d, want 0133093/603", movie.IMDBID, movie.TMDBID)
@@ -148,8 +148,8 @@ func TestParseReleases(t *testing.T) {
 		t.Errorf("show ids = %d/%d, want 81189/2930", show.TVDBID, show.RageID)
 	}
 	// No usenetdate: falls back to pubDate.
-	if show.PublishDate != "Tue, 03 Jan 2023 12:00:00 +0000" {
-		t.Errorf("show PublishDate = %q, want the pubDate fallback", show.PublishDate)
+	if show.PublishDate != "2023-01-03T12:00:00Z" {
+		t.Errorf("show PublishDate = %q, want the pubDate fallback as RFC3339", show.PublishDate)
 	}
 	assertUsenetZeroFields(t, show)
 }
@@ -192,6 +192,50 @@ func TestParseRedactsSecretInGUID(t *testing.T) {
 	}
 	if !strings.Contains(rels[0].GUID, "getnzb/abc.nzb") {
 		t.Errorf("GUID should retain the stable path after redaction: %q", rels[0].GUID)
+	}
+}
+
+// TestParsePublishDate pins the pubDate contract (autobrr/harbrr#640): usenetdate wins over
+// <pubDate>, both are normalized to the RFC3339 form the torznab serializer and
+// core/aggregate parse (a raw RFC1123Z string used to fall through to pubDate=now), and an
+// unparseable value yields "" while the release is kept.
+func TestParsePublishDate(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		pubDate    string
+		usenetdate string
+		want       string
+	}{
+		{name: "pubDate only", pubDate: "Tue, 03 Jan 2023 12:00:00 +0000", want: "2023-01-03T12:00:00Z"},
+		{name: "usenetdate overrides pubDate", pubDate: "Tue, 03 Jan 2023 12:00:00 +0000", usenetdate: "Sun, 01 Jan 2023 10:00:00 +0000", want: "2023-01-01T10:00:00Z"},
+		{name: "non-UTC offset canonicalized", pubDate: "Tue, 03 Jan 2023 12:00:00 +0200", want: "2023-01-03T10:00:00Z"},
+		{name: "unparseable yields empty", pubDate: "not a date", want: ""},
+		{name: "absent yields empty", want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			d := parseDriver(t)
+			attr := ""
+			if tt.usenetdate != "" {
+				attr = `<newznab:attr name="usenetdate" value="` + tt.usenetdate + `"/>`
+			}
+			body := []byte(`<?xml version="1.0"?><rss xmlns:newznab="` + newznabAttrNS + `"><channel><item>` +
+				`<title>Example.Release</title><pubDate>` + tt.pubDate + `</pubDate>` + attr +
+				`<enclosure url="https://news.example.test/getnzb/abc.nzb" length="1000" type="application/x-nzb"/>` +
+				`</item></channel></rss>`)
+			rels, err := d.parseReleases(body, d.Caps.CategoryMap)
+			if err != nil {
+				t.Fatalf("parseReleases: %v", err)
+			}
+			if len(rels) != 1 {
+				t.Fatalf("releases = %d, want 1 (a bad date must not drop the release)", len(rels))
+			}
+			if rels[0].PublishDate != tt.want {
+				t.Errorf("PublishDate = %q, want %q", rels[0].PublishDate, tt.want)
+			}
+		})
 	}
 }
 
