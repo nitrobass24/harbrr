@@ -216,10 +216,18 @@ func TestParseDateLocalizedNames(t *testing.T) {
 		{"de-DE", "ddd, d MMM yyyy", "Mo, 2 Jan 2023", "2023-01-02T00:00:00Z"},
 		{"fr-FR", "d MMMM yyyy", "2 février 2023", "2023-02-02T00:00:00Z"},
 		{"fr-FR", "d MMMM yyyy", "2 mars 2023", "2023-03-02T00:00:00Z"},
-		// An English value under a localized parser must parse as Jackett's
-		// InvariantCulture does: the French weekday abbr "mar" (mardi) must not
-		// rewrite the English month "Mar" (autobrr/harbrr#632).
+		// An English value under a localized parser parses as Jackett's
+		// InvariantCulture does (original value first): the French weekday abbr
+		// "mar" (mardi) must not rewrite the English month "Mar"
+		// (autobrr/harbrr#632) ...
 		{"fr-FR", "ddd, dd MMM yyyy HH:mm:ss zzz", "Tue, 07 Mar 2023 15:04:05 +00:00", "2023-03-07T15:04:05Z"},
+		// ... while the same key still localizes a genuinely French value on the
+		// retry. No trailing period after "mar": the layout's literal "," must
+		// directly follow the ddd token in Go and .NET ParseExact alike. February
+		// rather than March because French "mars" is both the MMM and MMMM form
+		// and the table resolves it to full "March", which Go's abbreviated token
+		// rejects (pre-existing, independent of #632).
+		{"fr-FR", "ddd, dd MMM yyyy HH:mm:ss zzz", "mar, 07 févr 2023 15:04:05 +00:00", "2023-02-07T15:04:05Z"},
 		{"es-ES", "d MMMM yyyy", "2 diciembre 2023", "2023-12-02T00:00:00Z"},
 		{"it-IT", "d MMMM yyyy", "2 marzo 2023", "2023-03-02T00:00:00Z"},
 		{"el-GR", "d MMMM yyyy", "2 Μαρτίου 2023", "2023-03-02T00:00:00Z"},

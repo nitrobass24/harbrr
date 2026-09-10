@@ -65,12 +65,17 @@ func New(opts ...Option) *Parser {
 //  1. Collapse internal whitespace + NBSP (a deliberate lenient divergence from
 //     Jackett's trim-only NormalizeSpace; see normalizeSpace).
 //  2. Translate the .NET layout to a Go layout (TranslateLayout).
-//  3. If a language is set and the layout carries month/day NAME tokens,
-//     substitute localized names -> English so Go's time.Parse can read them.
-//  4. If the layout carries an AM/PM designator, uppercase it in the value:
+//  3. If the layout carries an AM/PM designator, uppercase it in the value:
 //     .NET ParseExact matches designators case-INsensitively ("3pm" parses),
 //     Go's "PM" reference token is uppercase-only.
-//  5. time.Parse with the translated layout.
+//  4. time.Parse the ORIGINAL value with the translated layout (parseAttempt,
+//     which also accepts colon-less zzz offsets). This is Jackett's
+//     InvariantCulture parse, so English names always win.
+//  5. Only if that fails, a language is set, and the layout carries month/day
+//     NAME tokens: substitute localized names -> English and parse again. This
+//     is harbrr's opt-in enhancement (Jackett has no culture fallback at all);
+//     parsing the original first keeps English values byte-for-byte Jackett
+//     while localized names remain usable.
 //  6. Default the date components the layout omitted (.NET DateTimeParse
 //     terminal-state defaults; see defaultMissingDate).
 //
@@ -86,34 +91,47 @@ func (p *Parser) ParseDate(value, layout string) (string, error) {
 		return "", err
 	}
 
-	if loc, ok := lookupLocale(p.lang); ok && layoutHasNameToken(goLayout) {
-		value = localizeValue(value, loc)
-	}
-
 	if strings.Contains(goLayout, "PM") {
 		value = normalizeAMPM(value)
 	}
 
-	t, err := time.Parse(goLayout, value)
-	if err != nil && strings.Contains(goLayout, "-07:00") {
-		// .NET's zzz parser treats the colon as optional ("+0000" parses under
-		// Jackett's ParseExact); Go's "-07:00" element requires it, so retry once
-		// with the colon-less form. The value is never regex-normalized: no-space
-		// corpus layouts ("yyyy-MM-ddHH:mm:ss zzz") would false-match inside it.
-		t, err = time.Parse(strings.Replace(goLayout, "-07:00", "-0700", 1), value)
+	// InvariantCulture first, exactly as Jackett: the original value is parsed
+	// before any localization, so an English name always wins even when a locale
+	// table shares the spelling (fr "mar" = mardi vs English "Mar"). Localized
+	// names remain usable through the retry.
+	t, ok := parseAttempt(goLayout, value)
+	if loc, hasLoc := lookupLocale(p.lang); !ok && hasLoc && layoutHasNameToken(goLayout) {
+		t, ok = parseAttempt(goLayout, localizeValue(value, loc))
 	}
-	if err != nil {
+	if !ok {
 		return "", unparseable(value, layout, goLayout, "")
 	}
 
 	now := p.now()
-	t, ok := defaultMissingDate(t, layout, goLayout, now)
+	t, ok = defaultMissingDate(t, layout, goLayout, now)
 	if !ok {
 		return "", unparseable(value, layout, goLayout, fmt.Sprintf("day does not exist in %d", now.Year()))
 	}
 	t = rollbackFutureYearless(t, layout, goLayout, now)
 
 	return t.Format(canonicalLayout), nil
+}
+
+// parseAttempt runs time.Parse with goLayout and, on failure, once more with a
+// colon-less offset element: .NET's zzz parser treats the colon as optional
+// ("+0000" parses under Jackett's ParseExact) while Go's "-07:00" requires it.
+// The value is never regex-normalized: no-space corpus layouts
+// ("yyyy-MM-ddHH:mm:ss zzz") would false-match inside it. The boolean is false
+// when neither form parses; ParseDate builds the ErrUnparseable itself.
+func parseAttempt(goLayout, value string) (time.Time, bool) {
+	if t, err := time.Parse(goLayout, value); err == nil {
+		return t, true
+	}
+	if !strings.Contains(goLayout, "-07:00") {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(strings.Replace(goLayout, "-07:00", "-0700", 1), value)
+	return t, err == nil
 }
 
 // unparseable wraps ErrUnparseable with the value and both layouts; reason, when
