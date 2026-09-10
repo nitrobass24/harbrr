@@ -338,12 +338,17 @@ func TestDateFilterPassesRawValueOnError(t *testing.T) {
 	parseDate := func(string, string) (string, error) { return "", errors.New("boom") }
 	r := NewFilterRegistry(parseDate, stubRelTime, "")
 
-	got, err := r.apply("x", []loader.FilterBlock{fb("dateparse", "L")})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got != "x" {
-		t.Fatalf("got %q, want raw value %q passed through", got, "x")
+	for _, name := range []string{"dateparse", "timeparse"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got, err := r.apply("x", []loader.FilterBlock{fb(name, "L")})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != "x" {
+				t.Fatalf("got %q, want raw value %q passed through", got, "x")
+			}
+		})
 	}
 }
 
