@@ -92,7 +92,7 @@ var nativeBuilt = []nativeRow{
 	{name: "RetroFlix", pattern: "Bearer (login -> token)", id: "retroflix"},
 	{name: "Usenet (Newznab)", pattern: "Generic Newznab", id: "newznab"},
 	{name: "NZBIndex", pattern: "Bespoke JSON API (public)", id: "nzbindex"},
-	{name: "AnimeTosho", pattern: "Torznab API (native)", id: "animetosho-torrent"},
+	{name: "AnimeTosho (Torrent)", pattern: "Torznab API (native)", id: "animetosho-torrent"},
 	{name: "Torrent Network", pattern: "Torznab API (native)", id: "torrentnetwork"},
 	{name: "Torznab (generic)", pattern: "Generic Torznab", id: "torznab"},
 }

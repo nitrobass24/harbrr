@@ -42,7 +42,7 @@ Bespoke code in Jackett/Prowlarr (no Cardigann definition); harbrr ships native 
 | RetroFlix | Bearer (login -> token) | ✅ | ✅ |
 | Usenet (Newznab) | Generic Newznab | ✅ | ✅ |
 | NZBIndex | Bespoke JSON API (public) | ✅ | ✅ |
-| AnimeTosho | Torznab API (native) | ✅ | ⬜ |
+| AnimeTosho (Torrent) | Torznab API (native) | ✅ | ⬜ |
 | Torrent Network | Torznab API (native) | ✅ | ⬜ |
 | Torznab (generic) | Generic Torznab | ✅ | ⬜ |
 
