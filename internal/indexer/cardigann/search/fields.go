@@ -1,6 +1,7 @@
 package search
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -62,43 +63,27 @@ func parseRow(def *loader.Definition, sel *selector.Engine, row selector.Row, qu
 
 // parseField extracts, defaults, and filters one field, then folds it into the
 // row state. The field key may carry modifiers ("title|append"); the base name
-// (FieldParts[0]) is what keys .Result and the base map. A fresh eval closure
-// bound to the Result map accumulated so far is built and passed into this
-// call's Field lookup, reproducing Jackett's handleSelector(variables)
-// interleaving without mutating any shared state.
+// (FieldParts[0]) is what keys .Result and the base map.
+//
+// Jackett wraps EACH field in its own try/catch (CardigannIndexer.ParseFields,
+// both the HTML and JSON loops): on any exception it sets .Result.<field> to
+// null when absent and, for an optional field, `continue`s — the row survives
+// with the field unset and the default is NOT applied. Only a required field's
+// exception reaches the row-level catch, which drops the row (HTML) or aborts
+// the parse (JSON). resolveField's error is therefore swallowed here for
+// optional fields and propagated verbatim for required ones.
 func parseField(fe loader.Entry[loader.SelectorBlock], sel *selector.Engine, row selector.Row, query Query, deps Deps, state *rowState) error {
 	name, modifiers := splitFieldKey(fe.Key)
 	optional := isOptional(fe.Key, name, modifiers, fe.Value)
 
-	eval := bindEval(deps, query, state.result)
-
-	value, found, err := sel.Field(row, fe.Value, eval)
+	resolved, skip, err := resolveField(fe.Value, name, optional, sel, row, query, deps, state.result)
 	if err != nil {
-		// A genuine fault (bad selector/template/case eval) — NOT "value absent",
-		// which Field reports as found=false with a nil error and which the
-		// optional/default logic below handles. Propagate even for optional
-		// fields so a malformed def surfaces loudly; ParseResults then drops the
-		// row (HTML) or aborts (JSON), mirroring Jackett's row-level try/catch.
-		return fmt.Errorf("field %q: %w", name, err)
-	}
-
-	// Jackett applies the field's filters INSIDE handleSelector, before the
-	// optional/default check runs (CardigannIndexer.handleSelector). A filter that
-	// reduces a non-empty value to empty must therefore be able to trigger the
-	// default, so filters run first.
-	if found {
-		filters, ferr := renderFilterArgs(fe.Value.Filters, deps, query, state.result)
-		if ferr != nil {
-			return fmt.Errorf("field %q: %w", name, ferr)
+		if optional {
+			if _, ok := state.result[name]; !ok {
+				state.result[name] = ""
+			}
+			return nil
 		}
-		value, err = deps.Filters.apply(value, filters)
-		if err != nil {
-			return fmt.Errorf("field %q: %w", name, err)
-		}
-	}
-
-	resolved, skip, err := resolveValue(value, found, optional, fe.Value, deps, query, state.result)
-	if err != nil {
 		return fmt.Errorf("field %q: %w", name, err)
 	}
 	if skip {
@@ -106,13 +91,49 @@ func parseField(fe loader.Entry[loader.SelectorBlock], sel *selector.Engine, row
 		return nil
 	}
 
-	resolved, err = applyImplicitDate(name, resolved, deps)
-	if err != nil {
-		return fmt.Errorf("field %q: %w", name, err)
-	}
-
 	storeField(state, name, modifiers, resolved)
 	return nil
+}
+
+// resolveField runs the extract → filter → default → implicit-date chain for one
+// field and returns the resolved value, or skip=true when an optional field
+// resolved to nothing. A fresh eval closure bound to the Result map accumulated
+// so far is built and passed into this call's Field lookup, reproducing Jackett's
+// handleSelector(variables) interleaving without mutating any shared state.
+// Every error is returned as-is; parseField decides what it means for the row.
+func resolveField(block loader.SelectorBlock, name string, optional bool, sel *selector.Engine, row selector.Row, query Query, deps Deps, result map[string]string) (string, bool, error) {
+	eval := bindEval(deps, query, result)
+
+	// A genuine fault (bad selector/template/case eval) — NOT "value absent",
+	// which Field reports as found=false with a nil error and which the
+	// optional/default logic below handles.
+	value, found, err := sel.Field(row, block, eval)
+	if err != nil {
+		return "", false, fmt.Errorf("extracting: %w", err)
+	}
+
+	// Jackett applies the field's filters INSIDE handleSelector, before the
+	// optional/default check runs (CardigannIndexer.handleSelector). A filter that
+	// reduces a non-empty value to empty must therefore be able to trigger the
+	// default, so filters run first.
+	if found {
+		filters, ferr := renderFilterArgs(block.Filters, deps, query, result)
+		if ferr != nil {
+			return "", false, ferr
+		}
+		value, err = deps.Filters.apply(value, filters)
+		if err != nil {
+			return "", false, err
+		}
+	}
+
+	resolved, skip, err := resolveValue(value, found, optional, block, deps, query, result)
+	if err != nil || skip {
+		return "", skip, err
+	}
+
+	resolved, err = applyImplicitDate(name, resolved, optional, deps)
+	return resolved, false, err
 }
 
 // applyImplicitDate reproduces Jackett ParseFields' case "date": the resolved
@@ -120,12 +141,21 @@ func parseField(fe loader.Entry[loader.SelectorBlock], sel *selector.Engine, row
 // FromUnknown before it becomes PublishDate and .Result.date. harbrr's
 // ParseRelTime is the FromUnknown subset (ISO/unix/relative/named-day) and emits
 // canonical RFC3339; Jackett emits RFC1123Z, so goldens hold the same instant in
-// harbrr's canonical form (see parity/testdata/README.md). An unparseable date
-// is a loud field error, which ParseResults turns into a row skip (HTML) or
-// abort (JSON), exactly as Jackett's thrown exception does.
-func applyImplicitDate(name, value string, deps Deps) (string, error) {
-	if name != "date" || strings.TrimSpace(value) == "" {
+// harbrr's canonical form (see parity/testdata/README.md). An unparseable date —
+// including an EMPTY one, which FromUnknown("") rejects too — is a loud field
+// error, which ParseResults turns into a row skip (HTML) or abort (JSON), exactly
+// as Jackett's thrown exception does. Only an OPTIONAL date may be empty: Jackett
+// never reaches case "date" for it (the field is skipped, and the dateheaders
+// backfill may still supply the date), so it is a silent no-op here.
+func applyImplicitDate(name, value string, optional bool, deps Deps) (string, error) {
+	if name != "date" {
 		return value, nil
+	}
+	if strings.TrimSpace(value) == "" {
+		if optional {
+			return value, nil
+		}
+		return "", errors.New("date field resolved to empty")
 	}
 	parsed, err := deps.Filters.parseRelTime(value)
 	if err != nil {

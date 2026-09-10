@@ -1,0 +1,36 @@
+---
+id: required_empty_date
+name: Required Empty Date Fixture
+description: "A required date resolving to empty: FromUnknown throws and the row drops."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://rowsemantics.invalid/
+
+caps:
+  categorymappings:
+    - {id: 1, cat: Movies}
+  modes:
+    search: [q]
+
+search:
+  path: /list
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: li.item
+  fields:
+    title:
+      selector: span.title
+    category:
+      text: "1"
+    download:
+      selector: a.dl
+      attribute: href
+    size:
+      selector: span.size
+    seeders:
+      selector: span.seeders
+    date:
+      selector: span.date

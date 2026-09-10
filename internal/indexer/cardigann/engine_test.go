@@ -259,6 +259,120 @@ func TestParseResponse_ImplicitDate(t *testing.T) {
 	}
 }
 
+// TestParseResponse_RowSemantics pins the per-field try/catch semantics of
+// Jackett's ParseFields over one shared body (row_semantics.html / .json). The
+// body carries a well-formed row, a malformed row (status "-" so `split "/" 1`
+// throws; an empty date cell), and a relative-date row ("2 hours ago").
+//
+//   - An OPTIONAL field whose filter throws is nulled and the row survives; the
+//     default is NOT applied (Jackett's field-level `if (isOptional) continue`).
+//   - A REQUIRED field whose filter throws drops the row (HTML) or aborts the
+//     parse (JSON) via the row-level catch.
+//   - A REQUIRED `date` resolving to "" is rejected by FromUnknown("") the same
+//     way; an OPTIONAL one is skipped and the row keeps no PublishDate.
+//   - A `dateparse` layout mismatch passes the raw value through (Jackett
+//     swallows the FormatException), so FromUnknown still resolves "2 hours ago".
+func TestParseResponse_RowSemantics(t *testing.T) {
+	t.Parallel()
+
+	const relDate = "2023-01-01T22:00:00Z" // "2 hours ago" from the fixed clock
+
+	cases := []struct {
+		name       string
+		def, body  string
+		wantErr    string
+		wantTitles []string
+		check      func(t *testing.T, rs []*Release)
+	}{
+		{
+			name: "optional filter error keeps the row without the default",
+			def:  "optional_filter_error.yml", body: "row_semantics.html",
+			wantTitles: []string{"Well Formed Row", "Malformed Row", "Relative Date Row"},
+			check: func(t *testing.T, rs []*Release) {
+				assertSeeders(t, rs[0], 9, 3)
+				assertSeeders(t, rs[1], 4, 0) // "" coerced, not the "99" default
+				assertSeeders(t, rs[2], 7, 2)
+			},
+		},
+		{
+			name: "required filter error drops the HTML row",
+			def:  "required_filter_error.yml", body: "row_semantics.html",
+			wantTitles: []string{"Well Formed Row", "Relative Date Row"},
+		},
+		{
+			name: "optional filter error keeps the JSON row without the default",
+			def:  "optional_filter_error_json.yml", body: "row_semantics.json",
+			wantTitles: []string{"Well Formed Row", "Malformed Row"},
+			check: func(t *testing.T, rs []*Release) {
+				assertSeeders(t, rs[1], 4, 0)
+			},
+		},
+		{
+			name: "required filter error aborts the JSON parse",
+			def:  "required_filter_error_json.yml", body: "row_semantics.json",
+			wantErr: `field "leechers"`,
+		},
+		{
+			name: "required empty date drops the HTML row",
+			def:  "required_empty_date.yml", body: "row_semantics.html",
+			wantTitles: []string{"Well Formed Row", "Relative Date Row"},
+			check: func(t *testing.T, rs []*Release) {
+				assertPublishDate(t, rs[0], "2023-01-01T00:00:00Z")
+				assertPublishDate(t, rs[1], relDate)
+			},
+		},
+		{
+			name: "required empty date aborts the JSON parse",
+			def:  "required_empty_date_json.yml", body: "row_semantics.json",
+			wantErr: "date field resolved to empty",
+		},
+		{
+			name: "optional empty date keeps the row with no publish date",
+			def:  "optional_empty_date.yml", body: "row_semantics.html",
+			wantTitles: []string{"Well Formed Row", "Malformed Row", "Relative Date Row"},
+			check: func(t *testing.T, rs []*Release) {
+				assertPublishDate(t, rs[1], "")
+				assertPublishDate(t, rs[2], relDate)
+			},
+		},
+		{
+			name: "dateparse mismatch passes through to the relative parser",
+			def:  "dateparse_passthrough.yml", body: "row_semantics.html",
+			wantTitles: []string{"Well Formed Row", "Relative Date Row"},
+			check: func(t *testing.T, rs []*Release) {
+				assertPublishDate(t, rs[0], "2023-01-01T00:00:00Z")
+				assertPublishDate(t, rs[1], relDate)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			eng := newFixtureEngine(t, tc.def)
+			releases, err := eng.ParseResponseQuery(readBody(t, tc.body), "", Query{})
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("err = %v, want one containing %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseResponse: %v", err)
+			}
+			if len(releases) != len(tc.wantTitles) {
+				t.Fatalf("releases = %d, want %d", len(releases), len(tc.wantTitles))
+			}
+			for i, want := range tc.wantTitles {
+				assertTitle(t, releases[i].Title, want)
+			}
+			if tc.check != nil {
+				tc.check(t, releases)
+			}
+		})
+	}
+}
+
 // TestResultsJSON_Deterministic proves the marshal seam yields stable bytes.
 func TestResultsJSON_Deterministic(t *testing.T) {
 	t.Parallel()
@@ -401,6 +515,13 @@ func assertSeeders(t *testing.T, r *Release, seeders, leechers int64) {
 	}
 	if r.Leechers != leechers {
 		t.Errorf("leechers = %d, want %d", r.Leechers, leechers)
+	}
+}
+
+func assertPublishDate(t *testing.T, r *Release, want string) {
+	t.Helper()
+	if r.PublishDate != want {
+		t.Errorf("publishDate = %q, want %q", r.PublishDate, want)
 	}
 }
 

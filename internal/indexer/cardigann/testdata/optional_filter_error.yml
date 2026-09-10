@@ -1,0 +1,41 @@
+---
+id: optional_filter_error
+name: Optional Filter Error Fixture
+description: "An optional field whose filter throws: Jackett nulls the field and keeps the row, default NOT applied."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://rowsemantics.invalid/
+
+caps:
+  categorymappings:
+    - {id: 1, cat: Movies}
+  modes:
+    search: [q]
+
+search:
+  path: /list
+  inputs:
+    q: "{{ .Keywords }}"
+  rows:
+    selector: li.item
+  fields:
+    title:
+      selector: span.title
+    category:
+      text: "1"
+    download:
+      selector: a.dl
+      attribute: href
+    size:
+      selector: span.size
+    seeders:
+      selector: span.seeders
+    leechers:
+      selector: span.status
+      optional: true
+      default: "99"
+      filters:
+        - name: split
+          args: ["/", 1]

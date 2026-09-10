@@ -1,0 +1,41 @@
+---
+id: required_filter_error_json
+name: Required Filter Error JSON Fixture
+description: "JSON loop: a required field whose filter throws aborts the whole parse."
+language: en-US
+type: public
+encoding: UTF-8
+links:
+  - https://rowsemantics.invalid/
+
+caps:
+  categorymappings:
+    - {id: "movie", cat: Movies}
+  modes:
+    search: [q]
+
+search:
+  paths:
+    - path: /api/v1/search
+      response:
+        type: json
+  inputs:
+    query: "{{ .Keywords }}"
+  rows:
+    selector: results
+  fields:
+    title:
+      selector: name
+    download:
+      selector: url
+    category:
+      selector: kind
+    size:
+      selector: bytes
+    seeders:
+      selector: seeders
+    leechers:
+      selector: status
+      filters:
+        - name: split
+          args: ["/", 1]

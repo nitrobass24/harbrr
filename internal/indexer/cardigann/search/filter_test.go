@@ -329,16 +329,26 @@ func TestDateFiltersInjectedDispatch(t *testing.T) {
 	}
 }
 
-func TestDateFilterPropagatesInjectedError(t *testing.T) {
+// TestDateFilterPassesRawValueOnError pins Jackett's dateparse semantics: a
+// layout mismatch is swallowed and the raw value passes through unchanged, so
+// the implicit FromUnknown step (applyImplicitDate) gets a go at it.
+func TestDateFilterPassesRawValueOnError(t *testing.T) {
 	t.Parallel()
 
-	sentinel := errors.New("boom")
-	parseDate := func(string, string) (string, error) { return "", sentinel }
+	parseDate := func(string, string) (string, error) { return "", errors.New("boom") }
 	r := NewFilterRegistry(parseDate, stubRelTime, "")
 
-	_, err := r.apply("x", []loader.FilterBlock{fb("dateparse", "L")})
-	if !errors.Is(err, sentinel) {
-		t.Fatalf("expected wrapped sentinel, got %v", err)
+	for _, name := range []string{"dateparse", "timeparse"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got, err := r.apply("x", []loader.FilterBlock{fb(name, "L")})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != "x" {
+				t.Fatalf("got %q, want raw value %q passed through", got, "x")
+			}
+		})
 	}
 }
 
