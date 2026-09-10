@@ -1,6 +1,7 @@
 package dateparse_test
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -144,6 +145,11 @@ func TestParseDate(t *testing.T) {
 		{"no-space-quirk", "yyyy-MM-ddHH:mm:ss zzz", "2023-01-0215:04:05 +02:00", "2023-01-02T15:04:05+02:00"},
 		{"us-slash", "MM/dd/yyyy HH:mm:ss zzz", "01/02/2023 15:04:05 -05:00", "2023-01-02T15:04:05-05:00"},
 		{"rfc1123z-shape", "ddd, dd MMM yyyy HH:mm:ss zzz", "Mon, 02 Jan 2023 15:04:05 +00:00", "2023-01-02T15:04:05Z"},
+		// .NET's zzz treats the colon as optional: RSS pubDates carry "+0000" and
+		// Jackett's ParseExact accepts them (autobrr/harbrr#628).
+		{"rfc1123z-colonless-utc", "ddd, dd MMM yyyy HH:mm:ss zzz", "Sun, 18 Jan 2026 04:05:41 +0000", "2026-01-18T04:05:41Z"},
+		{"rfc1123z-colonless-offset", "ddd, dd MMM yyyy HH:mm:ss zzz", "Sun, 18 Jan 2026 04:05:41 +0100", "2026-01-18T04:05:41+01:00"},
+		{"iso-tz-colonless", "yyyy-MM-dd HH:mm:ss zzz", "2023-01-02 15:04:05 -0800", "2023-01-02T15:04:05-08:00"},
 		{"12h-pm", "MMM d yyyy hh:mm tt", "Jan 2 2023 03:04 PM", "2023-01-02T15:04:00Z"},
 		{"12h-am", "MMM d yyyy hh:mm tt", "Jan 2 2023 03:04 AM", "2023-01-02T03:04:00Z"},
 		{"24h-single", "yyyy-M-d H:m:s", "2023-1-2 5:4:3", "2023-01-02T05:04:03Z"},
@@ -209,6 +215,11 @@ func TestParseDateLocalizedNames(t *testing.T) {
 		{"de-DE", "d MMMM yyyy", "2 März 2023", "2023-03-02T00:00:00Z"},
 		{"de-DE", "ddd, d MMM yyyy", "Mo, 2 Jan 2023", "2023-01-02T00:00:00Z"},
 		{"fr-FR", "d MMMM yyyy", "2 février 2023", "2023-02-02T00:00:00Z"},
+		{"fr-FR", "d MMMM yyyy", "2 mars 2023", "2023-03-02T00:00:00Z"},
+		// An English value under a localized parser must parse as Jackett's
+		// InvariantCulture does: the French weekday abbr "mar" (mardi) must not
+		// rewrite the English month "Mar" (autobrr/harbrr#632).
+		{"fr-FR", "ddd, dd MMM yyyy HH:mm:ss zzz", "Tue, 07 Mar 2023 15:04:05 +00:00", "2023-03-07T15:04:05Z"},
 		{"es-ES", "d MMMM yyyy", "2 diciembre 2023", "2023-12-02T00:00:00Z"},
 		{"it-IT", "d MMMM yyyy", "2 marzo 2023", "2023-03-02T00:00:00Z"},
 		{"el-GR", "d MMMM yyyy", "2 Μαρτίου 2023", "2023-03-02T00:00:00Z"},
@@ -235,6 +246,45 @@ func TestParseDateFailureSurfaces(t *testing.T) {
 	// never silently pass the raw value through.
 	if _, err := p.ParseDate("not a date", "yyyy-MM-dd"); err == nil {
 		t.Fatal("expected error for mismatched value, got nil")
+	}
+}
+
+// TestParseDateYearlessFeb29 pins .NET ParseExact's validation of a yearless day
+// against the defaulted (clock) year: Feb 29 in a non-leap year throws in Jackett,
+// so harbrr must reject it rather than normalize it to Mar 1 (autobrr/harbrr#639).
+func TestParseDateYearlessFeb29(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		clock   time.Time
+		layout  string
+		value   string
+		want    string
+		wantErr bool
+	}{
+		{"non-leap-year-rejects", time.Date(2023, time.June, 1, 12, 0, 0, 0, time.UTC), "MM-dd", "02-29", "", true},
+		{"non-leap-year-rejects-with-time", time.Date(2023, time.June, 1, 12, 0, 0, 0, time.UTC), "MM-dd HH:mm", "02-29 10:00", "", true},
+		{"leap-year-parses", time.Date(2024, time.June, 1, 12, 0, 0, 0, time.UTC), "MM-dd", "02-29", "2024-02-29T00:00:00Z", false},
+		{"non-leap-year-feb-28-parses", time.Date(2023, time.June, 1, 12, 0, 0, 0, time.UTC), "MM-dd", "02-28", "2023-02-28T00:00:00Z", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			p := dateparse.New(dateparse.WithClock(func() time.Time { return c.clock }))
+			got, err := p.ParseDate(c.value, c.layout)
+			if c.wantErr {
+				if !errors.Is(err, dateparse.ErrUnparseable) {
+					t.Fatalf("ParseDate(%q, %q) = %q, %v; want ErrUnparseable", c.value, c.layout, got, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseDate(%q, %q) error: %v", c.value, c.layout, err)
+			}
+			if got != c.want {
+				t.Fatalf("ParseDate(%q, %q) = %q, want %q", c.value, c.layout, got, c.want)
+			}
+		})
 	}
 }
 

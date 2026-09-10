@@ -43,6 +43,21 @@ var (
 	}
 )
 
+// englishNames is every English month/day name, lowercased. A localized name
+// that collides with one (fr "mar" = mardi vs English "Mar" = March) must never
+// become a rewrite key: Jackett parses with InvariantCulture first, so an
+// English name in the value always wins. Pinned by
+// TestLocaleTablesNeverRewriteEnglishNames.
+var englishNames = func() map[string]struct{} {
+	set := make(map[string]struct{}, 38)
+	for _, names := range [][]string{englishMonthsFull, englishMonthsAbbr, englishDaysFull, englishDaysAbbr} {
+		for _, n := range names {
+			set[strings.ToLower(n)] = struct{}{}
+		}
+	}
+	return set
+}()
+
 // locales maps a CultureInfo-style language code (lowercased, e.g. "ru-ru") to
 // its name table. Lookup also accepts the bare primary subtag ("ru"). Names are
 // drawn from CLDR/.NET CultureInfo for the locales the corpus actually uses for
@@ -218,12 +233,18 @@ func (l locale) lookupTable() map[string]string {
 	return table
 }
 
-// addNames registers each src[i]->dst[i] pair (lowercased key) into table.
+// addNames registers each src[i]->dst[i] pair (lowercased key) into table. A
+// key that is itself an English name is skipped so localizeValue passes English
+// values through untouched regardless of the locale table (see englishNames).
 func addNames(table map[string]string, src, dst []string) {
 	for i, name := range src {
 		if name == "" || i >= len(dst) {
 			continue
 		}
-		table[strings.ToLower(name)] = dst[i]
+		key := strings.ToLower(name)
+		if _, english := englishNames[key]; english {
+			continue
+		}
+		table[key] = dst[i]
 	}
 }

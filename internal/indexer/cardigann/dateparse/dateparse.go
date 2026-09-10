@@ -95,15 +95,35 @@ func (p *Parser) ParseDate(value, layout string) (string, error) {
 	}
 
 	t, err := time.Parse(goLayout, value)
+	if err != nil && strings.Contains(goLayout, "-07:00") {
+		// .NET's zzz parser treats the colon as optional ("+0000" parses under
+		// Jackett's ParseExact); Go's "-07:00" element requires it, so retry once
+		// with the colon-less form. The value is never regex-normalized: no-space
+		// corpus layouts ("yyyy-MM-ddHH:mm:ss zzz") would false-match inside it.
+		t, err = time.Parse(strings.Replace(goLayout, "-07:00", "-0700", 1), value)
+	}
 	if err != nil {
-		return "", fmt.Errorf("%w: value %q layout %q (go %q)", ErrUnparseable, value, layout, goLayout)
+		return "", unparseable(value, layout, goLayout, "")
 	}
 
 	now := p.now()
-	t = defaultMissingDate(t, layout, goLayout, now)
+	t, ok := defaultMissingDate(t, layout, goLayout, now)
+	if !ok {
+		return "", unparseable(value, layout, goLayout, fmt.Sprintf("day does not exist in %d", now.Year()))
+	}
 	t = rollbackFutureYearless(t, layout, goLayout, now)
 
 	return t.Format(canonicalLayout), nil
+}
+
+// unparseable wraps ErrUnparseable with the value and both layouts; reason, when
+// non-empty, names the specific rejection.
+func unparseable(value, netLayout, goLayout, reason string) error {
+	err := fmt.Errorf("%w: value %q layout %q (go %q)", ErrUnparseable, value, netLayout, goLayout)
+	if reason == "" {
+		return err
+	}
+	return fmt.Errorf("%w: %s", err, reason)
 }
 
 // rollbackFutureYearless reproduces the tail of Jackett's
@@ -168,10 +188,13 @@ func layoutHasNameToken(goLayout string) bool {
 //
 // Weekday-name tokens (ddd/dddd) are not date components: they parse a name
 // without setting year/month/day, in .NET and Go alike.
-func defaultMissingDate(t time.Time, netLayout, goLayout string, ref time.Time) time.Time {
+//
+// The boolean is false when the defaulted date does not exist (see
+// defaultMissingYear).
+func defaultMissingDate(t time.Time, netLayout, goLayout string, ref time.Time) (time.Time, bool) {
 	if !layoutHasDateTokens(netLayout) {
 		return time.Date(ref.Year(), ref.Month(), ref.Day(), t.Hour(), t.Minute(),
-			t.Second(), t.Nanosecond(), t.Location())
+			t.Second(), t.Nanosecond(), t.Location()), true
 	}
 	return defaultMissingYear(t, goLayout, ref)
 }
@@ -180,12 +203,18 @@ func defaultMissingDate(t time.Time, netLayout, goLayout string, ref time.Time) 
 // token, mirroring .NET ParseExact's behavior (an absent year defaults to the
 // current year rather than year 0). Go's time.Parse defaults a missing year to
 // year 0, so we correct it explicitly.
-func defaultMissingYear(t time.Time, goLayout string, ref time.Time) time.Time {
+//
+// Go accepts Feb 29 in the parse (year 0 is a leap year) and time.Date would
+// then normalize Feb 29 of a non-leap ref year to Mar 1. .NET's ParseExact
+// validates the day against the defaulted year and throws instead, so the
+// boolean is false when the rebuilt month/day differ from the parsed ones.
+func defaultMissingYear(t time.Time, goLayout string, ref time.Time) (time.Time, bool) {
 	if strings.Contains(goLayout, "2006") || strings.Contains(goLayout, "06") {
-		return t
+		return t, true
 	}
-	return time.Date(ref.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(),
+	d := time.Date(ref.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(),
 		t.Second(), t.Nanosecond(), t.Location())
+	return d, d.Month() == t.Month() && d.Day() == t.Day()
 }
 
 // normalizeSpace trims the ends AND collapses internal whitespace runs (including
