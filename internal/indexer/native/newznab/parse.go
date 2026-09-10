@@ -62,7 +62,7 @@ func (d *driver) parseReleases(body []byte, catMap *mapper.CategoryMap) ([]*norm
 	}
 	releases := make([]*normalizer.Release, 0, len(feed.Channel.Items))
 	for i := range feed.Channel.Items {
-		if rel := toRelease(&feed.Channel.Items[i], catMap); rel != nil {
+		if rel := d.toRelease(&feed.Channel.Items[i], catMap); rel != nil {
 			releases = append(releases, rel)
 		}
 	}
@@ -76,7 +76,7 @@ func (d *driver) parseReleases(body []byte, catMap *mapper.CategoryMap) ([]*norm
 // omits them for a usenet feed. The enclosure url is stored as Release.Link so the /dl grab
 // proxy can hand it to Grab — it is the apikey-bearing secret link and never reaches the
 // feed bare.
-func toRelease(it *item, catMap *mapper.CategoryMap) *normalizer.Release {
+func (d *driver) toRelease(it *item, catMap *mapper.CategoryMap) *normalizer.Release {
 	nzbURL := it.nzbURL()
 	if nzbURL == "" {
 		return nil
@@ -105,7 +105,7 @@ func toRelease(it *item, catMap *mapper.CategoryMap) *normalizer.Release {
 		Categories:  it.categories(catMap),
 		Grabs:       it.attrInt("grabs"),
 		Files:       it.attrInt("files"),
-		PublishDate: it.publishDate(),
+		PublishDate: d.publishDate(it.rawPublishDate()),
 		Poster:      strings.TrimSpace(it.attr("coverurl")),
 	}
 	it.fillIDs(rel)
@@ -180,14 +180,31 @@ func (it *item) categories(catMap *mapper.CategoryMap) []int {
 	return out
 }
 
-// publishDate returns the release date: the newznab:attr "usenetdate" overrides <pubDate>
-// when present (Prowlarr's GetPublishDate). The string form is stored as-is for the
-// serializer.
-func (it *item) publishDate() string {
+// rawPublishDate returns the release date as the feed wrote it: the newznab:attr
+// "usenetdate" overrides <pubDate> when present (Prowlarr's GetPublishDate).
+func (it *item) rawPublishDate() string {
 	if d := strings.TrimSpace(it.attr("usenetdate")); d != "" {
 		return d
 	}
 	return strings.TrimSpace(it.PubDate)
+}
+
+// publishDate normalizes the feed's RFC1123Z-style date to the canonical RFC3339 form
+// the torznab serializer and core/aggregate parse, via the shared native-driver helper.
+// An unparseable value yields "" and is logged at debug — the torznab sibling's posture
+// (autobrr/harbrr#196): the release is kept, and the serializer's now-fallback is not
+// left to silently mask a new feed date format.
+func (d *driver) publishDate(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	out, err := native.PublishDate(raw, d.Clock)
+	if err != nil {
+		d.Log.Debug().Str("driver", d.Def.ID).Str("value", raw).Err(err).
+			Msg("newznab: pubDate parse failed")
+		return ""
+	}
+	return out
 }
 
 // fillIDs maps the newznab:attr id values onto the release id fields. Prowlarr tries the
