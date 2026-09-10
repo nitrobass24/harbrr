@@ -116,7 +116,7 @@ func TestPresetDefinitionOverrides(t *testing.T) {
 		t.Errorf("fixture preset settings = %d fields, want 2 (apikey + keyInfo)", len(fixture.Settings))
 	}
 
-	at := defs["animetosho"]
+	at := defs["animetosho-torrent"]
 	if at.Type != "public" {
 		t.Errorf("animetosho type = %q, want public", at.Type)
 	}
@@ -214,7 +214,7 @@ func TestPresetCaps(t *testing.T) {
 	assertPassThrough(fixtureCaps, []int{5030, 5040, 5045, 5060, 2030, 2040, 2045, 2050}, "fixture preset")
 	assertModes(fixtureCaps, "fixture preset")
 
-	at, _ := presetByID("animetosho")
+	at, _ := presetByID("animetosho-torrent")
 	atCaps := capsFor(presetDefinition(at), nil)
 	assertPassThrough(atCaps, []int{2020, 5070}, "animetosho")
 	assertModes(atCaps, "animetosho")
@@ -239,7 +239,7 @@ func TestPresetCaps(t *testing.T) {
 // rejections are clear and secret-free.
 func TestNewValidatesAPIKeyPerPolicy(t *testing.T) {
 	t.Parallel()
-	at, _ := presetByID("animetosho")
+	at, _ := presetByID("animetosho-torrent")
 	tn, _ := presetByID("torrentnetwork")
 	cases := []struct {
 		name   string

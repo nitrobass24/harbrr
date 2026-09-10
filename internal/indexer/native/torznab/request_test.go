@@ -161,7 +161,7 @@ func TestBuildSearchURLBaseAndAPIPath(t *testing.T) {
 func TestBuildSearchURLPerPreset(t *testing.T) {
 	t.Parallel()
 
-	at, _ := presetByID("animetosho")
+	at, _ := presetByID("animetosho-torrent")
 	// A stray key is configured on purpose: keyNone must drop it before it can ride
 	// a request to the keyless server.
 	atDriver, err := New(native.Params{Def: presetDefinition(at), Cfg: map[string]string{"apikey": "stray-key"}})

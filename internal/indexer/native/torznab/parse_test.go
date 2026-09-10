@@ -122,7 +122,7 @@ func TestParseReleases_SingleDigitDayPubDate(t *testing.T) {
 // (the feed carries parallel newznab: attrs that must NOT be read).
 func TestParseReleases_AnimeToshoCapture(t *testing.T) {
 	t.Parallel()
-	at, _ := presetByID("animetosho")
+	at, _ := presetByID("animetosho-torrent")
 	d, err := New(native.Params{Def: presetDefinition(at), Clock: fixedClock})
 	if err != nil {
 		t.Fatalf("New: %v", err)
