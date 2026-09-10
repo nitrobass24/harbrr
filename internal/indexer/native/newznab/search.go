@@ -4,7 +4,6 @@ import (
 	"context"
 	stdhttp "net/http"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
@@ -23,10 +22,10 @@ const maxBodyBytes = 16 << 20 // 16 MiB
 // the URL is never logged bare.
 func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
 	// Warm the caps cache so result-side category mapping uses the remote category tree.
-	// A caps-fetch failure is non-fatal: capabilities() falls back to any prior cache, and
-	// categories() ultimately falls back to the placeholder standard table — search must
-	// still run when caps are momentarily unavailable.
-	catMap := d.activeCategoryMap(ctx)
+	// A caps-fetch failure is non-fatal: CategoryMap falls back to any prior cache, and
+	// ultimately to the placeholder standard table — search must still run when caps are
+	// momentarily unavailable.
+	catMap := d.caps.CategoryMap(ctx)
 
 	rawurl := d.buildSearchURL(q)
 	resp, err := d.getXML(ctx, rawurl)
@@ -34,16 +33,6 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 		return nil, err
 	}
 	return d.parseReleases(resp.Body, catMap)
-}
-
-// activeCategoryMap returns the category map of the live caps (lazily fetched), falling back
-// to the placeholder caps map when the remote caps are unavailable. It never returns nil so
-// the parser can always resolve result categories.
-func (d *driver) activeCategoryMap(ctx context.Context) *mapper.CategoryMap {
-	if caps, err := d.capabilities(ctx); err == nil && caps != nil {
-		return caps.CategoryMap
-	}
-	return d.Caps.CategoryMap
 }
 
 // getXML issues one of the driver's XML API GETs — t=search, t=caps and t=user are the

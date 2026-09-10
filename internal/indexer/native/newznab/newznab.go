@@ -24,14 +24,14 @@ import (
 
 // driver is one configured Newznab instance. It is built once per instance and cached by
 // the registry. There is no login round-trip: every request carries the apikey as a query
-// param, so the driver holds no session state. caps is the placeholder fallback built from
-// the definition (the full standard table); capsCache holds the live ?t=caps document, which
+// param, so the driver holds no session state. Base.Caps is the placeholder fallback built
+// from the definition (the full standard table); caps holds the live ?t=caps document, which
 // supersedes the placeholder once fetched.
 type driver struct {
 	native.Base
-	capsCache capsCache // live ?t=caps document, lazily fetched + TTL-cached
-	apikey    string
-	apiPath   string // normalised, no trailing slash (e.g. "/api")
+	caps    *native.NzbCaps // live ?t=caps document, lazily fetched + TTL-cached
+	apikey  string
+	apiPath string // normalised, no trailing slash (e.g. "/api")
 	// persist durably writes the fetched caps XML + fetched-at back to the encrypted
 	// store (nil when not wired), so the caps cache survives a restart. It also carries
 	// the ?t=user budget seed (#377).
@@ -74,7 +74,15 @@ func New(p native.Params) (native.Driver, error) {
 		persist: p.PersistSetting,
 		limits:  readBudgetLimits(p.Cfg),
 	}
-	d.capsCache.rehydrate(p.Cfg)
+	d.caps = native.NewNzbCaps(native.NzbCapsParams{
+		Base:      &d.Base,
+		Get:       d.getXML,
+		APIKey:    d.apikey,
+		APIPath:   d.apiPath,
+		QuotaCode: errorCodeDailyQuota,
+		Persist:   p.PersistSetting,
+	})
+	d.caps.Rehydrate(p.Cfg)
 	return d, nil
 }
 
@@ -84,11 +92,7 @@ func New(p native.Params) (native.Driver, error) {
 // no caps ever cached) falls back to the placeholder standard table rather than returning nil
 // — the indexer stays addable and searchable, and the next call retries the fetch.
 func (d *driver) Capabilities() *mapper.Capabilities {
-	built, err := d.capabilities(context.Background())
-	if err != nil {
-		return d.Caps
-	}
-	return built
+	return d.caps.Capabilities(context.Background())
 }
 
 // NeedsResolver is false: a Newznab .nzb URL is a direct, apikey-bearing HTTP link (no
@@ -123,7 +127,7 @@ func (d *driver) ConsumesSearchMode() bool { return true }
 // account's own ?t=user limits (#377) — silent on every failure, and never counted
 // against the test's own verdict: a server without t=user is not a broken indexer.
 func (d *driver) Test(ctx context.Context) error {
-	if _, err := d.fetchCaps(ctx); err != nil {
+	if _, err := d.caps.Fetch(ctx); err != nil {
 		return err
 	}
 	d.seedBudget(ctx)

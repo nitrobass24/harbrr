@@ -66,9 +66,9 @@ func genericSettingFields() []loader.SettingsField {
 // placeholderCaps is the STANDARD parent category set, used by the generic entry and
 // by presets that seed no categories (TN): every standard top-level category
 // (1000..8000) is mapped 1:1 to itself so the driver advertises the full table and
-// search-time category mapping resolves a known set — the newznab sibling's
-// placeholder posture (harbrr's torznab driver performs no live ?t=caps fetch, so
-// this is the standing advertised set, not a pre-fetch placeholder).
+// search-time category mapping resolves a known set. It is the cold-start and
+// fetch-failure fallback only — the driver's live ?t=caps document supersedes it once
+// fetched (native.NzbCaps), exactly as in the newznab sibling.
 func placeholderCaps() loader.Caps {
 	allowIMDB := true
 	mappings := make([]loader.CategoryMapping, 0)

@@ -6,14 +6,12 @@ import (
 	stdhttp "net/http"
 	"net/http/httptest"
 	"net/url"
-	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
@@ -80,113 +78,6 @@ func TestCapsTransportErrorRedactsApikey(t *testing.T) {
 	assertNoApikey(t, "caps transport error", got)
 }
 
-// TestCapsModesAndIMDB proves the parsed caps map onto the right search modes: <audio-search>
-// is stored under music-search, an unavailable mode (book-search available="no") is dropped,
-// and AllowTVSearchIMDB is derived from the tv-search supportedParams carrying imdbid.
-func TestCapsModesAndIMDB(t *testing.T) {
-	t.Parallel()
-	caps := buildGoldenCaps(t)
-
-	for _, mode := range []string{"search", "tv-search", "movie-search", "music-search"} {
-		if caps.Modes[mode] == nil {
-			t.Errorf("missing advertised mode %q", mode)
-		}
-	}
-	if caps.Modes["book-search"] != nil {
-		t.Error("book-search available=no must be dropped")
-	}
-	// <audio-search> -> music-search, params preserved verbatim.
-	if got := caps.Modes["music-search"]; !slices.Equal(got, []string{"q", "artist", "album"}) {
-		t.Errorf("music-search params = %v, want [q artist album] (from <audio-search>)", got)
-	}
-	if !caps.AllowTVSearchIMDB {
-		t.Error("AllowTVSearchIMDB = false, want true (tv-search supportedParams has imdbid)")
-	}
-}
-
-// TestCapsLimits proves the golden's <limits max="100" default="75"/> parses into
-// mapper.Capabilities.Limits, and that an absent <limits> element defaults to 100/100
-// (Prowlarr's IndexerCapabilities convention, #250).
-func TestCapsLimits(t *testing.T) {
-	t.Parallel()
-
-	build := func(t *testing.T, xml string) *mapper.Capabilities {
-		t.Helper()
-		root, err := parseCaps([]byte(xml), "")
-		if err != nil {
-			t.Fatalf("parseCaps: %v", err)
-		}
-		caps, err := buildFromCaps(root)
-		if err != nil {
-			t.Fatalf("buildFromCaps: %v", err)
-		}
-		return caps
-	}
-	tests := []struct {
-		name             string
-		caps             func(t *testing.T) *mapper.Capabilities
-		wantDef, wantMax int
-	}{
-		{name: "golden <limits max=100 default=75>", caps: buildGoldenCaps, wantDef: 75, wantMax: 100},
-		{
-			name: "no <limits> element defaults 100/100", wantDef: 100, wantMax: 100,
-			caps: func(t *testing.T) *mapper.Capabilities {
-				return build(t, `<?xml version="1.0"?><caps><searching/><categories/></caps>`)
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got := tt.caps(t)
-			if got.Limits.Default != tt.wantDef || got.Limits.Max != tt.wantMax {
-				t.Errorf("Limits = %+v, want {Default:%d Max:%d}", got.Limits, tt.wantDef, tt.wantMax)
-			}
-		})
-	}
-}
-
-// TestCapsCategoryResolution is the parity gate for the category map: a parent by name, a
-// subcat by combined name, a subcat that falls back to Parent/Other, a parent-only category,
-// and an unknown parent that falls back to Other — each keyed by its remote id.
-func TestCapsCategoryResolution(t *testing.T) {
-	t.Parallel()
-	m := buildGoldenCaps(t).CategoryMap
-
-	cases := []struct {
-		name      string
-		remoteID  string
-		wantNZBID int
-	}{
-		{"parent by name", "2000", 2000},               // Movies
-		{"subcat combined name", "2040", 2040},         // Movies/HD
-		{"subcat parent/other fallback", "2999", 2020}, // Bollywood -> Movies/Other
-		{"tv subcat by name", "5070", 5070},            // TV/Anime
-		{"parent-only audio", "3000", 3000},            // Audio
-		{"unknown parent -> Other", "7777", 8000},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			t.Parallel()
-			got := m.MapTrackerCatToNewznab(c.remoteID)
-			if !slices.Contains(got, c.wantNZBID) {
-				t.Errorf("remote id %q -> %v, want it to include %d", c.remoteID, got, c.wantNZBID)
-			}
-		})
-	}
-}
-
-// TestCapsDescRoundTrip proves the remote category name survives as the mapping desc (so a
-// custom 1:1 category is synthesised and desc-based lookups work).
-func TestCapsDescRoundTrip(t *testing.T) {
-	t.Parallel()
-	m := buildGoldenCaps(t).CategoryMap
-	// "Bollywood" collapsed onto Movies/Other but keeps its own desc + custom id.
-	if got := m.MapTrackerCatDescToNewznab("Bollywood"); len(got) == 0 {
-		t.Error("desc Bollywood -> no newznab ids, want the synthesised custom category")
-	}
-}
-
 // TestCapsFetchCachesAndPrimesAtTest proves Test() fetches caps once, caches them, and a
 // subsequent Capabilities()/Search() within the TTL serves from cache without a refetch.
 func TestCapsFetchCachesAndPrimesAtTest(t *testing.T) {
@@ -238,7 +129,7 @@ func TestCapsTTLRefresh(t *testing.T) {
 	if hits.Load() != 1 {
 		t.Fatalf("after first Capabilities, hits = %d, want 1", hits.Load())
 	}
-	now = now.Add(capsTTL - time.Hour) // still fresh
+	now = now.Add(native.CapsTTL - time.Hour) // still fresh
 	d.Capabilities()
 	if hits.Load() != 1 {
 		t.Errorf("within TTL hits = %d, want still 1", hits.Load())
@@ -330,17 +221,17 @@ func TestCapsPersistAndRehydrate(t *testing.T) {
 	if err := d1.Test(context.Background()); err != nil {
 		t.Fatalf("Test: %v", err)
 	}
-	if stored[settingCapsCache] == "" || stored[settingCapsFetchedAt] == "" {
+	if stored[native.SettingCapsCache] == "" || stored[native.SettingCapsFetchedAt] == "" {
 		t.Fatalf("persist did not store caps cache: %+v", stored)
 	}
 
 	// A new driver constructed from the persisted settings serves caps from the cache with
 	// NO further fetch.
 	cfg := map[string]string{
-		"apikey":             testAPIKey,
-		"apiPath":            "/api",
-		settingCapsCache:     stored[settingCapsCache],
-		settingCapsFetchedAt: stored[settingCapsFetchedAt],
+		"apikey":                    testAPIKey,
+		"apiPath":                   "/api",
+		native.SettingCapsCache:     stored[native.SettingCapsCache],
+		native.SettingCapsFetchedAt: stored[native.SettingCapsFetchedAt],
 	}
 	hits.Store(0)
 	d2, err := New(native.Params{
@@ -359,20 +250,6 @@ func TestCapsPersistAndRehydrate(t *testing.T) {
 	if hits.Load() != 0 {
 		t.Errorf("rehydrated driver fetched caps %d times, want 0 (served from persisted cache)", hits.Load())
 	}
-}
-
-// buildGoldenCaps parses + builds the caps golden into a *mapper.Capabilities.
-func buildGoldenCaps(t *testing.T) *mapper.Capabilities {
-	t.Helper()
-	root, err := parseCaps(readGolden(t, "caps.xml"), "")
-	if err != nil {
-		t.Fatalf("parseCaps: %v", err)
-	}
-	caps, err := buildFromCaps(root)
-	if err != nil {
-		t.Fatalf("buildFromCaps: %v", err)
-	}
-	return caps
 }
 
 // capsServerDriver wires a driver to an offline server that serves the caps golden (counting

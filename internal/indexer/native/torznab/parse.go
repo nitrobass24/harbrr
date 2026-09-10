@@ -171,8 +171,8 @@ func (it *item) files() int64 {
 // category resolves the release's single category id: the LAST numeric <category>
 // child element when any are present, else the FIRST torznab:attr "category" value —
 // Jackett's base ResultFromFeedItem rule exactly (`categories.Last(...)` vs
-// `attributes.First(...)`) — mapped through the driver's CategoryMap (the preset's
-// pass-through 1:1 mapping table).
+// `attributes.First(...)`) — mapped through the driver's active CategoryMap (the live
+// ?t=caps tree when fetched, else the placeholder pass-through table).
 func (it *item) category(catMap *mapper.CategoryMap) []int {
 	raw := it.lastNumericCategory()
 	if raw == "" {

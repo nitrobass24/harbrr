@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
@@ -32,9 +33,12 @@ import (
 // cached by the registry. There is no login round-trip: every request carries the
 // apikey (when the site has one) as a query param, so the driver holds no session
 // state. apiPath and needsResolver are resolved once at construction from the
-// per-site profile.
+// per-site profile. Base.Caps is the placeholder fallback built from the definition
+// (the standard parent table, or a preset's seeded ids); caps holds the live ?t=caps
+// document, which supersedes the placeholder once fetched.
 type driver struct {
 	native.Base
+	caps          *native.NzbCaps // live ?t=caps document, lazily fetched + TTL-cached
 	apikey        string
 	apiPath       string // normalised, no trailing slash (e.g. "/api/torznab")
 	needsResolver bool
@@ -88,7 +92,30 @@ func New(p native.Params) (native.Driver, error) {
 	if apiPath == "" {
 		apiPath = native.NormalizeAPIPath(p.Cfg["apiPath"], defaultAPIPath)
 	}
-	return &driver{Base: base, apikey: apikey, apiPath: apiPath, needsResolver: site.needsResolver}, nil
+	d := &driver{Base: base, apikey: apikey, apiPath: apiPath, needsResolver: site.needsResolver}
+	// The same caps provider the newznab sibling uses: Prowlarr's Torznab indexer
+	// subclasses its Newznab one and discovers its category tree through the same
+	// NewznabCapabilitiesProvider. QuotaCode stays 0 — no torznab-family site documents
+	// a request-quota error code.
+	d.caps = native.NewNzbCaps(native.NzbCapsParams{
+		Base:    &d.Base,
+		Get:     d.getAPI,
+		APIKey:  apikey,
+		APIPath: apiPath,
+		Persist: p.PersistSetting,
+	})
+	d.caps.Rehydrate(p.Cfg)
+	return d, nil
+}
+
+// Capabilities returns the live Torznab capabilities, lazily fetching and caching the
+// remote ?t=caps document on first need (and refreshing past the TTL). The
+// native.Driver contract is context-free and non-nil, so a cold-cache fetch failure
+// (the server is down, no caps ever cached) falls back to the placeholder table rather
+// than returning nil — the indexer stays addable and searchable, and the next call
+// retries the fetch.
+func (d *driver) Capabilities() *mapper.Capabilities {
+	return d.caps.Capabilities(context.Background())
 }
 
 // NeedsResolver is per-site: true when the site's download links carry URL
