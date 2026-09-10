@@ -184,3 +184,60 @@ func TestFetchLandingPastAntiBot_CleanPage(t *testing.T) {
 		t.Errorf("doer calls = %d, want 1 (no anti-bot, no solver call)", doer.count())
 	}
 }
+
+// staticSolver returns a fixed SolveResult, so a test can control the exact
+// cookie shape (Path included) that applySolveResult receives.
+type staticSolver struct{ res SolveResult }
+
+func (s staticSolver) Solve(context.Context, string) (SolveResult, error) { return s.res, nil }
+
+// A solve at a SUBDIRECTORY login URL (the torrentleech shape: login at
+// user/account/login/, test at /, search at torrents/browse/...) must seed the
+// clearance cookie host-wide. Without an explicit Path the production jar's
+// default-path rule would scope it to /user/account and every later request
+// outside that directory would be challenged again (#630). A cookie that
+// arrives with its own Path keeps it.
+func TestApplySolveResult_SubdirectoryLoginSeedsHostWide(t *testing.T) {
+	t.Parallel()
+	const loginURL = "https://www.example.test/user/account/login/"
+	doer := &seqDoer{bodies: []string{"Just a moment...", "<html><body>login form</body></html>"}}
+	e := New(
+		WithClient(doer),
+		WithBaseURL("https://www.example.test/"),
+		WithSolver(staticSolver{res: SolveResult{Cookies: []*stdhttp.Cookie{
+			{Name: "cf_clearance", Value: "token123"},           //nolint:gosec // request cookie; Set-Cookie security attrs are N/A
+			{Name: "scoped", Value: "x", Path: "/user/account"}, //nolint:gosec // request cookie; Set-Cookie security attrs are N/A
+		}}}),
+	)
+	if _, err := e.fetchLandingPastAntiBot(t.Context(), loginURL, nil); err != nil {
+		t.Fatalf("fetchLandingPastAntiBot: %v", err)
+	}
+
+	tests := []struct {
+		name string
+		url  string
+		want map[string]bool // cookie name -> expected presence
+	}{
+		{name: "login path", url: loginURL, want: map[string]bool{"cf_clearance": true, "scoped": true}},
+		{name: "test path root", url: "https://www.example.test/", want: map[string]bool{"cf_clearance": true, "scoped": false}},
+		{name: "search path", url: "https://www.example.test/torrents/browse/list/query/foo", want: map[string]bool{"cf_clearance": true, "scoped": false}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			u, err := url.Parse(tt.url)
+			if err != nil {
+				t.Fatalf("url.Parse: %v", err)
+			}
+			got := map[string]bool{}
+			for _, c := range e.jar.Cookies(u) {
+				got[c.Name] = true
+			}
+			for name, want := range tt.want {
+				if got[name] != want {
+					t.Errorf("cookie %q sent to %s = %v, want %v", name, tt.url, got[name], want)
+				}
+			}
+		})
+	}
+}

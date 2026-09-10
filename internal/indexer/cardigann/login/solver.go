@@ -149,9 +149,17 @@ func (e *Executor) solveHost(ctx context.Context, rawURL string) error {
 	return nil
 }
 
-// applySolveResult seeds a solver's cookies into the jar (scoped to the target
-// URL's host) and persists its User-Agent for the rest of the session, so every
-// later request can replay the UA the UA-bound cf_clearance was issued for.
+// applySolveResult seeds a solver's cookies into the jar for the target URL's
+// host and persists its User-Agent for the rest of the session, so every later
+// request can replay the UA the UA-bound cf_clearance was issued for.
+//
+// Solver cookies are host cookies (cf_clearance is bound to the host, not a
+// directory), so any cookie arriving without a Path is seeded host-wide with
+// Path "/" explicitly. Relying on the jar's RFC 6265 default-path rule would
+// instead scope it to the login URL's directory: a def whose login lives in a
+// subdirectory (e.g. user/account/login/) would then never send the cookie to
+// its test path (/) or its search path (torrents/browse/...), and every request
+// after a "successful" solve would be challenged again.
 func (e *Executor) applySolveResult(rawURL string, res SolveResult) {
 	if res.UserAgent != "" {
 		e.setSolverUA(res.UserAgent)
@@ -162,6 +170,11 @@ func (e *Executor) applySolveResult(rawURL string, res SolveResult) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return
+	}
+	for _, c := range res.Cookies {
+		if c.Path == "" {
+			c.Path = "/"
+		}
 	}
 	e.jar.SetCookies(u, res.Cookies)
 }
