@@ -9,6 +9,7 @@ import (
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // Reserved instance-setting keys for the request budget. The first three are read by
@@ -38,8 +39,8 @@ type budgetLimits struct {
 // readBudgetLimits snapshots the budget settings out of the instance config.
 func readBudgetLimits(cfg map[string]string) budgetLimits {
 	return budgetLimits{
-		query:   positiveIntOr(cfg[settingQueryLimit], 0),
-		grab:    positiveIntOr(cfg[settingGrabLimit], 0),
+		query:   native.PositiveInt(cfg[settingQueryLimit]),
+		grab:    native.PositiveInt(cfg[settingGrabLimit]),
 		unitSet: strings.TrimSpace(cfg[settingLimitsUnit]) != "",
 	}
 }
@@ -65,8 +66,8 @@ type userRoot struct {
 
 // queryCap / grabCap are the parsed daily caps, 0 when the attribute is absent, blank,
 // zero, negative, or not a number — every one of which means "nothing discovered".
-func (u *userRoot) queryCap() int { return positiveIntOr(u.APIRequests, 0) }
-func (u *userRoot) grabCap() int  { return positiveIntOr(u.DownloadRequests, 0) }
+func (u *userRoot) queryCap() int { return native.PositiveInt(u.APIRequests) }
+func (u *userRoot) grabCap() int  { return native.PositiveInt(u.DownloadRequests) }
 
 // seedBudget probes ?t=user and seeds the instance's request-budget caps from the
 // account's own advertised limits (autobrr/harbrr#377). It is OPPORTUNISTIC, not a
@@ -189,4 +190,11 @@ func parseUser(body []byte) (*userRoot, error) {
 		return nil, fmt.Errorf("newznab: user response root is <%s>, want <user>: %w", root.XMLName.Local, search.ErrParseError)
 	}
 	return &root, nil
+}
+
+// buildAPIURL builds {baseUrl}{apiPath}?[apikey=...&]t={fn} for a parameterless API
+// function (t=user here; the caps fetch builds its own through the same shared helper).
+// It is secret-bearing — redact before logging.
+func (d *driver) buildAPIURL(fn string) string {
+	return native.NzbAPIURL(d.BaseURL, d.apiPath, fn, d.apikey)
 }

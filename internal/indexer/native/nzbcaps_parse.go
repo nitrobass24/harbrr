@@ -1,4 +1,4 @@
-package newznab
+package native
 
 import (
 	"encoding/xml"
@@ -9,10 +9,9 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
-	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
-// capsRoot is the <caps> document a Newznab server returns for ?t=caps. The parts harbrr
+// capsRoot is the <caps> document a Newznab/Torznab server returns for ?t=caps. The parts harbrr
 // models are decoded: <limits max= default=> (the upstream's advertised request-count
 // limit, #250), <searching> mode children (each carries available + a supportedParams
 // list), and the <categories> tree (<category id name> with nested <subcat id name>).
@@ -103,30 +102,31 @@ type capsSubcat struct {
 	Name string `xml:"name,attr"`
 }
 
-// parseCaps decodes a ?t=caps response body. A Newznab error envelope (<error code=".."
-// description=".." />, returned even with HTTP 200) is detected first and classified exactly
-// like a search error (auth -> login.ErrLoginFailed, rate limit -> RateLimitedError); a
-// malformed body is an ErrParseError. The server-controlled description is value-scrubbed of
-// the configured apikey as defense in depth (see native.APIEnvelopeError).
-func parseCaps(body []byte, apikey string) (*capsRoot, error) {
+// parseNzbCaps decodes a ?t=caps response body for the named family. A Newznab/Torznab
+// error envelope (<error code=".." description=".." />, returned even with HTTP 200) is
+// detected first and classified exactly like a search error (auth -> login.ErrLoginFailed,
+// rate limit -> RateLimitedError); a malformed body is an ErrParseError. The
+// server-controlled description is value-scrubbed of the configured apikey as defense in
+// depth (see APIEnvelopeError).
+func parseNzbCaps(body []byte, family, apikey string, quotaCode int) (*capsRoot, error) {
 	if apiErr, ok := capsError(body); ok {
-		return nil, native.APIEnvelopeError("newznab", apiErr, apikey, errorCodeDailyQuota)
+		return nil, APIEnvelopeError(family, apiErr, apikey, quotaCode)
 	}
 	var root capsRoot
 	if err := xml.Unmarshal(body, &root); err != nil {
-		return nil, fmt.Errorf("newznab: decode caps response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
+		return nil, fmt.Errorf("%s: decode caps response: %s: %w", family, apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
 	}
 	if root.XMLName.Local != "caps" {
-		return nil, fmt.Errorf("newznab: caps response root is <%s>, want <caps>: %w", root.XMLName.Local, search.ErrParseError)
+		return nil, fmt.Errorf("%s: caps response root is <%s>, want <caps>: %w", family, root.XMLName.Local, search.ErrParseError)
 	}
 	return &root, nil
 }
 
-// capsError detects a Newznab <error> envelope in a caps response (which may be the document
-// root). It reuses the search-side error structs so caps and search classify errors
-// identically.
-func capsError(body []byte) (*native.APIError, bool) {
-	var feed native.Feed[item]
+// capsError detects a Newznab/Torznab <error> envelope in a caps response (which may be the
+// document root). It reuses the search-side error structs so caps and search classify errors
+// identically; the item type is irrelevant here (only the envelope is read).
+func capsError(body []byte) (*APIError, bool) {
+	var feed Feed[struct{}]
 	if err := xml.Unmarshal(body, &feed); err != nil {
 		return nil, false
 	}

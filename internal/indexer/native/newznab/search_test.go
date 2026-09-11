@@ -140,7 +140,7 @@ func TestTestMethod(t *testing.T) {
 	if err := d.Test(context.Background()); err != nil {
 		t.Fatalf("Test (clean) = %v, want nil", err)
 	}
-	if _, ok := d.capsCache.get(fixedClock()); !ok {
+	if d.caps.Cached() == nil {
 		t.Error("Test did not prime the caps cache")
 	}
 

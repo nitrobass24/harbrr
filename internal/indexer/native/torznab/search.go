@@ -23,6 +23,13 @@ import (
 // the apikey, so every error routes through apphttp.RedactURL/SchemeHost and is never
 // logged bare.
 func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
+	// Warm the caps cache first so BOTH directions use the remote category tree: a leaf
+	// id (5040) or a custom id (100xxx) is unresolvable through the placeholder parent
+	// table. A caps-fetch failure is non-fatal — CategoryMap falls back to any prior
+	// cache and ultimately to the placeholder, so search still runs when caps are
+	// momentarily unavailable.
+	catMap := d.caps.CategoryMap(ctx)
+
 	resp, err := d.get(ctx, d.buildSearchURL(q), false)
 	if err != nil {
 		return nil, err
@@ -30,7 +37,7 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 	if err := checkXMLBody(resp.Body); err != nil {
 		return nil, err
 	}
-	return d.parseReleases(resp.Body, d.Caps.CategoryMap)
+	return d.parseReleases(resp.Body, catMap)
 }
 
 // checkXMLBody guards Jackett's MoreThanTVAPI check
@@ -45,6 +52,13 @@ func checkXMLBody(body []byte) error {
 		return nil
 	}
 	return fmt.Errorf("torznab: non-XML response (unexpected content): %w", login.ErrLoginFailed)
+}
+
+// getAPI is the plain (non-download) GET the shared caps fetch calls, so a ?t=caps
+// request carries the family's own Accept header and status dialect exactly like a
+// search does.
+func (d *driver) getAPI(ctx context.Context, rawurl string) (*native.Response, error) {
+	return d.get(ctx, rawurl, false)
 }
 
 // get issues an authenticated GET (the apikey rides the URL's query, built by

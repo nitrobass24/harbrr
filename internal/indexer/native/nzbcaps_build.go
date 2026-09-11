@@ -1,4 +1,4 @@
-package newznab
+package native
 
 import (
 	"slices"
