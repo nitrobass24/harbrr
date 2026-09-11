@@ -230,3 +230,70 @@ func TestMovieTitle(t *testing.T) {
 		t.Errorf("categories = %v, want [%d]", got[0].Categories, catMovies)
 	}
 }
+
+// TestTorrentProperties pins Prowlarr's three post-split property transforms: an M2TS
+// torrent gains a "BR-DISK" marker, a Blu-ray-disc torrent (RAW / M2TS* / ISO*) has
+// H.265/H.264 rewritten to HEVC/AVC, and a resolution property gains " Remux" when a
+// file name names a remux.
+func TestTorrentProperties(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		property string
+		files    []file
+		want     []string
+	}{
+		{
+			name:     "plain encode is untouched",
+			property: "Blu-ray | h264 | 1080p | Softsubs (Grp)",
+			want:     []string{"Blu-ray", "h264", "1080p", "Softsubs (Grp)"},
+		},
+		{
+			name:     "M2TS adds BR-DISK and rewrites the codec",
+			property: "M2TS | h264 | 1080p | Softsubs (Grp)",
+			want:     []string{"M2TS", "AVC", "1080p", "Softsubs (Grp)", "BR-DISK"},
+		},
+		{
+			name:     "ISO disc rewrites H.265 to HEVC",
+			property: "ISO | H.265 | 2160p",
+			want:     []string{"ISO", "HEVC", "2160p"},
+		},
+		{
+			name:     "RAW disc rewrites the codec without a BR-DISK marker",
+			property: "RAW | h265 | 1080p",
+			want:     []string{"RAW", "HEVC", "1080p"},
+		},
+		{
+			name:     "codec is left alone when the torrent is not a disc",
+			property: "Blu-ray | H.265 | 1080p",
+			want:     []string{"Blu-ray", "H.265", "1080p"},
+		},
+		{
+			name:     "a Remux file name suffixes the resolution",
+			property: "Blu-ray | h264 | 1080p",
+			files:    []file{{FileName: "Foo Remux.mkv"}},
+			want:     []string{"Blu-ray", "h264", "1080p Remux"},
+		},
+		{
+			name:     "only remux-eligible resolutions get the suffix",
+			property: "Blu-ray | h264 | 720p",
+			files:    []file{{FileName: "Foo remux.mkv"}},
+			want:     []string{"Blu-ray", "h264", "720p"},
+		},
+		{
+			name:     "M2TS remux combines every transform",
+			property: "M2TS | h264 | 1080p | Softsubs (Grp)",
+			files:    []file{{FileName: "Foo Remux.m2ts"}},
+			want:     []string{"M2TS", "AVC", "1080p Remux", "Softsubs (Grp)", "BR-DISK"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := torrentProperties(&torrent{Property: tc.property, FileList: tc.files})
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("torrentProperties = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
