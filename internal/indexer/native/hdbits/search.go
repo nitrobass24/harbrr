@@ -117,15 +117,19 @@ func (d *driver) buildRequest(q search.Query) ([]byte, error) {
 }
 
 // setSearchCriteria fills the search/imdb/tvdb fields, reproducing Prowlarr's
-// HDBitsRequestGenerator: an imdb id sets imdb.id and a verbatim search term; a tvdb id
-// sets tvdb.id and either a daily date Search string (when season+episode parse as
+// HDBitsRequestGenerator: an imdb id sets imdb.id and a search term; a tvdb id sets
+// tvdb.id and either a daily date Search string (when season+episode parse as
 // "yyyy MM/dd") or tvdb.season+episode; a plain term is a movie search (sanitized
-// [\W]+->' ') when no episode/tvdb signal is present, else a verbatim search term.
+// [\W]+->' ') when no episode/tvdb signal is present, else the episode-scoped term.
+//
+// The imdb object carries no season/episode (only the tvdb object does), so an imdb
+// episode query keeps its scope through the search term — otherwise it would fetch the
+// whole series' newest 100 torrents and miss every older episode.
 func setSearchCriteria(tq *torrentQuery, q search.Query) {
 	keywords := strings.TrimSpace(q.Keywords)
 	if imdb := int(native.IMDBNumber(q.IMDBID)); imdb > 0 {
 		tq.Imdb = &imdbQuery{ID: imdb}
-		tq.Search = keywords
+		tq.Search = episodeScopedTerm(q, keywords)
 		return
 	}
 	if tvdb := native.PositiveInt(q.TVDBID); tvdb > 0 {
@@ -135,14 +139,27 @@ func setSearchCriteria(tq *torrentQuery, q search.Query) {
 	if keywords == "" {
 		return // bare browse
 	}
-	// A season/episode signal (without an id) is a TV search: Prowlarr's
-	// SanitizedTvSearchString appends the formatted episode string ("S01E02"/"S01"/daily) to
-	// the keyword, so the API constrains to the specific episode rather than the whole series.
-	if native.PositiveInt(q.Season) > 0 || strings.TrimSpace(q.Ep) != "" {
-		tq.Search = strings.TrimSpace(keywords + " " + q.EpisodeSearchString())
+	if hasEpisodeSignal(q) {
+		tq.Search = episodeScopedTerm(q, keywords)
 		return
 	}
 	tq.Search = sanitizeMovieTerm(keywords)
+}
+
+// hasEpisodeSignal reports whether the query names a season or an episode.
+func hasEpisodeSignal(q search.Query) bool {
+	return native.PositiveInt(q.Season) > 0 || strings.TrimSpace(q.Ep) != ""
+}
+
+// episodeScopedTerm is Prowlarr's SanitizedTvSearchString: the keyword plus the formatted
+// episode string ("S01E02"/"S01"/a daily date) when the query carries a season/episode,
+// so the API constrains to that episode rather than the whole series. Without an episode
+// signal it is the keyword verbatim.
+func episodeScopedTerm(q search.Query, keywords string) string {
+	if !hasEpisodeSignal(q) {
+		return keywords
+	}
+	return strings.TrimSpace(keywords + " " + q.EpisodeSearchString())
 }
 
 // dailyLayout is the ISO date string HDBits' API wants for a daily-episode search

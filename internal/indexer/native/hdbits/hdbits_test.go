@@ -77,7 +77,7 @@ func TestSettingsSecrets(t *testing.T) {
 }
 
 // TestSiteCaps pins the search modes and the integer-keyed category map: the always-
-// available basic q mode; movie q+imdbid; tv q+season+ep+imdbid; and the type_category ->
+// available basic q mode; movie q+imdbid; tv q+season+ep+imdbid+tvdbid; and the type_category ->
 // newznab mappings 1->Movies(2000), 2->TV(5000), 3->TV/Documentary(5080), 4->Audio(3000),
 // 5->TV/Sport(5060), 6->Audio(3000), 7->XXX(6000), 8->Other(8000).
 func TestSiteCaps(t *testing.T) {
@@ -90,7 +90,9 @@ func TestSiteCaps(t *testing.T) {
 	if !slices.Contains(caps.Modes["movie-search"], "imdbid") {
 		t.Errorf("movie-search should advertise imdbid: %v", caps.Modes["movie-search"])
 	}
-	for _, p := range []string{"q", "season", "ep", "imdbid"} {
+	// tvdbid is the id HDBits scopes an episode by; without it in the caps a client
+	// never sends one and every episode search falls back to an unscoped series dump.
+	for _, p := range []string{"q", "season", "ep", "imdbid", "tvdbid"} {
 		if !slices.Contains(caps.Modes["tv-search"], p) {
 			t.Errorf("tv-search should advertise %q: %v", p, caps.Modes["tv-search"])
 		}

@@ -83,6 +83,7 @@ func TestBuildRequest(t *testing.T) {
 		{"keyword already clean", search.Query{Keywords: "the wire"}, `{` + cred + `,"search":"the wire","limit":100}`},
 		{"imdbid", search.Query{IMDBID: "tt0133093", Keywords: "the matrix"}, `{` + cred + `,"search":"the matrix","imdb":{"id":133093},"limit":100}`},
 		{"imdbid bare numeric", search.Query{IMDBID: "133093"}, `{` + cred + `,"imdb":{"id":133093},"limit":100}`},
+		{"imdbid + season/episode keeps the episode scope", search.Query{IMDBID: "tt0903747", Keywords: "breaking bad", Season: "3", Ep: "7"}, `{` + cred + `,"search":"breaking bad S03E07","imdb":{"id":903747},"limit":100}`},
 		{"tvdb id+season+episode (no extra search)", search.Query{TVDBID: "81189", Keywords: "some.show", Season: "1", Ep: "2"}, `{` + cred + `,"tvdb":{"id":81189,"season":1,"episode":"2"},"limit":100}`},
 		{"tvdb season only", search.Query{TVDBID: "81189", Season: "3"}, `{` + cred + `,"tvdb":{"id":81189,"season":3},"limit":100}`},
 		{"tvdb daily date", search.Query{TVDBID: "81189", Season: "2024", Ep: "01/15"}, `{` + cred + `,"search":"2024-01-15","tvdb":{"id":81189},"limit":100}`},
