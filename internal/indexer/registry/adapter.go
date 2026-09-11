@@ -618,12 +618,17 @@ func isTransportError(err error) bool {
 // one an errors.As against golang.org/x/net/http2 would match — so the message
 // prefix is the only handle the stdlib gives us.
 func isHTTP2TransportError(err error) bool {
-	if err == nil {
-		return false
+	// Walk the unwrap chain and match each cause by PREFIX, so the marker has to be
+	// the cause itself (as the http2 transport emits it), not text that happens to
+	// appear inside some unrelated wrapper's message.
+	for cur := err; cur != nil; cur = errors.Unwrap(cur) {
+		msg := cur.Error()
+		if strings.HasPrefix(msg, "stream error:") ||
+			strings.HasPrefix(msg, "http2: timeout awaiting response headers") {
+			return true
+		}
 	}
-	msg := err.Error()
-	return strings.Contains(msg, "stream error:") ||
-		strings.Contains(msg, "http2: timeout awaiting response headers")
+	return false
 }
 
 // filterFreeleechOnly returns a NEW slice holding only freeleech releases

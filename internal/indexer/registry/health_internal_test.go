@@ -76,6 +76,16 @@ func TestClassifyHealth(t *testing.T) {
 			fmt.Errorf("cardigann: login: %w", errors.New("stream error: stream ID 1; INTERNAL_ERROR; received from peer")),
 			domain.HealthTransport, true,
 		},
+		{
+			"http2 marker after unrelated text is not transport",
+			errors.New("parse: definition mentions \"stream error:\" in a title"),
+			"", false,
+		},
+		{
+			"header-wait text inside a wrapper message only is not transport",
+			errors.New("saw http2: timeout awaiting response headers earlier, then succeeded"),
+			"", false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
