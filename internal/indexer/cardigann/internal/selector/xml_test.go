@@ -180,6 +180,54 @@ func TestParseXMLMixedCaseNames(t *testing.T) {
 
 // TestParseXMLInvalid proves malformed XML degrades cleanly (a loud error, no
 // panic).
+// TestParseXMLDeclaredEncoding proves a prolog declaring a non-UTF-8 encoding
+// parses: the body reaching ParseXML has already been transcoded to UTF-8 by
+// search.decodeBody, and Jackett hands AngleSharp the decoded string, which
+// ignores the declaration. Without a CharsetReader the stdlib decoder refuses
+// every spelling but utf-8/UTF-8 on the first token, failing the whole search
+// for a feed that says windows-1251 / ISO-8859-1 / UTF8 — 40+ vendored defs
+// declare a non-UTF-8 encoding:, and legacy RSS scripts echo it into the prolog.
+func TestParseXMLDeclaredEncoding(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		prolog string
+	}{
+		{name: "windows-1251", prolog: `<?xml version="1.0" encoding="windows-1251"?>`},
+		{name: "iso-8859-1", prolog: `<?xml version="1.0" encoding="ISO-8859-1"?>`},
+		{name: "unhyphenated utf8", prolog: `<?xml version="1.0" encoding="UTF8"?>`},
+		{name: "canonical utf-8", prolog: `<?xml version="1.0" encoding="UTF-8"?>`},
+		{name: "no declaration", prolog: ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			// Already-UTF-8 bytes (Cyrillic title), whatever the prolog claims.
+			feed := tc.prolog + `<rss><channel><item><title>Раздача 1080p</title></item></channel></rss>`
+			doc, err := New().ParseXML([]byte(feed))
+			if err != nil {
+				t.Fatalf("ParseXML: %v", err)
+			}
+			rows, err := doc.Rows(loader.RowsBlock{Selector: "rss > channel > item"})
+			if err != nil {
+				t.Fatalf("Rows: %v", err)
+			}
+			if len(rows) != 1 {
+				t.Fatalf("rows = %d, want 1", len(rows))
+			}
+			title, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "title"}, nil)
+			if err != nil || !found {
+				t.Fatalf("title: found=%v err=%v", found, err)
+			}
+			if title != "Раздача 1080p" {
+				t.Errorf("title = %q, want Раздача 1080p", title)
+			}
+		})
+	}
+}
+
 func TestParseXMLInvalid(t *testing.T) {
 	t.Parallel()
 	if _, err := New().ParseXML([]byte("<rss><channel><item></rss")); err == nil {
