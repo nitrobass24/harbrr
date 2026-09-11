@@ -99,6 +99,34 @@ func TestRedactError(t *testing.T) {
 			[]string{"%3A", "%2F", "%5B"}, // no percent-mangling of the prose/URL
 			[]string{"categories[]=2&perPage=100&sortField=created_at", "TLS handshake timeout"},
 		},
+		{
+			// autobrr/harbrr#657: a download client's base URL may carry a reverse
+			// proxy's basic-auth password, and go-qbittorrent formats its raw request
+			// URL into every transport error. There is no credential-shaped NAME for
+			// the key=value scrubs to anchor on, only the userinfo colon.
+			"userinfo password in an embedded URL",
+			errors.New(`download: qbittorrent: login: login error: error making post request: http://alice:Hunter2ProxyPw@qbit.local:8080/api/v2/auth/login: dial tcp: connection refused`),
+			[]string{"Hunter2ProxyPw"},
+			// The username stays: it is not a secret and it is what identifies the
+			// misconfigured client. So does the host and the transport reason.
+			[]string{"alice", "qbit.local:8080", "connection refused", "<redacted>"},
+		},
+		{
+			// A password containing colons must be scrubbed whole — the username char
+			// class stops group 1 at the FIRST colon.
+			"userinfo password containing colons",
+			errors.New(`https://bob:a:b:c@host.local/x failed`),
+			[]string{"a:b:c"},
+			[]string{"bob", "host.local", "<redacted>"},
+		},
+		{
+			// No userinfo to scrub: a bare host:port must survive untouched, or every
+			// ordinary transport error would lose its address.
+			"host:port without userinfo is untouched",
+			errors.New(`dial tcp 10.0.0.4:8080: i/o timeout`),
+			[]string{"<redacted>"},
+			[]string{"10.0.0.4:8080", "i/o timeout"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
