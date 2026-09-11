@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 )
@@ -59,7 +61,7 @@ type NzbCaps struct {
 	// stale cache queue behind it and recheck freshness after acquiring it, so a cold
 	// start or a TTL expiry with several concurrent searches issues one ?t=caps fetch
 	// and one persist pair instead of one per caller.
-	refreshMu sync.Mutex
+	refreshSF singleflight.Group
 	built     *mapper.Capabilities
 	fetchedAt time.Time
 }
@@ -119,20 +121,32 @@ func (c *NzbCaps) CategoryMap(ctx context.Context) *mapper.CategoryMap {
 }
 
 // refresh is the coalescing path Capabilities takes when the cache is cold or stale:
-// one caller owns the refresh, and the callers queued behind it recheck freshness on
-// acquiring ownership — the owner has just stored a document, so they serve it instead
-// of repeating the fetch and the persist writes. A failed refresh returns its error and
-// Capabilities falls back to the stale cache or the placeholder as before.
-//
-// Fetch itself stays an unconditional probe: it is the "test this indexer" request and
-// must actually reach the server.
+// overlapping callers share ONE in-flight fetch (and its result, success or failure)
+// through singleflight, so an outage costs one round trip per refresh window instead of
+// one per queued caller. A caller whose own context ends while waiting returns promptly
+// with that error and Capabilities serves the stale cache or the placeholder; the shared
+// fetch keeps running for the others. Fetch itself stays an unconditional probe: it is
+// the "test this indexer" request and must actually reach the server.
 func (c *NzbCaps) refresh(ctx context.Context) (*mapper.Capabilities, error) {
-	c.refreshMu.Lock()
-	defer c.refreshMu.Unlock()
-	if built, ok := c.fresh(c.p.Base.Clock()); ok {
+	ch := c.refreshSF.DoChan("caps", func() (any, error) {
+		if built, ok := c.fresh(c.p.Base.Clock()); ok {
+			return built, nil
+		}
+		return c.Fetch(ctx)
+	})
+	select {
+	case res := <-ch:
+		if res.Err != nil {
+			return nil, res.Err
+		}
+		built, ok := res.Val.(*mapper.Capabilities)
+		if !ok {
+			return nil, fmt.Errorf("%s: caps refresh returned %T", c.p.Base.Family, res.Val)
+		}
 		return built, nil
+	case <-ctx.Done():
+		return nil, fmt.Errorf("%s: caps refresh: %w", c.p.Base.Family, ctx.Err())
 	}
-	return c.Fetch(ctx)
 }
 
 // Fetch GETs the remote ?t=caps through the family's own GET (so a 401 is bad credentials

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
@@ -311,5 +312,97 @@ func TestNzbCapsCoalescesConcurrentRefresh(t *testing.T) {
 		if b == nil || len(b.CategoryMap.MapTrackerCatToNewznab("5040")) == 0 {
 			t.Errorf("caller %d got no live caps: %+v", i, b)
 		}
+	}
+}
+
+// TestNzbCapsSharesFailedRefresh proves queued callers share the owner's failed fetch
+// instead of retrying one after another behind it: two concurrent cold callers against a
+// server that answers 500 produce exactly one caps hit, and both fall back to the
+// placeholder.
+func TestNzbCapsSharesFailedRefresh(t *testing.T) {
+	t.Parallel()
+	var capsHits atomic.Int64
+	entered := make(chan struct{}, 2)
+	release := make(chan struct{})
+	srv := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, _ *stdhttp.Request) {
+		capsHits.Add(1)
+		<-release
+		w.WriteHeader(stdhttp.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+
+	base, err := NewBase("newznab", Params{Def: testDef(), Doer: srv.Client(), BaseURL: srv.URL})
+	if err != nil {
+		t.Fatalf("NewBase: %v", err)
+	}
+	caps := NewNzbCaps(NzbCapsParams{Base: &base, Get: func(ctx context.Context, rawurl string) (*Response, error) {
+		req, rerr := base.NewRequest(ctx, stdhttp.MethodGet, rawurl, nil)
+		if rerr != nil {
+			return nil, rerr
+		}
+		return base.Do(ctx, req, Classify{})
+	}, APIPath: "/api"})
+
+	var wg sync.WaitGroup
+	got := make([]*mapper.Capabilities, 2)
+	for i := range got {
+		wg.Go(func() {
+			entered <- struct{}{}
+			got[i] = caps.Capabilities(context.Background())
+		})
+	}
+	<-entered
+	<-entered
+	time.Sleep(50 * time.Millisecond) // let the second caller queue on the in-flight fetch
+	close(release)
+	wg.Wait()
+	if n := capsHits.Load(); n != 1 {
+		t.Fatalf("caps hits = %d, want 1 (a failed owner refresh must be shared, not retried per caller)", n)
+	}
+	for i, g := range got {
+		if g != base.Caps {
+			t.Fatalf("caller %d did not fall back to the placeholder caps", i)
+		}
+	}
+}
+
+// TestNzbCapsCanceledWaiterReturnsPromptly proves a caller whose context ends while a
+// refresh is in flight gets the placeholder immediately rather than waiting on the fetch.
+func TestNzbCapsCanceledWaiterReturnsPromptly(t *testing.T) {
+	t.Parallel()
+	release := make(chan struct{})
+	srv := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, _ *stdhttp.Request) {
+		<-release
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = io.WriteString(w, capsDoc)
+	}))
+	// Release the blocked handler BEFORE the server closes (cleanups run LIFO), or
+	// srv.Close waits forever on the in-flight request.
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(release) })
+
+	base, err := NewBase("newznab", Params{Def: testDef(), Doer: srv.Client(), BaseURL: srv.URL})
+	if err != nil {
+		t.Fatalf("NewBase: %v", err)
+	}
+	caps := NewNzbCaps(NzbCapsParams{Base: &base, Get: func(ctx context.Context, rawurl string) (*Response, error) {
+		req, rerr := base.NewRequest(ctx, stdhttp.MethodGet, rawurl, nil)
+		if rerr != nil {
+			return nil, rerr
+		}
+		return base.Do(ctx, req, Classify{})
+	}, APIPath: "/api"})
+
+	go caps.Capabilities(context.Background()) // owner, blocked on the server
+	time.Sleep(50 * time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	got := caps.Capabilities(ctx)
+	if got != base.Caps {
+		t.Fatal("canceled waiter did not fall back to the placeholder caps")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("canceled waiter took %s, want prompt return", elapsed)
 	}
 }
