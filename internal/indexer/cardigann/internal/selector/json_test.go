@@ -278,6 +278,15 @@ func TestRowsJSONMultiple(t *testing.T) {
 			wantTitles:    []string{"Baz", "Baz"},
 		},
 		{
+			// Document order, not sorted keys: Newtonsoft's Values<JObject>() yields
+			// properties as written, and that ordering is the release ordering (#681).
+			name:          "object children keep document property order",
+			rowsSelector:  "unorderedShape.movies",
+			multiple:      true,
+			wantQualities: []string{"2160p", "1080p", "720p"},
+			wantTitles:    []string{"Qux", "Qux", "Qux"},
+		},
+		{
 			name:          "without multiple the sub-object stays one row",
 			rowsSelector:  "arrayShape.movies",
 			multiple:      false,
