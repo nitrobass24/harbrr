@@ -66,13 +66,16 @@ tracker response). So the routing rule is behavioral, not a per-def edit:
 
 **RE2 is the default for its ReDoS guarantee; route to `regexp2` (`dlclark/regexp2`, .NET semantics)
 only when** the definition opts in, the tracker's `language:` is non-Latin, the pattern fails RE2
-compilation, or the pattern uses .NET-only constructs (backreferences, lookarounds, atomic/conditional
-groups, `(?<name>)`).
+compilation, the pattern uses .NET-only constructs (backreferences, lookarounds, atomic/conditional
+groups, `(?<name>)`), or the pattern uses a word boundary (`\b`/`\B`), which RE2 only has in ASCII form.
 
-The non-Latin trigger matters because RE2 silently differs from .NET on `\d`/`\w`/`\s` over non-Latin
-text (~190 defs are non-Latin-script). The differential suite runs **both engines on the same
-fixtures** and is the gate that catches any silent RE2 ≠ .NET case; when found, that pattern's def is
-added to the regexp2 routing. This is engine behavior — never silence a parity diff by editing a def.
+RE2's shorthand classes are ASCII-only while .NET's are Unicode-aware, and that matters for every
+language: an accented Latin title or a non-breaking space is enough to diverge. So before an RE2
+compile the adapter rewrites `\w`/`\d`/`\s` (and their negations) to .NET's exact Unicode class
+definitions; only the word-boundary case cannot be expressed in RE2 and is routed instead. The
+differential suite runs **both engines on the same fixtures** and is the gate that catches any silent
+RE2 ≠ .NET case; when found, the fix goes into the rewriter or the routing triggers. This is engine
+behavior — never silence a parity diff by editing a def.
 
 ## Invariants (do not violate)
 
@@ -86,7 +89,8 @@ added to the regexp2 routing. This is engine behavior — never silence a parity
    contract; the OpenAPI surface (`internal/web/swagger`) is harbrr's own management API. They evolve
    independently.
 4. **Regex routing is engine behavior, not a per-def edit.** RE2 by default (ReDoS-safe); regexp2 only
-   on the defined triggers (opt-in / non-Latin / compile-fail / .NET-only constructs).
+   on the defined triggers (opt-in / non-Latin / compile-fail / .NET-only constructs / word boundary);
+   the shorthand classes are rewritten to .NET's Unicode sets before any RE2 compile.
 5. **Storage is behind `dbinterface`.** SQLite only for now; Postgres is deliberately **demand-gated**
    — built only when a real multi-instance user needs it. Keep the interface **dialect-portable**: all
    repository SQL routes through the interface and its `Rebind` (`?`→`$N`) seam, no SQLite-specific SQL
