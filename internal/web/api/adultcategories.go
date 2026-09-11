@@ -63,9 +63,15 @@ func (s *AdultCategoriesStore) Set(ctx context.Context, hidden bool) error {
 	return nil
 }
 
-// LoadPersisted applies the stored value at startup. A missing or unusable row
-// leaves the default (false) in place, so a stale row can never wedge boot.
+// LoadPersisted applies the stored value — at startup, and again after a backup
+// restore has replaced the app_settings row under the running process
+// (autobrr/harbrr#650). A missing or unusable row leaves the default (false) in
+// place, so a stale row can never wedge boot. A nil store is the unwired setting
+// Hidden() already reports as "not hidden": there is nothing to seed.
 func (s *AdultCategoriesStore) LoadPersisted(ctx context.Context, log zerolog.Logger) {
+	if s == nil {
+		return
+	}
 	s.hidden.Store(hideAdultCategories.Read(ctx, s.db, log))
 }
 

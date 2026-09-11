@@ -355,6 +355,7 @@ func newServer(a *App) (*server.Server, error) {
 		Auth: a.auth, Registry: a.registry, Loader: loader.New(dropinDir(a.cfg)), Apps: a.apps, AppSync: a.appsync,
 		Announce: a.announce, Notify: a.notify, Proxy: a.proxy, Download: a.download, Solver: a.solver, Backup: a.backup, Sessions: a.sessions,
 		DLToken: a.keyring, URLConfig: urlCfg, Cache: a.searchCache, Logger: a.log, SetLogLevel: a.setLogLevel,
+		ReloadLogLevel:  a.applyPersistedLogLevel,
 		AdultCategories: a.adultCats,
 	}, api.Config{
 		AuthDisabled: a.cfg.Auth.AuthDisabled(), IPAllowlist: a.cfg.Auth.IPAllowlist, TrustedProxies: a.cfg.Auth.TrustedProxies,

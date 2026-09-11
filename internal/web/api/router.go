@@ -63,6 +63,14 @@ type Deps struct {
 	// the HTTP contract. Nil leaves PUT reporting an unavailable state; GET always
 	// answers from the process-global threshold.
 	SetLogLevel func(ctx context.Context, level string) error
+	// ReloadLogLevel re-applies the PERSISTED log level over the running process. The
+	// three other app_settings-backed dials (the rate default, the search-cache config,
+	// the hide-adult-categories flag) are re-seedable from collaborators the router
+	// already holds; the log level is process-global state only the composition root
+	// can reach, so a backup restore that replaces app_settings needs this hook to
+	// avoid leaving runtime and DB disagreeing until the next restart
+	// (autobrr/harbrr#650). Nil leaves the running level alone.
+	ReloadLogLevel func(ctx context.Context)
 	// AdultCategories is the global hide-adult-categories dial (autobrr/harbrr#383).
 	// Nil reads as "not hidden", i.e. the pre-setting behaviour.
 	AdultCategories *AdultCategoriesStore
