@@ -1,6 +1,8 @@
 // Package encode provides URL value encoders that match the .NET
 // System.Net.WebUtility.UrlEncode semantics Jackett uses when building tracker
-// requests, so harbrr produces byte-identical request URLs.
+// requests, so harbrr produces byte-identical request URLs. It also owns the
+// response-side counterpart, DecodeBody (decode.go): the one charset transcoder
+// the login and search stages share.
 //
 // Jackett encodes both halves of a search request with WebUtility.UrlEncode:
 //   - GET query values go through StringUtil.GetQueryString -> WebUtilityHelpers.UrlEncode

@@ -8,6 +8,8 @@ import (
 	"golang.org/x/text/encoding/htmlindex"
 	"golang.org/x/text/encoding/ianaindex"
 	"golang.org/x/text/transform"
+
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/encode"
 )
 
 // ResolveEncoding maps a definition's declared `encoding:` name to the
@@ -44,25 +46,15 @@ func ResolveEncoding(name string) (encoding.Encoding, error) {
 }
 
 // decodeBody transcodes a response body from the definition's declared charset
-// to UTF-8, mirroring Jackett WebResult.ContentString (which decodes ContentBytes
-// with the indexer Encoding — the def encoding taking first priority over the
-// Content-Type charset). enc is nil for UTF-8/no-encoding defs, where the body is
-// returned unchanged (a zero-cost no-op). The transcoded bytes then feed the same
-// goquery/JSON/XML parsers, so Cyrillic (and other non-Latin) titles land as
-// correct UTF-8 instead of U+FFFD.
+// to UTF-8. The transcoded bytes then feed the same goquery/JSON/XML parsers, so
+// Cyrillic (and other non-Latin) titles land as correct UTF-8 instead of U+FFFD.
 //
-// A single-byte charmap decoder never errors (every byte maps to a rune, invalid
-// code points to U+FFFD), and every corpus encoding is single-byte; on the
-// theoretical error path the best-effort output is returned rather than failing
-// the whole search, matching .NET's GetString, which does not throw here.
+// The implementation lives in encode.DecodeBody — the ONE transcoder shared with
+// the login stage, which decodes its own responses so non-ASCII login.error
+// selectors match (autobrr/harbrr#633). This thin alias keeps the search call
+// sites unchanged.
 func decodeBody(enc encoding.Encoding, body []byte) []byte {
-	if enc == nil {
-		return body
-	}
-	// The error is deliberately dropped: on the theoretical error path the
-	// best-effort output is exactly what we want to return anyway.
-	out, _, _ := transform.Bytes(enc.NewDecoder(), body)
-	return out
+	return encode.DecodeBody(enc, body)
 }
 
 // encodeValue transcodes a request query/body value from UTF-8 to the

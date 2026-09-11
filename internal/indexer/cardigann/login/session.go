@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"golang.org/x/net/publicsuffix"
+	"golang.org/x/text/encoding"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/httpx"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/selector"
@@ -104,6 +105,14 @@ type Executor struct {
 	// is unexported, so setSolverUA/solverUA are the only access path — the
 	// compiler enforces going through the lock.
 	solverUserAgent string
+	// encoding is the definition's declared charset transcoder (nil for
+	// UTF-8/no-encoding defs, the common case). Every response body is decoded
+	// through it as it enters the executor (see send), so error/test selectors,
+	// form parsing, and anti-bot detection all read the same UTF-8 text Jackett's
+	// checkForError sees on WebResult.ContentString. Without it a windows-1251
+	// def's Cyrillic login.error selector can never match and a bad-credentials
+	// page reports as a successful login (autobrr/harbrr#633).
+	encoding encoding.Encoding
 	// mu guards solverUserAgent. A dedicated RWMutex keeps the fix local to the
 	// executor instead of relying on the engine's loginMu (the search read path does
 	// not hold it).
@@ -132,6 +141,11 @@ func WithConfig(c map[string]string) Option { return func(e *Executor) { e.confi
 // WithSolver sets the anti-bot solver consulted on a login interstitial. Unset
 // leaves the default NoopSolver (fail loud).
 func WithSolver(s Solver) Option { return func(e *Executor) { e.configuredSolver = s } }
+
+// WithEncoding sets the definition's declared charset transcoder (the engine
+// passes the same search.ResolveEncoding result the search stage gets). Nil —
+// the default — is pass-through, the UTF-8 case.
+func WithEncoding(enc encoding.Encoding) Option { return func(e *Executor) { e.encoding = enc } }
 
 // New constructs an Executor. It installs a publicsuffix-backed cookie jar and a
 // selector engine bound to the template context unless overridden. Production

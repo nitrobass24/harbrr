@@ -24,7 +24,9 @@ func TestDifferential_RE2SafePatternsAgree(t *testing.T) {
 		repl    string
 	}{
 		{"digits capture", `(\d+)`, "abc123def", "[$1]"},
-		{"word replace", `\bfoo\b`, "foo foobar foo", "X"},
+		// \bfoo\b lives in TestDifferential_WordBoundaryRoutesToRegexp2 instead:
+		// RE2 has no Unicode word boundary, so \b now routes to regexp2 by design
+		// (autobrr/harbrr#636) and cannot appear in an RE2-routed row.
 		{"alternation", `cat|dog`, "a dog and a cat", "pet"},
 		{"anchored", `^id-(\w+)$`, "id-abc123", "$1"},
 		{"two groups dollar-letter", `(\d+)-(\d+)`, "12-34", "$2x$1"},

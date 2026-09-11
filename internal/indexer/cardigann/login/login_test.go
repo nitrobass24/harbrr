@@ -23,19 +23,20 @@ func scalar(v string) loader.Scalar { return loader.Scalar{Value: v, Set: true} 
 // shares that SAME jar (the engine's buildLogin wiring). Cookies therefore flow
 // via the one client jar — applied on every hop, recorded from every hop —
 // exactly as on the live path; the executor itself never touches the wire.
-func newExec(t *testing.T, rt *replayTransport, cfg map[string]string) *Executor {
+func newExec(t *testing.T, rt *replayTransport, cfg map[string]string, extra ...Option) *Executor {
 	t.Helper()
 	jar, err := cookiejar.New(&cookiejar.Options{PublicSuffixList: publicsuffix.List})
 	if err != nil {
 		t.Fatalf("cookiejar.New: %v", err)
 	}
 	client := &stdhttp.Client{Transport: rt, Jar: jar, CheckRedirect: apphttp.RedirectPolicy}
-	return New(
+	opts := append([]Option{
 		WithClient(client),
 		WithJar(jar),
 		WithBaseURL(baseURL),
 		WithConfig(cfg),
-	)
+	}, extra...)
+	return New(opts...)
 }
 
 func TestLoginForm(t *testing.T) {

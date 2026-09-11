@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/encode"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/httpx"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/template"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
@@ -267,7 +268,12 @@ func (e *Executor) send(ctx context.Context, method, rawURL string, bodyReader i
 	if err != nil {
 		return nil, resp.StatusCode, "", fmt.Errorf("reading response from %s: %w", apphttp.SchemeHost(rawURL), err)
 	}
-	return data, resp.StatusCode, httpx.ResolveLocation(resp, rawURL), nil
+	// Transcode ONCE, here, at the single point a body enters the executor:
+	// every downstream reader (error selectors, login.test selectors, the form
+	// parser's CSRF inputs, anti-bot detection) then sees the same UTF-8 text
+	// Jackett evaluates on WebResult.ContentString. Pass-through for a UTF-8 def
+	// (nil encoding), which is 514 of 554 vendored defs.
+	return encode.DecodeBody(e.encoding, data), resp.StatusCode, httpx.ResolveLocation(resp, rawURL), nil
 }
 
 // decompressBody wraps the response body when it carries a Content-Encoding that
