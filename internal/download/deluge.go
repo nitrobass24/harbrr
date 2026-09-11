@@ -132,11 +132,18 @@ func newDeluge(c domain.DownloadClient, secret string, _ *http.Client) (Driver, 
 }
 
 // Test connects and reads the daemon version, proving the host + credentials work.
+//
+// Close is deferred BEFORE the Connect error check (autobrr/harbrr#659): go-deluge's
+// Connect dials the TLS socket and stores it on the client, THEN logs in, and returns
+// a login failure without closing what it dialed. Close is nil-safe on the vendor
+// client, so deferring it first is correct whether or not the dial got that far — and
+// without it every wrong-password test leaks an open connection, on both ends, until
+// the netFD finalizer runs.
 func (d *delugeDriver) Test(ctx context.Context) error {
+	defer d.cli.Close()
 	if err := d.cli.Connect(ctx); err != nil {
 		return fmt.Errorf("download: deluge: connect: %w", err)
 	}
-	defer d.cli.Close()
 	if _, err := d.cli.DaemonVersion(ctx); err != nil {
 		return fmt.Errorf("download: deluge: daemon version: %w", err)
 	}
@@ -151,10 +158,11 @@ func (d *delugeDriver) Add(ctx context.Context, p Payload, opts AddOptions) erro
 	if p.Protocol != ProtocolTorrent {
 		return fmt.Errorf("download: deluge: %w: %s", ErrUnsupportedProtocol, p.Protocol)
 	}
+	// Deferred before the error check, for the reason Test documents.
+	defer d.cli.Close()
 	if err := d.cli.Connect(ctx); err != nil {
 		return fmt.Errorf("download: deluge: connect: %w", err)
 	}
-	defer d.cli.Close()
 
 	hash, err := d.addTorrent(ctx, p, d.addOptions(opts))
 	if err != nil {
