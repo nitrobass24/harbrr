@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/text/encoding"
+
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/dateparse"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/selector"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
@@ -149,7 +151,7 @@ func NewEngine(def *loader.Definition, opts ...Option) (*Engine, error) {
 		caps:           caps,
 		deps:           deps,
 		selector:       selector.New(),
-		login:          buildLogin(o),
+		login:          buildLogin(o, deps.Encoding),
 		doer:           o.doer,
 		baseURL:        o.baseURL,
 		gateDegenerate: o.config[degenerateGateSetting] == degenerateGateAuto,
@@ -246,8 +248,10 @@ func buildDeps(def *loader.Definition, caps *mapper.Capabilities, o options) (se
 	}, nil
 }
 
-// buildLogin constructs the login executor with the HTTP seam, base URL, and
-// config. It owns its own selector engine (login.New), separate from
+// buildLogin constructs the login executor with the HTTP seam, base URL,
+// config, and the definition's charset transcoder (the SAME one Deps.Encoding
+// carries, so login and search decode tracker bodies identically — see
+// login.WithEncoding). It owns its own selector engine (login.New), separate from
 // Engine.selector used by the search stage; login.Executor evaluates its
 // selector templates against its own config via Executor.eval. When the Doer
 // owns a cookie jar (production and the parity harness both drive an
@@ -255,12 +259,13 @@ func buildDeps(def *loader.Definition, caps *mapper.Capabilities, o options) (se
 // seeding and the transport's cookie handling share a single jar — a second jar
 // would put duplicate (and, after a login-time session rotation, stale-first)
 // Cookie pairs on the wire.
-func buildLogin(o options) *login.Executor {
+func buildLogin(o options, enc encoding.Encoding) *login.Executor {
 	opts := []login.Option{
 		login.WithClient(o.doer),
 		login.WithBaseURL(o.baseURL),
 		login.WithConfig(o.config),
 		login.WithSolver(o.solver),
+		login.WithEncoding(enc),
 	}
 	if jar := doerJar(o.doer); jar != nil {
 		opts = append(opts, login.WithJar(jar))
