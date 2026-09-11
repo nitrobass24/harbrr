@@ -134,6 +134,11 @@ func TestCleanTitle(t *testing.T) {
 		{"[REQ] Wanted Movie", "Wanted Movie"},
 		{"[REQUESTED] A Show", "A Show"},
 		{"- Dashed Title :", "Dashed Title"},
+		// Prowlarr's control-char class runs over UTF-16 code units, so it strips every
+		// character above U+00FF, astral ones (surrogate pairs) included.
+		{"Movie ł 2024", "Movie  2024"},
+		{"Some Movie 2024 🎬", "Some Movie 2024"},
+		{"Movie 𝔸 2024", "Movie  2024"},
 	}
 	for _, tc := range cases {
 		if got := cleanTitle(tc.in); got != tc.want {
