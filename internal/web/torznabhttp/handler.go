@@ -232,9 +232,11 @@ func (h *handler) serve(w http.ResponseWriter, r *http.Request) {
 //     "Indexer is not supported" document an unknown per-indexer slug has always
 //     rendered (Jackett parity), unlogged.
 //   - The member set could not be READ (the instance/profile store failed) — harbrr's
-//     problem, not the consumer's config: error 900, matching the 500→900 mapping the
-//     /dl proxy already uses for internal failures. Telling an *arr "your config is
-//     wrong" over a transient store failure sends its operator to the wrong ladder.
+//     problem, not the consumer's config: HTTP 500 with error 900, the same mapping
+//     writeError documents and writeInternalError/the /dl proxy already use for
+//     internal failures, so a monitor keyed on status still sees the retry signal.
+//     Telling an *arr "your config is wrong" over a transient store failure sends its
+//     operator to the wrong ladder.
 //
 // Either way it is a loud error document, never the empty-200 feed a nil member set
 // would otherwise serve — a whole-list failure must be distinguishable from "you have
@@ -246,7 +248,7 @@ func (h *handler) writeResolveError(w http.ResponseWriter, slug string, err erro
 		return
 	}
 	grab.LogInternalError(h.log, "resolve", slug, err)
-	writeError(w, http.StatusOK, codeUnknownError, "Internal server error")
+	writeError(w, http.StatusInternalServerError, codeUnknownError, "Internal server error")
 }
 
 // isAggregateSlug reports whether a feed slug names a member SET rather than one
