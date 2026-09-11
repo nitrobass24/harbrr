@@ -95,6 +95,10 @@ type Deps struct {
 	// UTF-8 before parsing and request query/body values are codepage-encoded,
 	// reproducing Jackett's Encoding.GetEncoding(Definition.Encoding).
 	Encoding encoding.Encoding
+	// Language is the definition's `language:` code. It routes the regex engine
+	// for TEMPLATE patterns ({{ re_replace }}) the same way the filter registry's
+	// own language routes field-filter patterns (autobrr/harbrr#636).
+	Language string
 	// FoldAndMatchPunctuation makes the andmatch row filter punctuation-tolerant
 	// (andMatchFold): an *arr-stripped term still matches an unstripped tracker
 	// title. Off by default — the default path is byte-identical to Jackett — and

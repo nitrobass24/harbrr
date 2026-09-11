@@ -94,6 +94,10 @@ func regexp2Reason(pat string, opts RouteOptions) string {
 		return "dotnet-construct"
 	case hasDotNetUnicodeBlock(pat):
 		return "dotnet-unicode-block"
+	case hasWordBoundary(pat):
+		return "word-boundary"
+	case !canRewriteShorthand(pat):
+		return "unrewritable-shorthand"
 	default:
 		return "re2-compile-failure"
 	}

@@ -242,6 +242,7 @@ func buildDeps(def *loader.Definition, caps *mapper.Capabilities, o options) (se
 		BaseURL:    o.baseURL,
 		Clock:      o.clock,
 		Encoding:   enc,
+		Language:   def.Language,
 		// canonicalCheckbox is the strict read: only an explicit truthy value
 		// ("true"/"1"/"on"/"yes") opts in, so a persisted literal "false" is off.
 		FoldAndMatchPunctuation: canonicalCheckbox(o.config[foldPunctuationSetting]) == configTrue,

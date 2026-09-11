@@ -179,8 +179,11 @@ func expandFuncs(text string, ctx *Context) (string, *substitutions, error) {
 // pattern through regexadapter (RE2 by default; regexp2 on .NET-only constructs
 // or RE2 compile-failure), then Replace(resolve(.Var), repl). Mirrors Jackett's
 // new Regex(pat).Replace(input, repl) with arg order variable, pattern,
-// replacement. The template path carries no def language here; per-def language
-// routing is applied at the engine call site, so RouteOptions is zero.
+// replacement. Routing uses the context's RegexRoute — the definition's language
+// and opt-in, seeded by the caller through template.Params — so a template
+// pattern is routed exactly like a field-filter pattern (autobrr/harbrr#636; the
+// call site previously passed a zero RouteOptions, and nothing applied the
+// language). A context built without one routes on the pattern alone.
 func expandReReplace(text string, ctx *Context, subs *substitutions) (string, error) {
 	var firstErr error
 	noteErr := func(err error) {
@@ -190,7 +193,7 @@ func expandReReplace(text string, ctx *Context, subs *substitutions) (string, er
 	}
 	out := replaceAllSubmatch(reReplaceRe, text, func(groups []string) string {
 		varPath, pattern, repl := groups[1], groups[2], groups[3]
-		re, err := regexadapter.Compile(pattern, regexadapter.RouteOptions{})
+		re, err := regexadapter.Compile(pattern, ctx.regexRoute)
 		if err != nil {
 			noteErr(fmt.Errorf("re_replace: %w", err))
 			return ""

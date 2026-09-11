@@ -105,7 +105,14 @@ func Compile(pattern string, opts RouteOptions) (*Regexp, error) {
 		return r, nil
 	}
 
-	re, err := regexp.Compile(normalized)
+	// Rewrite .NET's Unicode shorthand classes (\w \d \s and their negations) into
+	// the explicit property classes RE2 understands, so an accented keyword or an
+	// &nbsp;-bearing cell behaves as it does in Jackett (see classes.go).
+	// wantRegexp2 has already routed away the shapes that cannot be rewritten, so
+	// the unrewritable case — which returns the pattern unchanged — never lands here.
+	rewritten, _ := rewriteShorthandClasses(normalized)
+
+	re, err := regexp.Compile(rewritten)
 	if err == nil {
 		r := &Regexp{engine: EngineRE2, re: re}
 		compileCache.Set(key, r, ttlcache.DefaultTTL)
@@ -128,7 +135,8 @@ func Compile(pattern string, opts RouteOptions) (*Regexp, error) {
 }
 
 // wantRegexp2 reports the (a) opt-in, (b) non-Latin, (d) .NET-construct
-// triggers. The (c) RE2-compile-failure trigger is handled as a fallback in
+// triggers, plus the two class-semantics triggers (\b / \B, and a shorthand
+// class RE2 cannot express — see classes.go). The (c) RE2-compile-failure trigger is handled as a fallback in
 // Compile, not here, because it can only be known by attempting compilation.
 // A .NET Unicode block name is a .NET-construct trigger too — both engines
 // accept the normalized script name, but the block spelling signals .NET intent
@@ -137,7 +145,12 @@ func wantRegexp2(pattern string, opts RouteOptions) bool {
 	return opts.OptIn ||
 		isNonLatinScript(opts.Language) ||
 		hasDotNetConstructs(pattern) ||
-		hasDotNetUnicodeBlock(pattern)
+		hasDotNetUnicodeBlock(pattern) ||
+		// RE2 has no Unicode word boundary (and rejects the backspace \b inside a
+		// character class), so \b / \B can only be honoured by regexp2.
+		hasWordBoundary(pattern) ||
+		// \W / \S inside a character class have no RE2 spelling — see classes.go.
+		!canRewriteShorthand(pattern)
 }
 
 // compileRegexp2 compiles under regexp2's default (.NET) semantics —

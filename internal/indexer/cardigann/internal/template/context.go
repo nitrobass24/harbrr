@@ -4,6 +4,8 @@ import (
 	"maps"
 	"strconv"
 	"time"
+
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/regexadapter"
 )
 
 // Context is the variable namespace a Cardigann template string is evaluated
@@ -93,6 +95,15 @@ type Context struct {
 	// True = "True" and False = "".
 	True  string
 	False string
+
+	// regexRoute carries the definition-level regex routing facts (language,
+	// opt-in) that {{ re_replace }} compiles its pattern with, so a template
+	// pattern is routed exactly like a field-filter pattern is (see
+	// expandReReplace; autobrr/harbrr#636). It is deliberately UNEXPORTED: every
+	// exported field of Context is a template VARIABLE name, and this is engine
+	// state, not a variable a definition may read. The zero value is the previous
+	// behaviour (Latin, no opt-in).
+	regexRoute regexadapter.RouteOptions
 }
 
 // DownloadURI mirrors the .NET System.Uri members that download/before
@@ -170,6 +181,12 @@ type Params struct {
 	// DownloadURI seeds .DownloadUri for download/before templates. Nil for
 	// every other template (see Context.DownloadUri's precondition).
 	DownloadURI *DownloadURI
+
+	// RegexRoute seeds the regex routing options {{ re_replace }} compiles with:
+	// the definition's `language:` code and the engine's opt-in flag, the same
+	// inputs the field-filter path passes. The zero value routes on the pattern
+	// alone, which is what a caller with no definition in hand wants.
+	RegexRoute regexadapter.RouteOptions
 }
 
 // NewSeeded returns a ready Context built from p: .Config.sitelink defaulted
@@ -194,6 +211,7 @@ func NewSeeded(p Params) *Context {
 		ctx.Today = today(p.Clock)
 	}
 	ctx.DownloadUri = p.DownloadURI
+	ctx.regexRoute = p.RegexRoute
 	return ctx
 }
 
