@@ -45,6 +45,14 @@ func ServeGrab(w http.ResponseWriter, r *http.Request, idx core.Indexer, dlToken
 		writeGrabError(w, log, idx.Info().ID, p, err, errw)
 		return
 	}
+	// Neither response may be cached (autobrr/harbrr#587). A .torrent body embeds the
+	// tracker's announce URL, which on a private tracker carries the passkey, so a
+	// heuristically-cached response writes a passkey-bearing file to the browser's
+	// on-disk cache; a cached response can also be replayed without the request ever
+	// reaching harbrr, skipping the apikey/session check this route relies on. The same
+	// applies to the magnet redirect: the Location header IS the resolved magnet, with
+	// whatever the announce list carries.
+	w.Header().Set("Cache-Control", "no-store")
 	if p.Magnet != "" {
 		http.Redirect(w, r, p.Magnet, http.StatusFound)
 		return

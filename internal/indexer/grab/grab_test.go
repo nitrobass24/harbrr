@@ -173,6 +173,12 @@ func TestServeGrab(t *testing.T) {
 				if got := rec.Header().Get("Content-Disposition"); got != tt.wantCD {
 					t.Errorf("Content-Disposition = %q, want %q", got, tt.wantCD)
 				}
+				// A .torrent body carries the tracker's passkey in its announce URL;
+				// it must never land in a browser's on-disk cache, nor be replayable
+				// past the apikey/session check (autobrr/harbrr#587).
+				if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+					t.Errorf("Cache-Control = %q, want no-store", got)
+				}
 			})
 		}
 	})
@@ -240,6 +246,11 @@ func TestServeGrab(t *testing.T) {
 		}
 		if loc := rec.Header().Get("Location"); loc != "magnet:?xt=urn:btih:abc" {
 			t.Errorf("Location = %q, want the magnet", loc)
+		}
+		// The Location header IS the resolved magnet, announce list and all, so the
+		// redirect is no more cacheable than the byte response.
+		if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+			t.Errorf("Cache-Control = %q, want no-store", got)
 		}
 	})
 
