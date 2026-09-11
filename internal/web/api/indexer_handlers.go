@@ -161,6 +161,11 @@ type instanceResponse struct {
 	ExpiryLifetime          bool      `json:"expiryLifetime"`
 	CreatedAt               time.Time `json:"createdAt"`
 	UpdatedAt               time.Time `json:"updatedAt"`
+	// FailoverBaseURL is non-empty only while a promotion is in effect — the "currently
+	// using B" the operator can revert by clearing the failover_base_url setting.
+	FailoverBaseURL string `json:"failoverBaseUrl,omitempty"`
+	// FailoverDisabled is the operator pin: automatic failover is off for this indexer.
+	FailoverDisabled bool `json:"failoverDisabled"`
 }
 
 // settingResponse is one configured setting; a secret's value is the <redacted>
@@ -179,11 +184,6 @@ type instanceDetailResponse struct {
 	// EffectiveBaseURL is the host this indexer actually talks to right now, which
 	// differs from baseUrl when a failover promoted another of the definition's links.
 	EffectiveBaseURL string `json:"effectiveBaseUrl"`
-	// FailoverBaseURL is non-empty only while a promotion is in effect — the "currently
-	// using B" the operator can revert by clearing the failover_base_url setting.
-	FailoverBaseURL string `json:"failoverBaseUrl,omitempty"`
-	// FailoverDisabled is the operator pin: automatic failover is off for this indexer.
-	FailoverDisabled bool `json:"failoverDisabled"`
 }
 
 // listIndexers returns all configured indexers.
@@ -195,26 +195,36 @@ func (rt *router) listIndexers(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]instanceResponse, 0, len(list))
 	for _, inst := range list {
-		out = append(out, rt.instanceResponse(r.Context(), inst))
+		resp, _ := rt.instanceResponse(r.Context(), inst)
+		out = append(out, resp)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
-// instanceResponse is toInstanceResponse plus the one field the domain row cannot
-// answer on its own: Freeleech is derived from the instance's settings through the
-// registry. Every route that serializes an instance goes through here so the list,
-// detail and create views cannot disagree about the freeleech checkbox's canonical
-// state, which the OpenAPI Instance schema documents as required
-// (autobrr/harbrr#653). Resolution is best-effort: a definition that fails to load
-// must not turn a readable indexer into a 500, so it degrades to false and logs.
-func (rt *router) instanceResponse(ctx context.Context, inst domain.IndexerInstance) instanceResponse {
+// instanceResponse is toInstanceResponse plus the fields the domain row cannot
+// answer on its own: Freeleech and the base-URL failover standing (autobrr/harbrr#684),
+// both derived from the instance's settings through the registry. Every route that
+// serializes an instance goes through here so the list, detail and create views cannot
+// disagree about the freeleech checkbox's canonical state, which the OpenAPI Instance
+// schema documents as required (autobrr/harbrr#653), nor about which host the table's
+// failover pill describes. Resolution is best-effort: a definition that fails to load
+// must not turn a readable indexer into a 500, so it degrades to the zero value and
+// logs. The resolved failover state is returned alongside so the detail view can add
+// effectiveBaseUrl without resolving it a second time.
+func (rt *router) instanceResponse(ctx context.Context, inst domain.IndexerInstance) (instanceResponse, registry.FailoverState) {
 	resp := toInstanceResponse(inst)
 	freeleech, err := rt.Registry.Freeleech(ctx, inst)
 	if err != nil {
 		rt.Logger.Warn().Err(err).Str("slug", inst.Slug).Msg("resolve freeleech state")
 	}
 	resp.Freeleech = freeleech
-	return resp
+	failover, err := rt.Registry.FailoverState(ctx, inst)
+	if err != nil {
+		rt.Logger.Warn().Err(err).Str("slug", inst.Slug).Msg("resolve failover state")
+	}
+	resp.FailoverBaseURL = failover.PromotedBaseURL
+	resp.FailoverDisabled = failover.Disabled
+	return resp, failover
 }
 
 // addIndexer creates a configured indexer.
@@ -252,7 +262,8 @@ func (rt *router) addIndexer(w http.ResponseWriter, r *http.Request) {
 		rt.writeServiceError(w, "add indexer", err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, rt.instanceResponse(r.Context(), inst))
+	resp, _ := rt.instanceResponse(r.Context(), inst)
+	writeJSON(w, http.StatusCreated, resp)
 }
 
 // getIndexer returns one indexer with its settings (secrets redacted).
@@ -267,11 +278,8 @@ func (rt *router) getIndexer(w http.ResponseWriter, r *http.Request) {
 	for _, v := range views {
 		settings = append(settings, settingResponse{Name: v.Name, Value: v.Value, Secret: v.Secret})
 	}
-	// Best-effort, like the list view's freeleech resolution: a definition that fails
-	// to load must not turn a readable indexer into a 500.
-	failover, err := rt.Registry.FailoverState(r.Context(), inst)
-	if err != nil {
-		rt.Logger.Warn().Err(err).Str("slug", inst.Slug).Msg("resolve failover state")
+	resp, failover := rt.instanceResponse(r.Context(), inst)
+	if failover.EffectiveBaseURL == "" {
 		// FailoverState yields a zero struct on error, and effectiveBaseUrl is a
 		// REQUIRED field documented as the host this indexer talks to — reporting ""
 		// would say it talks to nothing. Without the definition or the settings we
@@ -281,11 +289,9 @@ func (rt *router) getIndexer(w http.ResponseWriter, r *http.Request) {
 		failover.EffectiveBaseURL = inst.BaseURL
 	}
 	writeJSON(w, http.StatusOK, instanceDetailResponse{
-		instanceResponse: rt.instanceResponse(r.Context(), inst),
+		instanceResponse: resp,
 		Settings:         settings,
 		EffectiveBaseURL: failover.EffectiveBaseURL,
-		FailoverBaseURL:  failover.PromotedBaseURL,
-		FailoverDisabled: failover.Disabled,
 	})
 }
 

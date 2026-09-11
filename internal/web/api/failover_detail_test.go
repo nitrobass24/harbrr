@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/autobrr/harbrr/internal/database"
 	"github.com/autobrr/harbrr/internal/domain"
+	"github.com/autobrr/harbrr/internal/web/api"
 )
 
 // TestGetIndexerFallsBackToConfiguredHostWhenFailoverUnresolvable pins the REQUIRED
@@ -55,5 +57,57 @@ func TestGetIndexerFallsBackToConfiguredHostWhenFailoverUnresolvable(t *testing.
 	if out.FailoverBaseURL != "" || out.FailoverDisabled {
 		t.Errorf("failover fields = %q/%v, want zero — no promotion is knowable without the definition",
 			out.FailoverBaseURL, out.FailoverDisabled)
+	}
+}
+
+// TestListIndexersCarriesFailoverStanding pins the list payload's failover fields
+// (autobrr/harbrr#684): the indexer table reads the pill's state from the list rows
+// instead of fanning a detail request out per slug. A promoted instance reports the
+// host it moved to; an unpromoted one omits failoverBaseUrl entirely, the same way the
+// detail view represents absence.
+func TestListIndexersCarriesFailoverStanding(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, api.Config{})
+	base, c := serve(t, e)
+	setupAndLogin(t, base, c)
+
+	// The promoted host has to be one the definition still lists, or the promotion is
+	// ignored — a stale failover_base_url would offer a revert from nothing.
+	const promotedHost = "https://html.invalid/"
+	resp, body := do(t, c, http.MethodPost, base+"/api/indexers", map[string]any{
+		"slug": "promoted", "definitionId": "testtracker", "baseUrl": "https://configured.invalid/",
+		"settings": map[string]string{"failover_base_url": promotedHost, "failover_disabled": "true"},
+	}, nil)
+	mustStatus(t, resp, body, http.StatusCreated)
+
+	resp, body = do(t, c, http.MethodPost, base+"/api/indexers",
+		map[string]any{"slug": "plain", "definitionId": "testtracker"}, nil)
+	mustStatus(t, resp, body, http.StatusCreated)
+
+	resp, body = do(t, c, http.MethodGet, base+"/api/indexers", nil, nil)
+	mustStatus(t, resp, body, http.StatusOK)
+	var list []struct {
+		Slug             string `json:"slug"`
+		FailoverBaseURL  string `json:"failoverBaseUrl"`
+		FailoverDisabled bool   `json:"failoverDisabled"`
+	}
+	if err := json.Unmarshal(body, &list); err != nil {
+		t.Fatalf("unmarshal: %v (body %s)", err, body)
+	}
+	if len(list) != 2 {
+		t.Fatalf("list returned %d rows, want 2 (body %s)", len(list), body)
+	}
+	for _, row := range list {
+		wantURL, wantDisabled := "", false
+		if row.Slug == "promoted" {
+			wantURL, wantDisabled = promotedHost, true
+		}
+		if row.FailoverBaseURL != wantURL || row.FailoverDisabled != wantDisabled {
+			t.Errorf("%s row = %q/%v, want %q/%v", row.Slug, row.FailoverBaseURL, row.FailoverDisabled, wantURL, wantDisabled)
+		}
+	}
+	// Absence is an omitted key, not an empty string — only the promoted row carries it.
+	if n := strings.Count(string(body), "failoverBaseUrl"); n != 1 {
+		t.Errorf("failoverBaseUrl appears %d times, want 1 (omitted on the unpromoted row); body %s", n, body)
 	}
 }
