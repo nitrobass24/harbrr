@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -604,7 +605,25 @@ func isTransportError(err error) bool {
 	if errors.Is(err, search.ErrGatewayStatus) {
 		return true
 	}
-	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	return isHTTP2TransportError(err)
+}
+
+// isHTTP2TransportError recognises the HTTP/2 transport failures that carry no
+// net.Error and no sentinel to match on: a peer RST_STREAM mid-body and the
+// client's own header-wait timeout (#683). net/http speaks h2 through its own
+// BUNDLED copy of x/net/http2, whose StreamError type is unexported and not the
+// one an errors.As against golang.org/x/net/http2 would match — so the message
+// prefix is the only handle the stdlib gives us.
+func isHTTP2TransportError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "stream error:") ||
+		strings.Contains(msg, "http2: timeout awaiting response headers")
 }
 
 // filterFreeleechOnly returns a NEW slice holding only freeleech releases

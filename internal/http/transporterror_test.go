@@ -221,4 +221,28 @@ func TestRedactURLError(t *testing.T) {
 			t.Fatalf("RedactURLError(plain) = %v, want the same error", got)
 		}
 	})
+
+	// The *url.Error TYPE must survive redaction: registry.isTransportError classifies
+	// on errors.As(&url.Error), so flattening it to a plain fmt.Errorf left redacted
+	// transport failures unclassified (#683).
+	t.Run("url.Error type survives", func(t *testing.T) {
+		t.Parallel()
+		cause := errors.New("http2: timeout awaiting response headers")
+		in := &url.Error{Op: "Get", URL: "https://t.example/dl?tk=" + secret, Err: cause}
+		got := RedactURLError(in)
+
+		var out *url.Error
+		if !errors.As(got, &out) {
+			t.Fatalf("redacted error is no longer a *url.Error: %T", got)
+		}
+		if out.Op != "Get" || out.URL != "https://t.example" {
+			t.Errorf("Op/URL = %q/%q, want \"Get\"/\"https://t.example\"", out.Op, out.URL)
+		}
+		if !errors.Is(got, cause) {
+			t.Errorf("cause lost from the chain: %v", got)
+		}
+		if want := `Get "https://t.example": http2: timeout awaiting response headers`; got.Error() != want {
+			t.Errorf("message = %q, want %q", got.Error(), want)
+		}
+	})
 }

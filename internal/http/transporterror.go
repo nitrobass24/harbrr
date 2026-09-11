@@ -49,7 +49,10 @@ func RedactURLError(err error) error {
 	if !errors.As(err, &uerr) {
 		return err
 	}
-	return fmt.Errorf("%s %s: %w", uerr.Op, SchemeHost(uerr.URL), RedactURLError(uerr.Err))
+	// Rebuild as a *url.Error rather than a plain fmt.Errorf: downstream classifiers
+	// (registry.isTransportError) key on errors.As(&url.Error), and flattening the type
+	// made a redacted transport failure unclassifiable (#683).
+	return &url.Error{Op: uerr.Op, URL: SchemeHost(uerr.URL), Err: RedactURLError(uerr.Err)}
 }
 
 // ScrubURLError strips the request URL entirely from any *url.Error in err's chain,
