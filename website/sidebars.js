@@ -38,6 +38,11 @@ const sidebars = {
         },
         {
           type: 'doc',
+          id: 'features/indexer-health',
+          label: 'Indexer health, failover & usage',
+        },
+        {
+          type: 'doc',
           id: 'features/usenet-newznab',
           label: 'Usenet (Newznab) indexers',
         },
