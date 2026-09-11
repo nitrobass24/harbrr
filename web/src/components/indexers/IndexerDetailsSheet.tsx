@@ -3,7 +3,8 @@ import { Fragment } from "react"
 import { BudgetMeter } from "@/components/indexers/BudgetMeter"
 import { HealthCell, healthDetail, reasonLabel } from "@/components/indexers/HealthCell"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { useIndexerCapabilities, useIndexerDiagnostics, useIndexerStats, useIndexerStatuses } from "@/hooks/useIndexers"
+import { useIndexer, useIndexerCapabilities, useIndexerDiagnostics, useIndexerStats, useIndexerStatuses } from "@/hooks/useIndexers"
+import { failoverHosts } from "@/lib/failover"
 import { relativeTime } from "@/lib/format"
 import type { Capabilities, DiagnosticCapture, IndexerFailureCounts, IndexerStats, IndexerStatus } from "@/lib/api"
 
@@ -61,6 +62,8 @@ function Details({ slug }: { slug: string }) {
   const stats = useIndexerStats(slug)
   const caps = useIndexerCapabilities(slug)
   const diagnostics = useIndexerDiagnostics(slug)
+  const detail = useIndexer(slug)
+  const failover = failoverHosts(detail.data)
 
   return (
     <>
@@ -69,6 +72,11 @@ function Details({ slug }: { slug: string }) {
         <SheetDescription>Status, stats, and capabilities.</SheetDescription>
       </SheetHeader>
       <div className="flex flex-col gap-6 px-4 pb-6 text-[13px]">
+        {failover && (
+          <p className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-warn">
+            Talking to {failover.inUse} — failover from {failover.configured || "the definition's default host"}.
+          </p>
+        )}
         <section>
           <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-faint">Stats</h3>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5">

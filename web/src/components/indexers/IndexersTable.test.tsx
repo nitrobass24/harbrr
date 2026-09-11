@@ -187,4 +187,27 @@ describe("IndexersTable", () => {
     // Health is untouched by any of this — usage is a separate question.
     expect(within(row("x1337")).queryByText("Failing")).toBeNull()
   })
+
+  it("flags a base-URL failover promotion, and only that (autobrr/harbrr#375)", () => {
+    const detail = (over: Record<string, unknown>) => ({
+      ...ROWS[0].instance, settings: [], effectiveBaseUrl: "https://www.torrentleech.org/", failoverDisabled: false, ...over,
+    })
+    const rows: IndexerRowData[] = [
+      {
+        instance: ROWS[0].instance,
+        detail: detail({ effectiveBaseUrl: "https://mirror.tl.org/", failoverBaseUrl: "https://mirror.tl.org/" }),
+      },
+      { instance: ROWS[1].instance, detail: detail({ id: 2, slug: "rutor" }) },
+      // No override configured at all: effectiveBaseUrl is the definition's own first
+      // link, which is NOT a promotion and must not raise the pill.
+      { instance: ROWS[2].instance, detail: detail({ id: 3, slug: "x1337", baseUrl: undefined }) },
+    ]
+    render(<IndexersTable rows={rows} actions={noopActions()} />)
+
+    const row = (slug: string) => document.querySelector<HTMLElement>(`tr[data-slug="${slug}"]`)!
+    const pill = within(row("torrentleech")).getByText("Failover")
+    expect(pill.getAttribute("title")).toBe("Talking to mirror.tl.org — failover from www.torrentleech.org")
+    expect(within(row("rutor")).queryByText("Failover")).toBeNull()
+    expect(within(row("x1337")).queryByText("Failover")).toBeNull()
+  })
 })

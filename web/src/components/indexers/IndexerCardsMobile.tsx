@@ -1,5 +1,6 @@
 import { ArrowRight, Copy, MoreVertical, Pencil, Trash2 } from "lucide-react"
 import { ExpiryCell } from "@/components/indexers/ExpiryCell"
+import { FailoverPill } from "@/components/indexers/FailoverPill"
 import { FreeleechPill } from "@/components/indexers/FreeleechPill"
 import { HealthCell } from "@/components/indexers/HealthCell"
 import { IndexerAvatar } from "@/components/indexers/IndexerAvatar"
@@ -43,8 +44,11 @@ function IndexerCard({ row, actions }: { row: IndexerRowData, actions: IndexerRo
         >
           <IndexerAvatar slug={ix.slug} name={ix.name} />
           <span className="flex min-w-0 flex-col leading-tight">
-            <span className={cn("truncate font-medium", ix.enabled ? "text-foreground" : "text-muted-foreground")}>
-              {ix.name}
+            <span className="flex items-center gap-1.5">
+              <span className={cn("truncate font-medium", ix.enabled ? "text-foreground" : "text-muted-foreground")}>
+                {ix.name}
+              </span>
+              <FailoverPill detail={row.detail} />
             </span>
             <span className="truncate text-[12px] text-faint">{hostname(ix.baseUrl) || ix.definitionId}</span>
           </span>

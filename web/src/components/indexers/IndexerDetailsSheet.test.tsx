@@ -4,6 +4,18 @@ import { describe, expect, it, vi } from "vitest"
 import { stubApi } from "@/test/stubApi"
 import { IndexerDetailsSheet } from "./IndexerDetailsSheet"
 
+// The detail endpoint backs the failover line (#375). This fixture is on its own
+// configured host: effectiveBaseUrl matches baseUrl, no promotion in effect.
+const ON_CONFIGURED_HOST = {
+  id: 1, slug: "torrentleech", definitionId: "torrentleech", name: "TorrentLeech",
+  baseUrl: "https://www.torrentleech.org/", enabled: true, protocol: "torrent",
+  proxyId: null, solverId: null, freeleech: false, priority: 25, minSeeders: 0,
+  syncCategories: [], enableRss: true, enableAutomaticSearch: true, enableInteractiveSearch: true,
+  expiresAt: "", expiryKind: "", expiryLifetime: false,
+  createdAt: "2026-07-01T00:00:00Z", updatedAt: "2026-07-01T00:00:00Z",
+  settings: [], effectiveBaseUrl: "https://www.torrentleech.org/", failoverDisabled: false,
+}
+
 describe("IndexerDetailsSheet", () => {
   it("renders the summed failure count from the per-kind object without crashing", async () => {
     stubApi({
@@ -17,6 +29,7 @@ describe("IndexerDetailsSheet", () => {
       "GET /api/indexers/{slug}/status": { slug: "torrentleech", status: "healthy", events: [] },
       "GET /api/indexers/{slug}/capabilities": { modes: { search: ["q"] } },
       "GET /api/indexers/{slug}/diagnostics": { slug: "torrentleech", captures: [] },
+      "GET /api/indexers/{slug}": ON_CONFIGURED_HOST,
     })
 
     render(
@@ -51,6 +64,7 @@ describe("IndexerDetailsSheet", () => {
       "GET /api/indexers/{slug}/status": { slug: "torrentleech", status: "healthy", events: [] },
       "GET /api/indexers/{slug}/capabilities": { modes: { search: ["q"] } },
       "GET /api/indexers/{slug}/diagnostics": { slug: "torrentleech", captures: [] },
+      "GET /api/indexers/{slug}": ON_CONFIGURED_HOST,
     })
 
     render(
@@ -150,6 +164,34 @@ describe("IndexerDetailsSheet", () => {
     expect(screen.queryByText("Why")).toBeNull()
     expect(screen.queryByText("Failing since")).toBeNull()
   })
+
+  // The failover engine records a promotion the operator never chose; the sheet is
+  // where the full "which host, moved from what" belongs (autobrr/harbrr#375).
+  it("spells out a base-URL failover promotion, and says nothing without one", async () => {
+    stubStatus({ slug: "torrentleech", status: "healthy", events: [] })
+    const { unmount } = render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <IndexerDetailsSheet slug="torrentleech" onClose={vi.fn()} />
+      </QueryClientProvider>
+    )
+    expect(await screen.findByText("Stats")).toBeTruthy()
+    expect(screen.queryByText(/failover from/)).toBeNull()
+    unmount()
+
+    stubApi({
+      "GET /api/indexers/{slug}/status": { slug: "torrentleech", status: "healthy", events: [] },
+      "GET /api/indexers/{slug}/stats": { slug: "torrentleech", queries: 0, grabs: 0 },
+      "GET /api/indexers/{slug}/capabilities": { modes: { search: ["q"] } },
+      "GET /api/indexers/{slug}/diagnostics": { slug: "torrentleech", captures: [] },
+      "GET /api/indexers/{slug}": {
+        ...ON_CONFIGURED_HOST,
+        effectiveBaseUrl: "https://mirror.torrentleech.org/",
+        failoverBaseUrl: "https://mirror.torrentleech.org/",
+      },
+    })
+    renderSheet()
+    expect(await screen.findByText(/Talking to mirror\.torrentleech\.org — failover from www\.torrentleech\.org/)).toBeTruthy()
+  })
 })
 
 // stubStatus serves the given /status body and empty stats/capabilities, so a health
@@ -161,6 +203,7 @@ function stubStatus(status: unknown, captures: unknown[] = []) {
     "GET /api/indexers/{slug}/stats": { slug: "torrentleech", queries: 0, grabs: 0 },
     "GET /api/indexers/{slug}/capabilities": { modes: { search: ["q"] } },
     "GET /api/indexers/{slug}/diagnostics": { slug: "torrentleech", captures },
+    "GET /api/indexers/{slug}": ON_CONFIGURED_HOST,
   })
 }
 

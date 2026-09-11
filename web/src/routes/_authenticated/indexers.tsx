@@ -16,6 +16,7 @@ import { useAllIndexerStats } from "@/hooks/useSettings"
 import {
   useDeleteIndexer,
   useIndexerCapabilitiesMany,
+  useIndexerDetailsMany,
   useIndexers,
   useIndexerStatuses,
   useSetIndexerEnabled,
@@ -52,6 +53,8 @@ function IndexersPage() {
   const slugs = (indexers.data ?? []).map((ix) => ix.slug)
   const statuses = useIndexerStatuses(slugs)
   const capabilities = useIndexerCapabilitiesMany(slugs)
+  // Detail per slug: the failover standing the list payload does not carry (#375).
+  const details = useIndexerDetailsMany(slugs)
   // One bulk call for the whole table's usage column (#487).
   const stats = useAllIndexerStats()
   const toggle = useSetIndexerEnabled()
@@ -80,6 +83,7 @@ function IndexersPage() {
       categories: parentCategories(capabilities[i]?.data),
       status: statuses[i]?.data,
       stats: statsBySlug.get(instance.slug),
+      detail: details[i]?.data,
       testing: test.isPending && test.variables === instance.slug,
     }))
     .filter((row) => row.instance.name.toLowerCase().includes(needle) ||

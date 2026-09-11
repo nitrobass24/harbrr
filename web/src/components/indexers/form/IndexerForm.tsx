@@ -76,7 +76,7 @@ const MATCHING_FIELDS = [FOLD_PUNCTUATION_FIELD, DEGENERATE_GATE_FIELD]
 // a cookie-login definition declares its own `cookie` credential field, which must
 // render/submit normally; the manual-cookie SOLVER only manages `cookie` for a
 // definition that does not (see managesCookie below).
-const MANAGED_KEYS = ["proxy_type", "proxy_url", "solver_type", "flaresolverr_url", "flaresolverr_max_timeout"]
+const MANAGED_KEYS = ["proxy_type", "proxy_url", "solver_type", "flaresolverr_url", "flaresolverr_max_timeout", "failover_disabled"]
 
 // Sentinel for the base-URL picker's "Custom…" option. Not a URL, so it can never
 // collide with a definition's links entry.
@@ -133,6 +133,9 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
   const [checkedParents, setCheckedParents] = useState<Set<number>>(
     new Set((existing?.syncCategories ?? []).filter((c) => PARENT_IDS.has(c))))
   const [extraCategories, setExtraCategories] = useState((existing?.syncCategories ?? []).filter((c) => !PARENT_IDS.has(c)).join(", "))
+  // The failover pin (reserved setting failover_disabled, "true"/""), read back off
+  // the detail endpoint's own flag rather than the raw settings row.
+  const [pinHost, setPinHost] = useState(existing?.failoverDisabled ?? false)
   const [showAdvanced, setShowAdvanced] = useState(false)
 
   const setValue = (fieldName: string) => (value: string) =>
@@ -147,6 +150,10 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
       onSubmit={(e) => {
         e.preventDefault()
         const settings = settingsPayload(values, mode)
+        // On create an empty reserved setting is simply omitted (the engine default
+        // is "failover on"), so only a pin is worth sending; on edit it is written
+        // either way, below, so unpinning actually clears the stored value.
+        if (pinHost) settings.failover_disabled = "true"
         if (solver === "cookie") {
           settings.solver_type = "manual_cookie"
           if (!definesCookie) settings.cookie = cookie
@@ -160,6 +167,7 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
           settings.proxy_url = ""
           settings.flaresolverr_url = ""
           settings.flaresolverr_max_timeout = ""
+          settings.failover_disabled = pinHost ? "true" : ""
           if (solver !== "cookie") {
             settings.solver_type = ""
             if (!definesCookie) settings.cookie = ""
@@ -236,6 +244,18 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
               <option value="">No proxy</option>
               {(proxies.data ?? []).map((p) => <option key={p.id} value={p.id}>{p.name} ({p.type})</option>)}
             </NativeSelect>
+          </span>
+
+          <span className="flex flex-col gap-1.5">
+            <span className="flex items-center justify-between">
+              <Label htmlFor="ix-pin-host" className="font-normal">Pin to configured host</Label>
+              <Switch id="ix-pin-host" checked={pinHost} onCheckedChange={setPinHost} />
+            </span>
+            <p className="text-[12px] text-faint">
+              Turns off the automatic base-URL failover for this indexer: harbrr keeps using the
+              host chosen above even when it stops answering, instead of moving to another of the
+              definition&apos;s known hosts.
+            </p>
           </span>
 
           <SettingFieldInput field={TIMEOUT_FIELD} value={values.timeout ?? ""} onChange={setValue("timeout")} />
@@ -406,7 +426,8 @@ function ExpiryFields({ date, kind, lifetime, onDate, onKind, onLifetime }: {
 // host rather than left opaque. Custom… keeps the free-text escape hatch for
 // private mirrors, onion addresses and LAN reverse proxies that no definition
 // lists. Purely local: the picker makes no network requests, and choosing a host
-// sets NO pin or failover-opt-out flag — that stays #375's separate control.
+// sets NO pin or failover-opt-out flag — that is the separate "Pin to configured
+// host" switch in Advanced, which owns the failover_disabled reserved setting.
 function BaseUrlField({ links, value, onChange }: {
   links: string[]
   value: string
