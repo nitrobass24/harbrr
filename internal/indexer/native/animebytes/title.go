@@ -17,6 +17,39 @@ var (
 	episodeRe      = regexp.MustCompile(`\bEpisode (\d+)\b`)
 )
 
+// The three patterns of Prowlarr's ParseSeasonFromTitles, tried in order against a
+// group title when the edition carries no season: an "Nth Season"/"Season N" token, a
+// trailing Roman numeral (its length is the season: "II" -> 2), and a trailing bare
+// 2-9 optionally prefixed with "S".
+//
+// The third pattern's negative lookbehinds — not "Part 2"/"No. 2", not "1/2", not "#2"
+// — are .NET-only constructs RE2 cannot express, so trailingSeasonGuard checks the text
+// immediately before the match instead (same case-sensitive semantics).
+var (
+	advancedSeasonRe    = regexp.MustCompile(`(?i)\b(?:(\d+)(?:st|nd|rd|th) Season|Season (\d+))\b`)
+	seasonCharactersRe  = regexp.MustCompile(`I{2,}$`)
+	trailingSeasonRe    = regexp.MustCompile(`\bS?([2-9])$`)
+	trailingSeasonGuard = regexp.MustCompile(`(?:(?:Part|No\.)[- ._]|\d/|#)$`)
+)
+
+// parseSeasonFromTitle ports Prowlarr's ParseSeasonFromTitles for one title, the
+// fallback that keeps a sequel ("Kimetsu no Yaiba 2nd Season") from being labelled S01.
+// It returns (0, false) when no pattern matches.
+func parseSeasonFromTitle(title string) (int, bool) {
+	if m := advancedSeasonRe.FindStringSubmatch(title); m != nil {
+		// Exactly one of the two alternatives' groups can have matched.
+		return atoiDefault(m[1]+m[2], 0), true
+	}
+	if m := seasonCharactersRe.FindString(title); m != "" {
+		return len(m), true
+	}
+	if loc := trailingSeasonRe.FindStringSubmatchIndex(title); loc != nil &&
+		!trailingSeasonGuard.MatchString(title[:loc[0]]) {
+		return atoiDefault(title[loc[2]:loc[3]], 0), true
+	}
+	return 0, false
+}
+
 // composeTitle synthesizes a release title for a group×torrent, reproducing Prowlarr's
 // AnimeBytesParser title algorithm for the PRIMARY (main) title:
 //
@@ -106,6 +139,9 @@ func hasReleaseGroupPrefix(p string) bool {
 //	  - season>0                     -> "SNN" (+ "ENN - NN" when episode>0)
 //	  - otherwise                    -> the seed/edition text is kept verbatim
 //
+// An Anime group with no edition season resolves one from the group title first
+// (parseSeasonFromTitle), so "… 2nd Season" yields S02 rather than the S01 seed.
+//
 // So a non-"Season N" edition ("Director's Cut") is preserved as-is rather than being
 // flattened to "S01", and an "Episode N"-only edition yields "- NN", matching Prowlarr.
 func releaseInfo(g *group, t *torrent) string {
@@ -119,6 +155,16 @@ func releaseInfo(g *group, t *torrent) string {
 		info = edition
 	}
 	season, hasSeason, episode := seasonEpisode(t)
+	// An Anime group whose edition carries no "Season N" falls back to the season in the
+	// group title (Prowlarr's `season ??= ParseSeasonFromTitles(synonyms)`), so a sequel
+	// is not labelled S01. harbrr does not fan out synonyms (see flattenGroup), so the
+	// main title — always the first entry of Prowlarr's synonym set — is the only title
+	// the fallback has to look at.
+	if !hasSeason && isAnimeCategory(g) {
+		if s, ok := parseSeasonFromTitle(mainTitle(g)); ok {
+			season, hasSeason = s, true
+		}
+	}
 	switch {
 	case episode > 0 && !hasSeason:
 		info = fmt.Sprintf("- %02d", episode)
