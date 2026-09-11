@@ -1,7 +1,3 @@
----
-sidebar_position: 3
----
-
 # Indexer health, failover & usage
 
 Three separate signals tell you how an indexer is doing. They answer different questions, and
