@@ -147,11 +147,17 @@ func NewRouter(deps Deps, cfg Config) (http.Handler, error) {
 // when configured. Discovery failure is logged and non-fatal: the instance
 // still serves, OIDC just answers as disabled for this run rather than
 // refusing to start over a slow or unreachable IdP.
+//
+// oidcInitTimeout is what makes that promise true. NewRouter runs before the
+// listener is bound, so an unbounded discovery blocks startup entirely — the exact
+// opposite of the non-fatal intent above (autobrr/harbrr#651).
 func (rt *router) initOIDC() {
 	if !rt.cfg.OIDC.Enabled {
 		return
 	}
-	h, err := newOIDCHandler(context.Background(), rt.cfg.OIDC)
+	ctx, cancel := context.WithTimeout(context.Background(), oidcInitTimeout)
+	defer cancel()
+	h, err := newOIDCHandler(ctx, rt.cfg.OIDC)
 	if err != nil {
 		rt.Logger.Warn().Str("error", apphttp.RedactError(err)).Msg("api: oidc initialization failed; SSO login is disabled this run")
 		return

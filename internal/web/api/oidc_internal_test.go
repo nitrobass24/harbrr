@@ -209,3 +209,37 @@ func TestNewOIDCHandlerRequiresAllFields(t *testing.T) {
 		})
 	}
 }
+
+// TestInitOIDCStalledProviderDoesNotBlockStartup is the #651 regression: NewRouter
+// runs before the listener is bound, so discovery against an issuer that accepts the
+// connection and then never answers must give up on a deadline instead of hanging
+// startup. The stub blocks until its context is done — exactly what go-oidc's request
+// does against a stalled IdP — so this test hangs forever if the timeout is dropped.
+// Not t.Parallel(): see TestDiscoverOIDCProviderRetriesUntilSuccess.
+func TestInitOIDCStalledProviderDoesNotBlockStartup(t *testing.T) {
+	stubOIDCProvider(t, func(ctx context.Context, _ string) (*oidc.Provider, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+	orig := oidcInitTimeout
+	oidcInitTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { oidcInitTimeout = orig })
+
+	rt := &router{cfg: Config{OIDC: OIDCConfig{
+		Enabled: true, Issuer: "https://stalled.example.com", ClientID: "id",
+		ClientSecret: "secret", RedirectURL: "https://harbrr.example.com/api/auth/oidc/callback",
+	}}}
+
+	start := time.Now()
+	rt.initOIDC()
+	elapsed := time.Since(start)
+
+	if rt.oidc != nil {
+		t.Error("a stalled IdP must leave OIDC disabled for the run, not half-initialized")
+	}
+	// One deadline bounds every attempt and backoff together, so a handful of
+	// timeouts' worth of slack is generous.
+	if want := 10 * oidcInitTimeout; elapsed > want {
+		t.Errorf("initOIDC took %v, want under %v — the discovery deadline does not bound the retry loop", elapsed, want)
+	}
+}
