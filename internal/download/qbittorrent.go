@@ -50,11 +50,23 @@ func newQBittorrent(c domain.DownloadClient, secret string, _ *http.Client) (Dri
 	}, nil
 }
 
-// Test logs in, proving the configured host + credentials are reachable and
-// valid.
+// Test logs in and then reads the app version, proving the configured host +
+// credentials are reachable and valid.
+//
+// The version read is what makes that true for the credential-free
+// localhost-bypass configuration newQBittorrent documents: go-qbittorrent's LoginCtx
+// returns nil WITHOUT issuing a request when username and password are both empty, so
+// login alone passed the test against an unreachable host or something that is not
+// qBittorrent at all, and the operator only found out on the first grab
+// (autobrr/harbrr#656). app/version is the cheapest endpoint behind the WebUI's auth
+// gate, so it exercises the host on the bypass path and the session cookie on the
+// credentialed one.
 func (d *qbittorrentDriver) Test(ctx context.Context) error {
 	if err := d.client.LoginCtx(ctx); err != nil {
 		return fmt.Errorf("download: qbittorrent: login: %w", err)
+	}
+	if _, err := d.client.GetAppVersionCtx(ctx); err != nil {
+		return fmt.Errorf("download: qbittorrent: app version: %w", err)
 	}
 	return nil
 }

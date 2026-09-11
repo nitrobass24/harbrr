@@ -20,6 +20,7 @@ type qbitStub struct {
 	addForm      map[string][]string // last torrents/add form fields (url-encoded or multipart)
 	addWasBytes  bool                // true if the last add came in as a multipart file upload
 	addConflict  bool                // when true, torrents/add answers 409 (the lib errors with the URL)
+	versionHits  int                 // app/version reads, proving Test made a real request
 }
 
 func newQbitStub(t *testing.T, s *qbitStub) *httptest.Server {
@@ -33,6 +34,11 @@ func newQbitStub(t *testing.T, s *qbitStub) *httptest.Server {
 		}
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write([]byte("Ok."))
+	})
+	mux.HandleFunc("/api/v2/app/version", func(w http.ResponseWriter, _ *http.Request) {
+		s.versionHits++
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("v4.6.5"))
 	})
 	mux.HandleFunc("/api/v2/torrents/add", func(w http.ResponseWriter, r *http.Request) {
 		ct := r.Header.Get("Content-Type")
@@ -85,6 +91,36 @@ func TestQBittorrentTest_BadCredentials(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error for bad credentials")
 	}
+}
+
+// TestQBittorrentTest_NoCredentials is the #656 regression: go-qbittorrent's LoginCtx
+// returns nil without issuing a request when username and password are both empty, so
+// the credential-free localhost-bypass configuration the driver documents used to pass
+// its connection test with no network I/O at all — against any host, reachable or not.
+func TestQBittorrentTest_NoCredentials(t *testing.T) {
+	t.Parallel()
+
+	t.Run("reachable host passes and is actually contacted", func(t *testing.T) {
+		t.Parallel()
+		stub := &qbitStub{}
+		srv := newQbitStub(t, stub)
+		if err := newTestClient(srv.URL, "", "").Test(context.Background()); err != nil {
+			t.Fatalf("Test: %v", err)
+		}
+		if stub.versionHits == 0 {
+			t.Error("Test passed without contacting the host")
+		}
+	})
+
+	t.Run("unreachable host fails", func(t *testing.T) {
+		t.Parallel()
+		srv := newQbitStub(t, &qbitStub{})
+		host := srv.URL
+		srv.Close() // nothing is listening on that port any more
+		if err := newTestClient(host, "", "").Test(context.Background()); err == nil {
+			t.Fatal("expected an error: the configured host is unreachable")
+		}
+	})
 }
 
 func TestQBittorrentAdd_ViaURL(t *testing.T) {
