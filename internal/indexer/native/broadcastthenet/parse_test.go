@@ -59,7 +59,8 @@ func TestParseReleasesGolden(t *testing.T) {
 			Seeders: 10, Leechers: 2, Peers: 12,
 			PublishDate: "2020-01-01T00:00:00Z",
 			TVDBID:      100001, RageID: 55555,
-			DownloadVolumeFactor: 1, UploadVolumeFactor: 1,
+			DownloadVolumeFactor: 0, UploadVolumeFactor: 1,
+			MinimumRatio: 1, MinimumSeedTime: 86400,
 		},
 		{
 			Title:      "That.Show.S05E04.1080p.WEB-DL.H.264-NOGRP",
@@ -72,7 +73,8 @@ func TestParseReleasesGolden(t *testing.T) {
 			PublishDate:          "2022-01-02T20:04:46Z",
 			TVDBID:               332747,
 			IMDBID:               "tt7252812",
-			DownloadVolumeFactor: 1, UploadVolumeFactor: 1,
+			DownloadVolumeFactor: 0, UploadVolumeFactor: 1,
+			MinimumRatio: 1, MinimumSeedTime: 86400,
 		},
 		{
 			// "Origin": "None" — an Origin outside the two known values contributes no tag.
@@ -85,7 +87,9 @@ func TestParseReleasesGolden(t *testing.T) {
 			PublishDate:          "2021-01-01T00:00:00Z",
 			TVDBID:               200002,
 			IMDBID:               "tt1234567",
-			DownloadVolumeFactor: 1, UploadVolumeFactor: 1,
+			DownloadVolumeFactor: 0, UploadVolumeFactor: 1,
+			MinimumRatio: 1, MinimumSeedTime: 432000, // "Category": "Season"
+
 		},
 	}
 	if len(got) != len(want) {

@@ -62,8 +62,12 @@ the `DownloadURL`s) exist only to prove redaction and live only in `testdata/**`
   an `InfoUrl` to the torrents.php details page. harbrr's `Link` is the `DownloadURL`
   (routed through `/dl`); the details URL is not yet emitted. Revisit if a details link
   is wanted.
-- **Volume factors fixed at 1/1** — `[Accepted]`. BTN exposes no freeleech signal in the
-  getTorrents response, so `DownloadVolumeFactor`/`UploadVolumeFactor` are 1.
+- **Ratioless volume factors and seed time** — `[Resolved]`. `DownloadVolumeFactor=0`,
+  `UploadVolumeFactor=1`, `MinimumRatio=1` and `MinimumSeedTime=432000` for a `SEASON`
+  category (else `86400`), matching the oracle. An earlier entry here recorded 1/1 as
+  `[Accepted]` on the premise that BTN exposes no freeleech signal in the getTorrents
+  response — that premise was wrong about the oracle, which needs no signal and hard-codes
+  0 because BTN is ratioless. Fixed.
 - **Error envelope handling** — `[Accepted]`. A `-32001` ("Invalid API Key") error maps
   to `login.ErrLoginFailed`; any other JSON-RPC error or a `null` result is a parse error
   (with the apikey scrubbed from the message). A malformed body is a parse error. The

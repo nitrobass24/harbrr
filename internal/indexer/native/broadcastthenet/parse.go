@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"time"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
@@ -164,8 +165,10 @@ func (d *driver) toRelease(t *btnTorrent) *normalizer.Release {
 		TVDBID:               t.TvdbID.Int64(),
 		RageID:               t.TvrageID.Int64(),
 		IMDBID:               native.CanonicalIMDBID(string(t.ImdbID)),
-		DownloadVolumeFactor: 1,
+		DownloadVolumeFactor: 0, // BTN is ratioless: the oracle hard-codes 0 with no freeleech signal
 		UploadVolumeFactor:   1,
+		MinimumRatio:         1,
+		MinimumSeedTime:      minimumSeedTime(t.Category),
 	}
 	// Origin is BTN's provenance enum; only its two known values become tags, so
 	// any other value ("User", a future addition) contributes nothing rather than
@@ -177,6 +180,15 @@ func (d *driver) toRelease(t *btnTorrent) *normalizer.Release {
 		rel.Tags = []string{normalizer.TagScene}
 	}
 	return rel
+}
+
+// minimumSeedTime is the oracle's per-category seed requirement: 120h for a season
+// pack, 24h for anything else (episodes).
+func minimumSeedTime(category string) int64 {
+	if strings.EqualFold(category, "Season") {
+		return 432000
+	}
+	return 86400
 }
 
 // categories maps a torrent's Resolution string to its newznab category through the
