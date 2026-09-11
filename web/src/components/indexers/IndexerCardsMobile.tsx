@@ -1,10 +1,12 @@
 import { ArrowRight, Copy, MoreVertical, Pencil, Trash2 } from "lucide-react"
 import { ExpiryCell } from "@/components/indexers/ExpiryCell"
+import { FailoverPill } from "@/components/indexers/FailoverPill"
 import { FreeleechPill } from "@/components/indexers/FreeleechPill"
 import { HealthCell } from "@/components/indexers/HealthCell"
 import { IndexerAvatar } from "@/components/indexers/IndexerAvatar"
 import { ProtocolPill } from "@/components/indexers/ProtocolPill"
 import { TypePill } from "@/components/indexers/TypePill"
+import { UsageCell } from "@/components/indexers/UsageCell"
 import type { IndexerRowActions, IndexerRowData } from "@/components/indexers/IndexersTable"
 import { Button } from "@/components/ui/button"
 import {
@@ -42,8 +44,11 @@ function IndexerCard({ row, actions }: { row: IndexerRowData, actions: IndexerRo
         >
           <IndexerAvatar slug={ix.slug} name={ix.name} />
           <span className="flex min-w-0 flex-col leading-tight">
-            <span className={cn("truncate font-medium", ix.enabled ? "text-foreground" : "text-muted-foreground")}>
-              {ix.name}
+            <span className="flex items-center gap-1.5">
+              <span className={cn("truncate font-medium", ix.enabled ? "text-foreground" : "text-muted-foreground")}>
+                {ix.name}
+              </span>
+              <FailoverPill detail={row.detail} />
             </span>
             <span className="truncate text-[12px] text-faint">{hostname(ix.baseUrl) || ix.definitionId}</span>
           </span>
@@ -68,6 +73,10 @@ function IndexerCard({ row, actions }: { row: IndexerRowData, actions: IndexerRo
       <div className="mt-2 flex items-center justify-between gap-3">
         <HealthCell status={row.status} />
         <ExpiryCell instance={ix} />
+      </div>
+
+      <div className="mt-2">
+        <UsageCell stats={row.stats} />
       </div>
 
       <div className="mt-3 flex items-center justify-end gap-1 border-t border-border pt-3">

@@ -36,6 +36,12 @@ const TIMEOUT_FIELD: SettingField = {
   name: "timeout", label: "Request timeout (Go duration, e.g. 30s)", type: "text", secret: false,
 }
 
+// Per-indexer request spacing (autobrr/harbrr#104): empty falls back to the global
+// default in Settings -> System. Same free-form Go-duration shape as TIMEOUT_FIELD.
+const RATE_INTERVAL_FIELD: SettingField = {
+  name: "rate_interval", label: "Request spacing (Go duration, e.g. 5s — empty = global default)", type: "text", secret: false,
+}
+
 // Reserved request-limit settings (autobrr/harbrr#251): already enforced by the
 // registry, exposed here for the first time. They ride the same free-form
 // settings map as TIMEOUT_FIELD — no dedicated body fields.
@@ -56,7 +62,7 @@ const LIMITS_UNIT_FIELD: SettingField = {
 const WARM_INTERVAL_FIELD: SettingField = {
   name: "rss_warm_interval", label: "RSS cache warming (Go duration, e.g. 30m)", type: "text", secret: false,
 }
-const LIMIT_FIELDS = [TIMEOUT_FIELD, QUERY_LIMIT_FIELD, GRAB_LIMIT_FIELD, LIMITS_UNIT_FIELD, WARM_INTERVAL_FIELD]
+const LIMIT_FIELDS = [TIMEOUT_FIELD, RATE_INTERVAL_FIELD, QUERY_LIMIT_FIELD, GRAB_LIMIT_FIELD, LIMITS_UNIT_FIELD, WARM_INTERVAL_FIELD]
 
 // Reserved matching settings (autobrr/harbrr#394). Both default to today's engine
 // behaviour, so an untouched indexer searches and filters exactly as it always has;
@@ -76,7 +82,7 @@ const MATCHING_FIELDS = [FOLD_PUNCTUATION_FIELD, DEGENERATE_GATE_FIELD]
 // a cookie-login definition declares its own `cookie` credential field, which must
 // render/submit normally; the manual-cookie SOLVER only manages `cookie` for a
 // definition that does not (see managesCookie below).
-const MANAGED_KEYS = ["proxy_type", "proxy_url", "solver_type", "flaresolverr_url", "flaresolverr_max_timeout"]
+const MANAGED_KEYS = ["proxy_type", "proxy_url", "solver_type", "flaresolverr_url", "flaresolverr_max_timeout", "failover_disabled"]
 
 // Sentinel for the base-URL picker's "Custom…" option. Not a URL, so it can never
 // collide with a definition's links entry.
@@ -133,6 +139,9 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
   const [checkedParents, setCheckedParents] = useState<Set<number>>(
     new Set((existing?.syncCategories ?? []).filter((c) => PARENT_IDS.has(c))))
   const [extraCategories, setExtraCategories] = useState((existing?.syncCategories ?? []).filter((c) => !PARENT_IDS.has(c)).join(", "))
+  // The failover pin (reserved setting failover_disabled, "true"/""), read back off
+  // the detail endpoint's own flag rather than the raw settings row.
+  const [pinHost, setPinHost] = useState(existing?.failoverDisabled ?? false)
   const [showAdvanced, setShowAdvanced] = useState(false)
 
   const setValue = (fieldName: string) => (value: string) =>
@@ -147,6 +156,10 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
       onSubmit={(e) => {
         e.preventDefault()
         const settings = settingsPayload(values, mode)
+        // On create an empty reserved setting is simply omitted (the engine default
+        // is "failover on"), so only a pin is worth sending; on edit it is written
+        // either way, below, so unpinning actually clears the stored value.
+        if (pinHost) settings.failover_disabled = "true"
         if (solver === "cookie") {
           settings.solver_type = "manual_cookie"
           if (!definesCookie) settings.cookie = cookie
@@ -160,6 +173,7 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
           settings.proxy_url = ""
           settings.flaresolverr_url = ""
           settings.flaresolverr_max_timeout = ""
+          settings.failover_disabled = pinHost ? "true" : ""
           if (solver !== "cookie") {
             settings.solver_type = ""
             if (!definesCookie) settings.cookie = ""
@@ -226,7 +240,7 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
         onClick={() => setShowAdvanced((v) => !v)}
       >
         <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", showAdvanced && "rotate-90")} />
-        Advanced (proxy, timeout, anti-bot solver, priority, request limits, RSS warming, matching, expiry, sync behavior)
+        Advanced (proxy, timeout, request spacing, host pin, anti-bot solver, priority, request limits, RSS warming, matching, expiry, sync behavior)
       </button>
       {showAdvanced && (
         <div className="flex flex-col gap-4 rounded-md border border-border p-3">
@@ -238,7 +252,26 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
             </NativeSelect>
           </span>
 
+          <span className="flex flex-col gap-1.5">
+            <span className="flex items-center justify-between">
+              <Label htmlFor="ix-pin-host" className="font-normal">Pin to configured host</Label>
+              <Switch id="ix-pin-host" checked={pinHost} onCheckedChange={setPinHost} />
+            </span>
+            <p className="text-[12px] text-faint">
+              Turns off the automatic base-URL failover for this indexer: harbrr keeps using the
+              host chosen above even when it stops answering, instead of moving to another of the
+              definition&apos;s known hosts.
+            </p>
+          </span>
+
           <SettingFieldInput field={TIMEOUT_FIELD} value={values.timeout ?? ""} onChange={setValue("timeout")} />
+
+          <SettingFieldInput field={RATE_INTERVAL_FIELD} value={values.rate_interval ?? ""} onChange={setValue("rate_interval")} />
+          <p className="text-[12px] text-faint">
+            The minimum gap between requests to this indexer&apos;s host. Empty uses the global
+            default from Settings &rarr; System. The definition&apos;s own request delay is a floor
+            that always wins, so this can slow harbrr down but never speed it past the definition.
+          </p>
 
           <span className="flex flex-col gap-1.5">
             <Label htmlFor="ix-solver">Anti-bot solver</Label>
@@ -406,7 +439,8 @@ function ExpiryFields({ date, kind, lifetime, onDate, onKind, onLifetime }: {
 // host rather than left opaque. Custom… keeps the free-text escape hatch for
 // private mirrors, onion addresses and LAN reverse proxies that no definition
 // lists. Purely local: the picker makes no network requests, and choosing a host
-// sets NO pin or failover-opt-out flag — that stays #375's separate control.
+// sets NO pin or failover-opt-out flag — that is the separate "Pin to configured
+// host" switch in Advanced, which owns the failover_disabled reserved setting.
 function BaseUrlField({ links, value, onChange }: {
   links: string[]
   value: string

@@ -19,6 +19,19 @@ export function useIndexer(slug: string, enabled = true) {
   })
 }
 
+// Detail for every listed indexer. The list payload (Instance) carries no
+// base-URL failover standing — effectiveBaseUrl/failoverBaseUrl live on
+// InstanceDetail only — so the table's failover pill needs the detail per slug.
+// Same query key as useIndexer, so the edit sheet reuses these entries.
+export function useIndexerDetailsMany(slugs: string[]) {
+  return useQueries({
+    queries: slugs.map((slug) => ({
+      queryKey: keys.indexers.detail(slug),
+      queryFn: () => unwrap(api.http.GET("/api/indexers/{slug}", { params: { path: { slug } } })),
+    })),
+  })
+}
+
 // Health polling per slug, shared between the Indexers table and the Dashboard
 // health strip via the query key (docs/webui-scope.md §2).
 export function useIndexerStatuses(slugs: string[]) {

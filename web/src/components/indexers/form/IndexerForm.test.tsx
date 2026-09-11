@@ -595,4 +595,53 @@ describe("DefinitionOption", () => {
     expect(screen.getByText(/\/search\/fields\/title/)).toBeTruthy()
     expect(screen.queryByRole("button")).toBeNull()
   })
+
+  it("edit: the host pin round-trips the failover_disabled reserved setting (autobrr/harbrr#375)", () => {
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    const { unmount } = renderForm(<IndexerForm definition={DEFINITION} existing={EXISTING} pending={false} error={null} onSubmit={onSubmit} />)
+
+    fireEvent.click(screen.getByText(/^Advanced/))
+    const pin = screen.getByLabelText("Pin to configured host")
+    expect(pin.getAttribute("data-state")).toBe("unchecked")
+    fireEvent.click(pin)
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+    expect(onSubmit.mock.calls[0][0].body.settings?.failover_disabled).toBe("true")
+    unmount()
+
+    // A pinned indexer shows the switch on, and unpinning CLEARS the stored value
+    // rather than omitting it (mergeSettings would otherwise keep the pin).
+    const onSubmit2 = vi.fn<(s: IndexerFormSubmit) => void>()
+    renderForm(<IndexerForm definition={DEFINITION} existing={{ ...EXISTING, failoverDisabled: true }} pending={false} error={null} onSubmit={onSubmit2} />)
+    fireEvent.click(screen.getByText(/^Advanced/))
+    const pinned = screen.getByLabelText("Pin to configured host")
+    expect(pinned.getAttribute("data-state")).toBe("checked")
+    fireEvent.click(pinned)
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+    expect(onSubmit2.mock.calls[0][0].body.settings?.failover_disabled).toBe("")
+  })
+
+  it("edit: the per-indexer request spacing round-trips rate_interval (autobrr/harbrr#104)", () => {
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    const existing = { ...EXISTING, settings: [...EXISTING.settings, { name: "rate_interval", value: "5s", secret: false }] }
+    renderForm(<IndexerForm definition={DEFINITION} existing={existing} pending={false} error={null} onSubmit={onSubmit} />)
+
+    fireEvent.click(screen.getByText(/^Advanced/))
+    const field = screen.getByLabelText(/Request spacing/)
+    expect((field as HTMLInputElement).value).toBe("5s")
+
+    fireEvent.change(field, { target: { value: "10s" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+    expect(onSubmit.mock.calls[0][0].body.settings?.rate_interval).toBe("10s")
+  })
+
+  it("edit: clearing the request spacing sends an empty value, falling back to the global default", () => {
+    const onSubmit = vi.fn<(s: IndexerFormSubmit) => void>()
+    const existing = { ...EXISTING, settings: [...EXISTING.settings, { name: "rate_interval", value: "5s", secret: false }] }
+    renderForm(<IndexerForm definition={DEFINITION} existing={existing} pending={false} error={null} onSubmit={onSubmit} />)
+
+    fireEvent.click(screen.getByText(/^Advanced/))
+    fireEvent.change(screen.getByLabelText(/Request spacing/), { target: { value: "" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+    expect(onSubmit.mock.calls[0][0].body.settings?.rate_interval).toBe("")
+  })
 })

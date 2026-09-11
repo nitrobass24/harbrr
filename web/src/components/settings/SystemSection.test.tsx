@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
 import type { ReactNode } from "react"
 import { stubApi } from "@/test/stubApi"
@@ -26,6 +26,7 @@ function stubFetch(state: { hidden: boolean }) {
       return Response.json(state)
     },
     "GET /api/config/log-level": { level: "info" },
+    "GET /api/config/rate-limit": { defaultInterval: "1s" },
     "GET /api/auth/me": () => Response.json({}, { status: 401 }),
     "GET /healthz": { version: "test", commit: "abc" },
   })
@@ -54,5 +55,37 @@ describe("SystemSection hide-adult-categories toggle", () => {
     // filters by the tracker's declared category and must say so.
     expect(screen.getByText(/filed under something else/i)).toBeTruthy()
     expect(screen.getByText(/not a content filter/i)).toBeTruthy()
+  })
+})
+
+// The global request-spacing default (autobrr/harbrr#104): read it, save it, and
+// say plainly that it can only ever slow harbrr down.
+describe("SystemSection default request spacing", () => {
+  it("shows the stored default and PUTs an edited one", async () => {
+    const puts: string[] = []
+    stubApi({
+      "GET /api/config/adult-categories": { hidden: false },
+      "GET /api/config/log-level": { level: "info" },
+      "GET /api/config/rate-limit": { defaultInterval: "1s" },
+      "PUT /api/config/rate-limit": async (request: Request) => {
+        const body = (await request.json()) as { defaultInterval: string }
+        puts.push(body.defaultInterval)
+        return Response.json({ defaultInterval: body.defaultInterval })
+      },
+      "GET /api/auth/me": () => Response.json({}, { status: 401 }),
+      "GET /healthz": { version: "test", commit: "abc" },
+    })
+    render(wrap(<SystemSection />))
+
+    const input = await screen.findByLabelText("Default request spacing")
+    await waitFor(() => expect((input as HTMLInputElement).value).toBe("1s"))
+
+    fireEvent.change(input, { target: { value: "5s" } })
+    const section = input.closest("section")!
+    fireEvent.click(within(section).getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(puts).toEqual(["5s"]))
+
+    // The floor is the definition's, not ours — the copy has to say so.
+    expect(screen.getByText(/floor that always wins/i)).toBeTruthy()
   })
 })

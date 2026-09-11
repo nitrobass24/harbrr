@@ -91,8 +91,14 @@ Solvers** page in the web UI), then set `proxyId` / `solverId` on the indexer.
 The `settings` map also accepts **reserved engine keys** for the per-indexer knobs:
 
 - `timeout` — per-indexer request timeout (a Go duration, e.g. `30s`).
+- `failover_disabled` — `true` pins the indexer to its configured host, opting it out of
+  automatic base-URL failover. The web UI exposes `timeout`, `rate_interval` and this pin
+  under the indexer's advanced options (**Request timeout**, **Request spacing**,
+  **Pin to configured host**).
 - `rate_interval` — minimum spacing between requests to this tracker (e.g. `5s`); it overrides
   the global rate-limit default, but never goes below the definition's own `requestDelay`.
+  Empty means the global default from
+  [Settings → System](../configuration.md#tracker-friendly-pacing-automatic).
 - `solver_type=manual_cookie` with an encrypted `cookie` setting — manual-cookie / 2FA login.
   This one stays inline by design: it's per-tracker, not a shared resource.
 
@@ -131,6 +137,9 @@ curl -X POST http://<host>:7478/api/indexers/torrentleech/test \
   `unknown` (nothing observed yet), plus recent health events — `auth_failure`,
   `rate_limited`, `parse_error`, `anti_bot`, `transport`, and `base_url_promoted` (not a
   failure: the base-URL failover moved the indexer to another host the definition lists).
+  While a promotion is in effect, `GET /api/indexers/{slug}` reports `effectiveBaseUrl` and
+  `failoverBaseUrl`, the indexer table shows a **failover** pill beside the name, and the
+  details sheet names the host in use.
   `failingSince` marks when the current streak began; `disabledTill` is present only while the
   circuit breaker is excluding the indexer from searches. `GET /api/indexers/status` gives the
   same picture fleet-wide, with healthy/failing/unknown counts.

@@ -12,9 +12,11 @@ import {
   useExpiryThresholds,
   useHealth,
   useLogLevel,
+  useRateLimit,
   useSetAdultCategories,
   useSetExpiryThresholds,
-  useSetLogLevel
+  useSetLogLevel,
+  useSetRateLimit
 } from "@/hooks/useSettings"
 import { getBaseUrl } from "@/lib/base-url"
 import { relativeTime } from "@/lib/format"
@@ -30,6 +32,7 @@ export function SystemSection() {
     <>
       <CategoriesBlock />
       <ExpiryBlock />
+      <RateLimitBlock />
       <LoggingBlock />
       {!authDisabled && <AccountBlock />}
       <AboutBlock />
@@ -130,6 +133,55 @@ function ExpiryBlock() {
 function parseDays(raw: string): number[] {
   return raw.split(",").map((s) => Number(s.trim()))
     .filter((n) => Number.isInteger(n) && n >= 0)
+}
+
+// RateLimitBlock is the global request-spacing default (autobrr/harbrr#104). Free
+// text in the same Go-duration shape as the indexer form's timeout field: the server
+// is the one authority on what parses, rejects anything else with a 400, and echoes
+// back the canonical duration it stored.
+function RateLimitBlock() {
+  const config = useRateLimit()
+  const save = useSetRateLimit()
+  const [draft, setDraft] = useState<string | null>(null)
+  const stored = config.data?.defaultInterval ?? ""
+  const value = draft ?? stored
+
+  return (
+    <section id="rate-limit" className="flex flex-col gap-3">
+      <h2 className="text-[14px] font-semibold tracking-tight">Request pacing</h2>
+      <div className="flex flex-col gap-2 rounded-xl border border-border bg-card px-5 py-4 text-[13px]">
+        <Label htmlFor="rate-default-interval">Default request spacing</Label>
+        <div className="flex gap-2">
+          <Input
+            id="rate-default-interval"
+            className="max-w-64"
+            placeholder="e.g. 1s"
+            value={value}
+            onChange={(e) => setDraft(e.target.value)}
+          />
+          <Button
+            variant="outline"
+            disabled={save.isPending || value === stored}
+            onClick={() => save.mutate(value, {
+              onSuccess: (r) => {
+                setDraft(null)
+                notifySuccess(`Default request spacing set to ${r.defaultInterval}`)
+              },
+              onError: (err) => notifyError("Saving the request spacing failed", err),
+            })}
+          >
+            {save.isPending ? "Saving…" : "Save"}
+          </Button>
+        </div>
+        <p className="text-[12px] text-faint">
+          The minimum gap between requests to any tracker host, applied live to every indexer
+          that has no per-indexer override (set one under an indexer&apos;s Advanced section). A
+          definition&apos;s own request delay is a floor that always wins: this can only slow harbrr
+          down, never speed it past what the definition asks for.
+        </p>
+      </div>
+    </section>
+  )
 }
 
 function LoggingBlock() {

@@ -25,6 +25,14 @@ const ROWS: IndexerRowData[] = [
   },
 ]
 
+// Usage fixtures (#487): a busy indexer, one that has gone quiet, and one nothing
+// has ever queried.
+const FAILURES = { authFailure: 0, rateLimited: 0, parseError: 0, antiBot: 0, transport: 0 }
+function stat(slug: string, queries: number, lastQueryAt?: string) {
+  return { slug, queries, grabAttempts: 0, grabs: 0, avgResponseMs: 120, failures: FAILURES, categories: [], lastQueryAt }
+}
+const DAY = 24 * 60 * 60 * 1000
+
 function noopActions(overrides: Partial<IndexerRowActions> = {}): IndexerRowActions {
   return {
     onToggle: vi.fn(),
@@ -72,5 +80,20 @@ describe("IndexerCardsMobile", () => {
     fireEvent.pointerDown(screen.getByLabelText("More actions for TorrentLeech"))
     fireEvent.click(screen.getByText("Delete"))
     expect(onDelete).toHaveBeenCalledWith("torrentleech")
+  })
+
+  it("shows usage on the card, with never-queried called out (autobrr/harbrr#487)", () => {
+    const rows: IndexerRowData[] = [
+      { instance: ROWS[0].instance, stats: stat("torrentleech", 42, new Date(Date.now() - 3 * DAY).toISOString()) },
+      { instance: ROWS[1].instance, stats: stat("x1337", 0) },
+    ]
+    render(<IndexerCardsMobile rows={rows} actions={noopActions()} />)
+
+    const tl = screen.getByText("TorrentLeech").closest<HTMLElement>("[data-slug]")!
+    expect(within(tl).getByText("42 queries")).toBeTruthy()
+    expect(within(tl).getByText("3d ago")).toBeTruthy()
+
+    const x = screen.getAllByText("1337x")[0].closest<HTMLElement>("[data-slug]")!
+    expect(within(x).getByText("Never queried")).toBeTruthy()
   })
 })

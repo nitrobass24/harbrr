@@ -24,12 +24,16 @@ const INDEXER = {
 }
 
 // Answers the _authenticated guard plus every GET the Indexers route fires on
-// mount: the indexers list, definitions, per-slug status and capabilities.
+// mount: the indexers list, definitions, bulk usage stats, and per-slug detail,
+// status and capabilities.
 function stubFetch() {
   stubApi({
     "GET /api/auth/me": ME,
     "GET /api/indexers": [INDEXER],
     "GET /api/definitions": [],
+    // Must precede any "/api/indexers/{slug}" stub: the slug pattern would match "stats".
+    "GET /api/indexers/stats": [],
+    "GET /api/indexers/{slug}": { ...INDEXER, settings: [], effectiveBaseUrl: INDEXER.baseUrl, failoverDisabled: false },
     "GET /api/indexers/{slug}/status": { slug: "torrentleech", status: "healthy", events: [] },
     "GET /api/indexers/{slug}/capabilities": { categories: [] },
   })

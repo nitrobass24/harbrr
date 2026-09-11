@@ -1,10 +1,12 @@
 import { ArrowRight, ArrowUpNarrowWide, Copy, MoreVertical, Pencil, Trash2 } from "lucide-react"
 import { ExpiryCell } from "@/components/indexers/ExpiryCell"
+import { FailoverPill } from "@/components/indexers/FailoverPill"
 import { FreeleechPill } from "@/components/indexers/FreeleechPill"
 import { HealthCell } from "@/components/indexers/HealthCell"
 import { IndexerAvatar } from "@/components/indexers/IndexerAvatar"
 import { ProtocolPill } from "@/components/indexers/ProtocolPill"
 import { TypePill } from "@/components/indexers/TypePill"
+import { UsageCell } from "@/components/indexers/UsageCell"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -17,13 +19,15 @@ import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { hostname } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import type { Instance, IndexerStatus } from "@/lib/api"
+import type { IndexerStats, Instance, IndexerStatus, InstanceDetail } from "@/lib/api"
 
 export type IndexerRowData = {
   instance: Instance
   type?: string // privacy: private | public | semi-private (from definition)
   categories?: string // parent category names, joined
   status?: IndexerStatus
+  stats?: IndexerStats // usage: is anything actually querying this? (#487)
+  detail?: InstanceDetail // carries the base-URL failover standing (#375)
   testing?: boolean
 }
 
@@ -56,6 +60,7 @@ export function IndexersTable({ rows, actions, sortByExpiry = false, onToggleExp
             <TableHead>Privacy</TableHead>
             <TableHead>Categories</TableHead>
             <TableHead>Health</TableHead>
+            <TableHead>Usage</TableHead>
             <TableHead>
               <button
                 type="button"
@@ -92,8 +97,11 @@ function IndexerRow({ row, actions }: { row: IndexerRowData, actions: IndexerRow
         >
           <IndexerAvatar slug={ix.slug} name={ix.name} />
           <span className="flex flex-col leading-tight">
-            <span className={cn("font-medium", ix.enabled ? "text-foreground" : "text-muted-foreground")}>
-              {ix.name}
+            <span className="flex items-center gap-1.5">
+              <span className={cn("font-medium", ix.enabled ? "text-foreground" : "text-muted-foreground")}>
+                {ix.name}
+              </span>
+              <FailoverPill detail={row.detail} />
             </span>
             <span className="text-[12px] text-faint">{hostname(ix.baseUrl) || ix.definitionId}</span>
           </span>
@@ -108,6 +116,7 @@ function IndexerRow({ row, actions }: { row: IndexerRowData, actions: IndexerRow
       </TableCell>
       <TableCell className="max-w-56 truncate text-muted-foreground">{row.categories ?? ""}</TableCell>
       <TableCell><HealthCell status={row.status} /></TableCell>
+      <TableCell><UsageCell stats={row.stats} /></TableCell>
       <TableCell><ExpiryCell instance={ix} /></TableCell>
       <TableCell className="text-center">
         <Switch
