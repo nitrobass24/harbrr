@@ -467,6 +467,64 @@ music: "3000"
 	}
 }
 
+// TestFieldJSONCaseFallthrough pins the JSON-only half of the case switch: when
+// no arm matches, Jackett's handleJsonSelector keeps the already-extracted value
+// (its post-loop check is `value == null`, and value still holds the SelectToken
+// result), so a value outside the listed arms — a UNIT3D site serialising
+// _internal as 0/1 instead of False/True — degrades to the raw value instead of
+// failing the whole parse. Only a null extraction is a miss. The HTML path still
+// misses on no match (TestFieldDefersRequiredDecision), matching handleSelector's
+// value=null start.
+func TestFieldJSONCaseFallthrough(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		block     loader.SelectorBlock
+		wantValue string
+		wantFound bool
+	}{
+		{
+			name: "no arm matches keeps the extracted value",
+			block: loader.SelectorBlock{
+				Selector: "flag",
+				Case: caseBlock(`
+ok: "1"
+ko: "0"
+`),
+			},
+			wantValue: "weird",
+			wantFound: true,
+		},
+		{
+			name: "matching arm still wins",
+			block: loader.SelectorBlock{
+				Selector: "internal",
+				Case:     caseBlock(`"False": "no"`),
+			},
+			wantValue: "no",
+			wantFound: true,
+		},
+		{
+			name: "null extraction is a miss",
+			block: loader.SelectorBlock{
+				Selector: "nullflag",
+				Case:     caseBlock(`ok: "1"`),
+			},
+			wantFound: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			row := firstJSONRow(t, "case_fallthrough.json", "data")
+			got, found, err := New().Field(row, tc.block, nil)
+			assertField(t, fieldResult{got, found, err}, tc.wantValue, tc.wantFound, false)
+		})
+	}
+}
+
 // TestArrayIndexPath checks numeric path segments index into arrays, in both the
 // dotted form ("tags.0") and Newtonsoft bracket form ("files[0].name") that the
 // corpus actually uses — 73 vendored JSON defs select via "files[0].name".
