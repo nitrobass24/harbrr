@@ -50,7 +50,7 @@ of the last query beside health. Two states get a distinct look:
 
 - **Never queried** — zero queries. Almost always means an application was never pointed at
   this indexer, not that anything is wrong with harbrr or the tracker.
-- **Idle** — quiet for **7 days or more** after having been queried before. The same class of
+- **Idle** — quiet for **more than 7 days** after having been queried before. The same class of
   problem: something stopped asking.
 
 The dashboard's **Idle indexers** tile counts both and links to the table, so an indexer that
