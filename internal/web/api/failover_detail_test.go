@@ -97,14 +97,29 @@ func TestListIndexersCarriesFailoverStanding(t *testing.T) {
 	if len(list) != 2 {
 		t.Fatalf("list returned %d rows, want 2 (body %s)", len(list), body)
 	}
+	rows := make(map[string]struct {
+		FailoverBaseURL  string
+		FailoverDisabled bool
+	}, len(list))
 	for _, row := range list {
-		wantURL, wantDisabled := "", false
-		if row.Slug == "promoted" {
-			wantURL, wantDisabled = promotedHost, true
-		}
-		if row.FailoverBaseURL != wantURL || row.FailoverDisabled != wantDisabled {
-			t.Errorf("%s row = %q/%v, want %q/%v", row.Slug, row.FailoverBaseURL, row.FailoverDisabled, wantURL, wantDisabled)
-		}
+		rows[row.Slug] = struct {
+			FailoverBaseURL  string
+			FailoverDisabled bool
+		}{row.FailoverBaseURL, row.FailoverDisabled}
+	}
+	promoted, ok := rows["promoted"]
+	if !ok {
+		t.Fatalf("list has no %q row (body %s)", "promoted", body)
+	}
+	if promoted.FailoverBaseURL != promotedHost || !promoted.FailoverDisabled {
+		t.Errorf("promoted row = %q/%v, want %q/true", promoted.FailoverBaseURL, promoted.FailoverDisabled, promotedHost)
+	}
+	plain, ok := rows["plain"]
+	if !ok {
+		t.Fatalf("list has no %q row (body %s)", "plain", body)
+	}
+	if plain.FailoverBaseURL != "" || plain.FailoverDisabled {
+		t.Errorf("plain row = %q/%v, want \"\"/false", plain.FailoverBaseURL, plain.FailoverDisabled)
 	}
 	// Absence is an omitted key, not an empty string — only the promoted row carries it.
 	if n := strings.Count(string(body), "failoverBaseUrl"); n != 1 {
