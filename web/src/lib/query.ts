@@ -51,6 +51,7 @@ export const keys = {
     logLevel: () => ["config", "log-level"] as const,
     adultCategories: () => ["config", "adult-categories"] as const,
     expiryThresholds: () => ["config", "expiry-thresholds"] as const,
+    rateLimit: () => ["config", "rate-limit"] as const,
   },
   apiKeys: {
     all: ["apikeys"] as const,

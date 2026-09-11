@@ -92,6 +92,21 @@ export function useSetExpiryThresholds() {
   })
 }
 
+// The global request-spacing default (autobrr/harbrr#104). The server applies a
+// saved value to every paced client immediately and echoes back the canonical
+// duration it stored, so the field renders what the server actually holds.
+export function useRateLimit() {
+  return useQuery({ queryKey: keys.config.rateLimit(), queryFn: () => unwrap(api.http.GET("/api/config/rate-limit")) })
+}
+
+export function useSetRateLimit() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (defaultInterval: string) => unwrap(api.http.PUT("/api/config/rate-limit", { body: { defaultInterval } })),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.config.rateLimit() }),
+  })
+}
+
 export function useApiKeys() {
   return useQuery({ queryKey: keys.apiKeys.all, queryFn: () => unwrap(api.http.GET("/api/apikeys")) })
 }

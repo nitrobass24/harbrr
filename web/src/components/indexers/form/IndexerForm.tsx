@@ -36,6 +36,12 @@ const TIMEOUT_FIELD: SettingField = {
   name: "timeout", label: "Request timeout (Go duration, e.g. 30s)", type: "text", secret: false,
 }
 
+// Per-indexer request spacing (autobrr/harbrr#104): empty falls back to the global
+// default in Settings -> System. Same free-form Go-duration shape as TIMEOUT_FIELD.
+const RATE_INTERVAL_FIELD: SettingField = {
+  name: "rate_interval", label: "Request spacing (Go duration, e.g. 5s — empty = global default)", type: "text", secret: false,
+}
+
 // Reserved request-limit settings (autobrr/harbrr#251): already enforced by the
 // registry, exposed here for the first time. They ride the same free-form
 // settings map as TIMEOUT_FIELD — no dedicated body fields.
@@ -56,7 +62,7 @@ const LIMITS_UNIT_FIELD: SettingField = {
 const WARM_INTERVAL_FIELD: SettingField = {
   name: "rss_warm_interval", label: "RSS cache warming (Go duration, e.g. 30m)", type: "text", secret: false,
 }
-const LIMIT_FIELDS = [TIMEOUT_FIELD, QUERY_LIMIT_FIELD, GRAB_LIMIT_FIELD, LIMITS_UNIT_FIELD, WARM_INTERVAL_FIELD]
+const LIMIT_FIELDS = [TIMEOUT_FIELD, RATE_INTERVAL_FIELD, QUERY_LIMIT_FIELD, GRAB_LIMIT_FIELD, LIMITS_UNIT_FIELD, WARM_INTERVAL_FIELD]
 
 // Reserved matching settings (autobrr/harbrr#394). Both default to today's engine
 // behaviour, so an untouched indexer searches and filters exactly as it always has;
@@ -234,7 +240,7 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
         onClick={() => setShowAdvanced((v) => !v)}
       >
         <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", showAdvanced && "rotate-90")} />
-        Advanced (proxy, timeout, anti-bot solver, priority, request limits, RSS warming, matching, expiry, sync behavior)
+        Advanced (proxy, timeout, request spacing, host pin, anti-bot solver, priority, request limits, RSS warming, matching, expiry, sync behavior)
       </button>
       {showAdvanced && (
         <div className="flex flex-col gap-4 rounded-md border border-border p-3">
@@ -259,6 +265,13 @@ export function IndexerForm({ definition, existing, pending, error, onSubmit }: 
           </span>
 
           <SettingFieldInput field={TIMEOUT_FIELD} value={values.timeout ?? ""} onChange={setValue("timeout")} />
+
+          <SettingFieldInput field={RATE_INTERVAL_FIELD} value={values.rate_interval ?? ""} onChange={setValue("rate_interval")} />
+          <p className="text-[12px] text-faint">
+            The minimum gap between requests to this indexer&apos;s host. Empty uses the global
+            default from Settings &rarr; System. The definition&apos;s own request delay is a floor
+            that always wins, so this can slow harbrr down but never speed it past the definition.
+          </p>
 
           <span className="flex flex-col gap-1.5">
             <Label htmlFor="ix-solver">Anti-bot solver</Label>
