@@ -443,18 +443,27 @@ func (h *handler) feedInfo(r *http.Request, idx core.Indexer) tzn.FeedInfo {
 }
 
 // selfURL builds the atom:link self href, dropping the query string entirely so
-// harbrr never reflects the caller's apikey, then routes it through RedactURL as
-// defense in depth. It re-adds the configured base path (the server strips it before
-// routing) so the served URL is the externally-visible one. The origin is
-// h.urlCfg.ExternalOrigin when the operator configured one; otherwise it derives from
-// the request scheme/host, honoring X-Forwarded-Proto only from a trusted proxy peer
-// (apphttp.RequestScheme).
+// harbrr never reflects the caller's apikey, then routes it through
+// RedactURLIdentity as defense in depth. It re-adds the configured base path (the
+// server strips it before routing) so the served URL is the externally-visible one.
+// The origin is h.urlCfg.ExternalOrigin when the operator configured one; otherwise
+// it derives from the request scheme/host, honoring X-Forwarded-Proto only from a
+// trusted proxy peer (apphttp.RequestScheme).
+//
+// RedactURLIdentity rather than RedactURL (autobrr/harbrr#654): the path here is a
+// harbrr ROUTE whose only variable segment is a registry slug, never a credential —
+// an identity in exactly the sense that variant exists for. RedactURL additionally
+// masks any 32+ hex / 40+ alphanumeric run in the path, and the registry's slug
+// pattern permits up to 64 chars, so a slug shaped like a passkey was rewritten to
+// REDACTED in the served href. The query is already gone by construction here, and
+// RedactURLIdentity still scrubs userinfo and any secret query param, so the
+// defense-in-depth half is unchanged.
 func (h *handler) selfURL(r *http.Request) string {
 	origin := h.urlCfg.ExternalOrigin
 	if origin == "" {
 		origin = apphttp.RequestScheme(r, h.urlCfg.TrustedProxies) + "://" + r.Host
 	}
-	return apphttp.RedactURL(origin + h.urlCfg.BasePath + r.URL.Path)
+	return apphttp.RedactURLIdentity(origin + h.urlCfg.BasePath + r.URL.Path)
 }
 
 // writeInternalError logs the failure and returns a generic 900 document — the

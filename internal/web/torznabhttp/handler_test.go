@@ -940,3 +940,35 @@ func TestHandlerSelfURLHasNoAPIKey(t *testing.T) {
 		t.Errorf("self URL not built from the request path without query:\n%s", body)
 	}
 }
+
+// TestHandlerSelfURLKeepsSecretShapedSlug: the registry allows a 64-char slug, so a
+// legal slug can look exactly like the long hex/alphanumeric run RedactURL's path scrub
+// masks. The self href must carry the real slug — it names a route, not a credential
+// (autobrr/harbrr#654).
+func TestHandlerSelfURLKeepsSecretShapedSlug(t *testing.T) {
+	t.Parallel()
+	for _, slug := range []string{
+		"0123456789abcdef0123456789abcdef",             // 32 hex
+		"abcdefghijklmnopqrstuvwxyz0123456789abcdefgh", // 44 alphanumeric
+	} {
+		t.Run(slug, func(t *testing.T) {
+			t.Parallel()
+			idx := demoIndexer(t)
+			h := NewHandler(fakeProvider{slug: idx}, withTestAPIKey(testAPIKey),
+				WithClock(func() time.Time { return time.Date(2026, time.June, 13, 12, 0, 0, 0, time.UTC) }))
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+				"/api/indexers/"+slug+"/results/torznab?t=search&q=x&apikey="+testAPIKey, nil)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			body := rec.Body.String()
+			want := `<atom:link href="http://example.com/api/indexers/` + slug + `/results/torznab"`
+			if !strings.Contains(body, want) {
+				t.Errorf("self URL lost the real slug:\n%s", body)
+			}
+			if strings.Contains(body, testAPIKey) {
+				t.Errorf("atom:link self URL leaked the apikey:\n%s", body)
+			}
+		})
+	}
+}
