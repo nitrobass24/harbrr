@@ -47,6 +47,9 @@ type mamRelease struct {
 	Free              mamFlexBool       `json:"free"`
 	PersonalFreeleech mamFlexBool       `json:"personal_freeleech"`
 	FlVIP             mamFlexBool       `json:"fl_vip"`
+	LanguageCode      string            `json:"lang_code"`
+	Filetype          string            `json:"filetype"`
+	VIP               mamFlexBool       `json:"vip"`
 }
 
 // mamFlexBool unmarshals a JSON bool OR number (0/1) into a bool. MAM's freeleech
@@ -120,7 +123,7 @@ func (d *driver) toRelease(row *mamRelease) (*normalizer.Release, error) {
 	}
 	authors := authorNames(row.AuthorInfo)
 	rel := &normalizer.Release{
-		Title:                titleWithAuthors(row.Title, authors),
+		Title:                releaseTitle(row, authors),
 		Author:               strings.Join(authors, ", "),
 		Link:                 d.downloadURL(row),
 		Details:              d.detailsURL(row),
@@ -174,6 +177,28 @@ func downloadVolumeFactor(row *mamRelease) float64 {
 		return 0
 	}
 	return 1
+}
+
+// releaseTitle builds the served title the way the oracle does: the title with the
+// authors appended, then a " [lang_code / FILETYPE]" flag bracket (lang first, filetype
+// upper-cased, joined with " / ", omitted when both are empty), then " [VIP]" for a VIP
+// row.
+func releaseTitle(row *mamRelease, authors []string) string {
+	title := titleWithAuthors(row.Title, authors)
+	var flags []string
+	if row.LanguageCode != "" {
+		flags = append(flags, row.LanguageCode)
+	}
+	if row.Filetype != "" {
+		flags = append(flags, strings.ToUpper(row.Filetype))
+	}
+	if len(flags) > 0 {
+		title += " [" + strings.Join(flags, " / ") + "]"
+	}
+	if bool(row.VIP) {
+		title += " [VIP]"
+	}
+	return title
 }
 
 // titleWithAuthors appends the parsed author names to the title in "Title by A, B"

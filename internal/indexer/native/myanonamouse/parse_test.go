@@ -48,7 +48,7 @@ func TestParseReleasesGolden(t *testing.T) {
 	// Sorted by publish date descending: Project Hail Mary (Mar) > The Silent Patient (Jan).
 	want := []*normalizer.Release{
 		{
-			Title: "Project Hail Mary by Andy Weir, Ray Porter", Author: "Andy Weir, Ray Porter",
+			Title: "Project Hail Mary by Andy Weir, Ray Porter [ENG / EPUB] [VIP]", Author: "Andy Weir, Ray Porter",
 			Link:    "https://www.myanonamouse.net/tor/download.php?tid=202",
 			Details: "https://www.myanonamouse.net/t/202",
 			// cat 47 -> Audio/Audiobook (3030) + custom 1:1 (100047).
@@ -261,5 +261,33 @@ func TestParseReleasesLiveIntegerShape(t *testing.T) {
 	}
 	if r.Title != "Live Book by Author X" {
 		t.Errorf("Title = %q", r.Title)
+	}
+}
+
+// TestReleaseTitle covers the oracle's title suffixes: " by A, B", then the
+// " [lang / FILETYPE]" flag bracket, then " [VIP]".
+func TestReleaseTitle(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		row     mamRelease
+		authors []string
+		want    string
+	}{
+		{"bare title", mamRelease{Title: "Some Book"}, nil, "Some Book"},
+		{"authors only", mamRelease{Title: "Some Book"}, []string{"Andy Weir", "Ray Porter"}, "Some Book by Andy Weir, Ray Porter"},
+		{"lang and filetype", mamRelease{Title: "Some Book", LanguageCode: "ENG", Filetype: "epub"}, nil, "Some Book [ENG / EPUB]"},
+		{"lang only", mamRelease{Title: "Some Book", LanguageCode: "ENG"}, nil, "Some Book [ENG]"},
+		{"filetype only", mamRelease{Title: "Some Book", Filetype: "m4b"}, nil, "Some Book [M4B]"},
+		{"vip only", mamRelease{Title: "Some Book", VIP: true}, nil, "Some Book [VIP]"},
+		{"everything in order", mamRelease{Title: "Some Book", LanguageCode: "ENG", Filetype: "epub", VIP: true}, []string{"Andy Weir"}, "Some Book by Andy Weir [ENG / EPUB] [VIP]"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := releaseTitle(&tc.row, tc.authors); got != tc.want {
+				t.Errorf("releaseTitle = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

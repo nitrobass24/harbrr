@@ -33,6 +33,9 @@
       "free": false,
       "personal_freeleech": false,
       "fl_vip": false,
+      "lang_code": "ENG",
+      "filetype": "epub",
+      "vip": true,
       "dl": "DLHASH-BBBB"
     }
   ]

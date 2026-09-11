@@ -88,6 +88,10 @@ captured from a live MAM. The live Prowlarr differential and a real search/grab 
 - **Freeleech → DownloadVolumeFactor** — `[Accepted]`. `free` OR `personal_freeleech`
   OR `fl_vip` ⇒ `DownloadVolumeFactor=0`, else `1`; `UploadVolumeFactor=1`,
   `MinimumRatio=1`, `MinimumSeedTime=259200` (72h, Prowlarr's fixed value).
+- **Title flag suffixes** — `[Accepted]`. After the author append, a non-empty
+  `lang_code` and `filetype` (upper-cased) are joined with `" / "` into a
+  `" [ENG / EPUB]"` bracket, and a `vip` row gets a trailing `" [VIP]"` — the oracle's
+  order and formatting. These are the only format/quality hints a MAM title carries.
 - **`"Nothing returned, out of …"` Error → no results** — `[Accepted]`. An `Error`
   matching that prefix is treated as zero results (matching Prowlarr); any *other*
   non-empty `Error`, a missing `data` array, or a malformed body is a parse error.
