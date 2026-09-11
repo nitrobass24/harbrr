@@ -37,16 +37,25 @@ func newSabnzbd(c domain.DownloadClient, secret string, client *http.Client) (Dr
 	}, nil
 }
 
-// Test calls SABnzbd's version endpoint, proving the host + apikey are
-// reachable. VersionResponse (unlike AddFileResponse) carries no ApiError field
-// upstream, so a rejected apikey is only distinguishable here if SABnzbd answers
-// with a body Version can't decode (its ported client never checks HTTP status).
+// Test reads one slot of SABnzbd's queue, proving the host + apikey are reachable
+// AND that the key is accepted.
+//
+// It used to call mode=version, which SABnzbd's api_handler exempts from the apikey
+// check along with mode=auth: that answers 200 for any key at all, so a typo'd key
+// passed the connection test and only surfaced on the first grab as "API Key
+// Incorrect" (autobrr/harbrr#658). mode=queue does require the key and is the
+// cheapest mode that does. A rejected key is an HTTP 200 carrying an error field,
+// which the ported client decodes into ApiError — the same shape Add already reads.
 func (d *sabnzbdDriver) Test(ctx context.Context) error {
-	if _, err := d.client.Version(ctx); err != nil {
-		// The version request URL itself carries the configured apikey (as a query
-		// param); a transport failure surfaces as a *url.Error whose text embeds
-		// that full URL — ScrubURLError drops it, same treatment as Add.
-		return fmt.Errorf("download: sabnzbd: version: %w", apphttp.ScrubURLError(err))
+	resp, err := d.client.Queue(ctx)
+	if err != nil {
+		// The request URL itself carries the configured apikey (as a query param); a
+		// transport failure surfaces as a *url.Error whose text embeds that full URL —
+		// ScrubURLError drops it, same treatment as Add.
+		return fmt.Errorf("download: sabnzbd: queue: %w", apphttp.ScrubURLError(err))
+	}
+	if resp.ErrorMsg != "" {
+		return fmt.Errorf("download: sabnzbd: queue: %s", resp.ErrorMsg)
 	}
 	return nil
 }

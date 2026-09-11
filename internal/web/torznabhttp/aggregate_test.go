@@ -606,8 +606,10 @@ func TestStatusFeedTakesTheAggregatePath(t *testing.T) {
 }
 
 // TestAggregateWholeListFailure: when the member set cannot be READ, both aggregate slug
-// forms serve an error document. An empty-200 feed would tell the consumer "you have no
-// indexers" — the exact silent absence the ledger exists to prevent.
+// forms serve an error document with HTTP 500. An empty-200 feed would tell the consumer
+// "you have no indexers" — the exact silent absence the ledger exists to prevent — and a
+// 200 alongside the 900 document would hide the failure from anything keyed on status
+// (autobrr/harbrr#652).
 func TestAggregateWholeListFailure(t *testing.T) {
 	t.Parallel()
 	slug := profileFeed("mine")
@@ -619,6 +621,9 @@ func TestAggregateWholeListFailure(t *testing.T) {
 				err:   errors.New("database is locked: /data/harbrr.db"),
 			}
 			rec := doFeed(t, p, feed, "t=search&q=x")
+			if rec.Code != http.StatusInternalServerError {
+				t.Errorf("status = %d, want 500 — a store failure is the 5xx retry signal, not a successful poll", rec.Code)
+			}
 			body := rec.Body.String()
 			if strings.Contains(body, "<rss") {
 				t.Fatalf("a whole-list failure must not serve a feed:\n%s", body)

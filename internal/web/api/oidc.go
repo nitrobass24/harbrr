@@ -37,6 +37,17 @@ const (
 var (
 	oidcNewProvider = oidc.NewProvider
 	oidcSleep       = time.Sleep
+
+	// oidcInitTimeout bounds the WHOLE startup discovery — every attempt and every
+	// backoff together (autobrr/harbrr#651). NewRouter runs before the listener is
+	// bound (app.New -> newServer), so an issuer that accepts the TCP connection and
+	// then never answers used to hang startup outright: nothing was served, /healthz
+	// included, and the retry loop — which bounds attempts, not wall time — was never
+	// even reached. go-oidc builds its discovery request from the context handed to
+	// oidc.NewProvider, so this one deadline interrupts a stalled connect, stalled
+	// response headers and a never-finishing body alike; no separately-timed
+	// http.Client is needed. A var so a test can shorten it.
+	oidcInitTimeout = 10 * time.Second
 )
 
 // errOIDCTokenInvalid marks an ID-token verification failure, mapped to 401 by
@@ -96,6 +107,10 @@ func newOIDCHandler(ctx context.Context, cfg OIDCConfig) (*oidcHandler, error) {
 // and its slash-toggled variant on each attempt — some IdPs are picky about
 // (or slow to serve) the trailing slash, and a slow IdP on the instance's own
 // first boot is qui's documented gotcha this retry loop exists for.
+//
+// ctx bounds the loop as a whole: once it is done, every remaining attempt would fail
+// instantly anyway, so giving up immediately keeps the remaining backoff sleeps from
+// adding seconds on top of an already-expired deadline.
 func discoverOIDCProvider(ctx context.Context, issuer string) (*oidc.Provider, string, error) {
 	candidates := []string{issuer}
 	if strings.HasSuffix(issuer, "/") {
@@ -112,6 +127,9 @@ func discoverOIDCProvider(ctx context.Context, issuer string) (*oidc.Provider, s
 				return provider, candidate, nil
 			}
 			lastErr = err
+		}
+		if ctx.Err() != nil {
+			break
 		}
 		if attempt < oidcInitMaxAttempts {
 			oidcSleep(oidcInitInitialBackoff << (attempt - 1))

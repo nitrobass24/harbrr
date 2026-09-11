@@ -110,6 +110,38 @@ func (c *Client) Version(ctx context.Context) (*VersionResponse, error) {
 	return &data, nil
 }
 
+// queueTestLimit bounds Queue's reply to a single slot. The call exists to make
+// SABnzbd evaluate the apikey, not to read the queue, so the smallest legal page is
+// the right one.
+const queueTestLimit = "1"
+
+// Queue reads one slot of the download queue. harbrr uses it purely as an
+// apikey-checked probe: SABnzbd's api_handler exempts mode=version (and mode=auth)
+// from check_apikey, so those two answer 200 for ANY key and can never validate one
+// (autobrr/harbrr#658). mode=queue does require the key, and it is the cheapest mode
+// that does — unlike mode=get_config, which would have SABnzbd serialize its entire
+// configuration, newsserver passwords included, just to prove a key works.
+//
+// A rejected key comes back as HTTP 200 with {"status": false, "error": "API Key
+// Incorrect"} (interface.py's report() for output=json), which lands in the embedded
+// ApiError exactly as it does for mode=addurl.
+//
+// harbrr-only (no upstream counterpart).
+func (c *Client) Queue(ctx context.Context) (*QueueResponse, error) {
+	v := url.Values{}
+	v.Set("mode", "queue")
+	v.Set("limit", queueTestLimit)
+	v.Set("output", "json")
+	v.Set("apikey", c.apiKey)
+
+	var data QueueResponse
+	if err := c.call(ctx, http.MethodGet, v, nil, "", &data); err != nil {
+		return nil, err
+	}
+
+	return &data, nil
+}
+
 // call issues one request against SABnzbd's single /api endpoint — v carries the mode
 // and every other parameter — and decodes the JSON response into out. body/contentType
 // are nil/"" for the GET modes; only mode=addfile posts a body. Every caller shares
@@ -180,6 +212,14 @@ func nzbMultipart(filename string, nzb []byte) (io.Reader, string, error) {
 
 type VersionResponse struct {
 	Version string `json:"version"`
+}
+
+// QueueResponse is mode=queue's reply, reduced to the one thing harbrr reads from it:
+// the embedded ApiError that carries a rejected apikey. The queue's slots are
+// deliberately not modeled — Queue is a probe, not a queue reader.
+// harbrr-only (no upstream counterpart).
+type QueueResponse struct {
+	ApiError
 }
 
 type AddFileResponse struct {

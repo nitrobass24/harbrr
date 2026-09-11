@@ -87,13 +87,32 @@ func TestDelugeTest_OK(t *testing.T) {
 	}
 }
 
-func TestDelugeTest_ConnectError(t *testing.T) {
+// TestDelugeConnectErrorClosesTheSocket is the #659 regression: go-deluge's Connect
+// dials the TLS socket and stores it on the client BEFORE logging in, and returns a
+// login failure without closing it. Both driver entry points must close on a Connect
+// error or every wrong-password call leaks an open connection to the daemon.
+func TestDelugeConnectErrorClosesTheSocket(t *testing.T) {
 	t.Parallel()
-	fake := &delugeFake{connectErr: errors.New("dial tcp: connection refused")}
-	drv := newDelugeDriver(fake, domain.DelugeSettings{})
-
-	if err := drv.Test(context.Background()); err == nil {
-		t.Fatal("expected a connect error")
+	tests := []struct {
+		name string
+		call func(*delugeDriver) error
+	}{
+		{"Test", func(d *delugeDriver) error { return d.Test(context.Background()) }},
+		{"Add", func(d *delugeDriver) error {
+			return d.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:abc"}, AddOptions{})
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			fake := &delugeFake{connectErr: errors.New("rpc error: Password does not match")}
+			if err := tt.call(newDelugeDriver(fake, domain.DelugeSettings{})); err == nil {
+				t.Fatal("expected a connect error")
+			}
+			if !fake.closed {
+				t.Error("the dialed connection was left open after a failed login")
+			}
+		})
 	}
 }
 

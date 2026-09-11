@@ -86,6 +86,64 @@ func TestBackupExportImportRoundTrip(t *testing.T) {
 	}
 }
 
+// TestBackupRestoreReseedsAppSettingsDials is the #650 regression: a restore wipes and
+// re-inserts app_settings, so every in-memory dial seeded from that table at boot has
+// to be re-seeded, or the process keeps answering with — and pacing at — the
+// pre-restore value until the next restart. It exports a bundle, changes both dials
+// through their own endpoints, force-imports the bundle back, and asserts the live
+// endpoints report the BUNDLE's values again rather than the post-export edits.
+func TestBackupRestoreReseedsAppSettingsDials(t *testing.T) {
+	t.Parallel()
+	base, c := serve(t, newEnv(t, api.Config{}))
+	setupAndLogin(t, base, c)
+
+	// Capture the pre-edit rate default so the assertion compares against what the
+	// bundle actually carries rather than a hard-coded seed.
+	resp, body := do(t, c, http.MethodGet, base+"/api/config/rate-limit", nil, nil)
+	mustStatus(t, resp, body, http.StatusOK)
+	wantRate := decodeJSONField[string](t, body, "defaultInterval")
+
+	resp, bundle := do(t, c, http.MethodPost, base+"/api/export", map[string]string{"passphrase": "pw"}, nil)
+	mustStatus(t, resp, bundle, http.StatusOK)
+
+	// Move both dials away from what the bundle holds.
+	resp, body = do(t, c, http.MethodPut, base+"/api/config/adult-categories", map[string]any{"hidden": true}, nil)
+	mustStatus(t, resp, body, http.StatusOK)
+	resp, body = do(t, c, http.MethodPut, base+"/api/config/rate-limit", map[string]any{"defaultInterval": "7s"}, nil)
+	mustStatus(t, resp, body, http.StatusOK)
+
+	resp, body = do(t, c, http.MethodPost, base+"/api/import", map[string]any{
+		"payload": base64.StdEncoding.EncodeToString(bundle), "passphrase": "pw", "force": true,
+	}, nil)
+	mustStatus(t, resp, body, http.StatusNoContent)
+
+	resp, body = do(t, c, http.MethodGet, base+"/api/config/adult-categories", nil, nil)
+	mustStatus(t, resp, body, http.StatusOK)
+	if got := decodeJSONField[bool](t, body, "hidden"); got {
+		t.Error("hide-adult-categories still reports the pre-restore value; the restored app_settings row was never re-seeded")
+	}
+
+	resp, body = do(t, c, http.MethodGet, base+"/api/config/rate-limit", nil, nil)
+	mustStatus(t, resp, body, http.StatusOK)
+	if got := decodeJSONField[string](t, body, "defaultInterval"); got != wantRate {
+		t.Errorf("rate default = %q, want the restored %q — every engine rebuilt by the restore paces at this", got, wantRate)
+	}
+}
+
+// decodeJSONField pulls one typed field out of a JSON object response body.
+func decodeJSONField[T any](t *testing.T, body []byte, field string) T {
+	t.Helper()
+	var obj map[string]any
+	if err := json.Unmarshal(body, &obj); err != nil {
+		t.Fatalf("unmarshal %s: %v", body, err)
+	}
+	v, ok := obj[field].(T)
+	if !ok {
+		t.Fatalf("field %q = %#v, want a %T", field, obj[field], v)
+	}
+	return v
+}
+
 // echoAPIKeyDoer serves a single search result whose title is the apikey the engine
 // was built with, so a search response reveals which instance row (pre- or
 // post-restore) actually built the engine that served it.

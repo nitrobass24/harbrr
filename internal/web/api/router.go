@@ -63,6 +63,14 @@ type Deps struct {
 	// the HTTP contract. Nil leaves PUT reporting an unavailable state; GET always
 	// answers from the process-global threshold.
 	SetLogLevel func(ctx context.Context, level string) error
+	// ReloadLogLevel re-applies the PERSISTED log level over the running process. The
+	// three other app_settings-backed dials (the rate default, the search-cache config,
+	// the hide-adult-categories flag) are re-seedable from collaborators the router
+	// already holds; the log level is process-global state only the composition root
+	// can reach, so a backup restore that replaces app_settings needs this hook to
+	// avoid leaving runtime and DB disagreeing until the next restart
+	// (autobrr/harbrr#650). Nil leaves the running level alone.
+	ReloadLogLevel func(ctx context.Context)
 	// AdultCategories is the global hide-adult-categories dial (autobrr/harbrr#383).
 	// Nil reads as "not hidden", i.e. the pre-setting behaviour.
 	AdultCategories *AdultCategoriesStore
@@ -139,11 +147,17 @@ func NewRouter(deps Deps, cfg Config) (http.Handler, error) {
 // when configured. Discovery failure is logged and non-fatal: the instance
 // still serves, OIDC just answers as disabled for this run rather than
 // refusing to start over a slow or unreachable IdP.
+//
+// oidcInitTimeout is what makes that promise true. NewRouter runs before the
+// listener is bound, so an unbounded discovery blocks startup entirely — the exact
+// opposite of the non-fatal intent above (autobrr/harbrr#651).
 func (rt *router) initOIDC() {
 	if !rt.cfg.OIDC.Enabled {
 		return
 	}
-	h, err := newOIDCHandler(context.Background(), rt.cfg.OIDC)
+	ctx, cancel := context.WithTimeout(context.Background(), oidcInitTimeout)
+	defer cancel()
+	h, err := newOIDCHandler(ctx, rt.cfg.OIDC)
 	if err != nil {
 		rt.Logger.Warn().Str("error", apphttp.RedactError(err)).Msg("api: oidc initialization failed; SSO login is disabled this run")
 		return

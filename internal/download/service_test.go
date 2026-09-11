@@ -378,6 +378,12 @@ func TestTestConnectionEndToEnd(t *testing.T) {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write([]byte("Ok."))
 	})
+	// Test reads the app version after logging in, so the connection test fails on a
+	// host that is not really qBittorrent (autobrr/harbrr#656).
+	mux.HandleFunc("/api/v2/app/version", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("v4.6.5"))
+	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 

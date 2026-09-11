@@ -232,9 +232,11 @@ func (h *handler) serve(w http.ResponseWriter, r *http.Request) {
 //     "Indexer is not supported" document an unknown per-indexer slug has always
 //     rendered (Jackett parity), unlogged.
 //   - The member set could not be READ (the instance/profile store failed) — harbrr's
-//     problem, not the consumer's config: error 900, matching the 500→900 mapping the
-//     /dl proxy already uses for internal failures. Telling an *arr "your config is
-//     wrong" over a transient store failure sends its operator to the wrong ladder.
+//     problem, not the consumer's config: HTTP 500 with error 900, the same mapping
+//     writeError documents and writeInternalError/the /dl proxy already use for
+//     internal failures, so a monitor keyed on status still sees the retry signal.
+//     Telling an *arr "your config is wrong" over a transient store failure sends its
+//     operator to the wrong ladder.
 //
 // Either way it is a loud error document, never the empty-200 feed a nil member set
 // would otherwise serve — a whole-list failure must be distinguishable from "you have
@@ -246,7 +248,7 @@ func (h *handler) writeResolveError(w http.ResponseWriter, slug string, err erro
 		return
 	}
 	grab.LogInternalError(h.log, "resolve", slug, err)
-	writeError(w, http.StatusOK, codeUnknownError, "Internal server error")
+	writeError(w, http.StatusInternalServerError, codeUnknownError, "Internal server error")
 }
 
 // isAggregateSlug reports whether a feed slug names a member SET rather than one
@@ -441,18 +443,27 @@ func (h *handler) feedInfo(r *http.Request, idx core.Indexer) tzn.FeedInfo {
 }
 
 // selfURL builds the atom:link self href, dropping the query string entirely so
-// harbrr never reflects the caller's apikey, then routes it through RedactURL as
-// defense in depth. It re-adds the configured base path (the server strips it before
-// routing) so the served URL is the externally-visible one. The origin is
-// h.urlCfg.ExternalOrigin when the operator configured one; otherwise it derives from
-// the request scheme/host, honoring X-Forwarded-Proto only from a trusted proxy peer
-// (apphttp.RequestScheme).
+// harbrr never reflects the caller's apikey, then routes it through
+// RedactURLIdentity as defense in depth. It re-adds the configured base path (the
+// server strips it before routing) so the served URL is the externally-visible one.
+// The origin is h.urlCfg.ExternalOrigin when the operator configured one; otherwise
+// it derives from the request scheme/host, honoring X-Forwarded-Proto only from a
+// trusted proxy peer (apphttp.RequestScheme).
+//
+// RedactURLIdentity rather than RedactURL (autobrr/harbrr#654): the path here is a
+// harbrr ROUTE whose only variable segment is a registry slug, never a credential —
+// an identity in exactly the sense that variant exists for. RedactURL additionally
+// masks any 32+ hex / 40+ alphanumeric run in the path, and the registry's slug
+// pattern permits up to 64 chars, so a slug shaped like a passkey was rewritten to
+// REDACTED in the served href. The query is already gone by construction here, and
+// RedactURLIdentity still scrubs userinfo and any secret query param, so the
+// defense-in-depth half is unchanged.
 func (h *handler) selfURL(r *http.Request) string {
 	origin := h.urlCfg.ExternalOrigin
 	if origin == "" {
 		origin = apphttp.RequestScheme(r, h.urlCfg.TrustedProxies) + "://" + r.Host
 	}
-	return apphttp.RedactURL(origin + h.urlCfg.BasePath + r.URL.Path)
+	return apphttp.RedactURLIdentity(origin + h.urlCfg.BasePath + r.URL.Path)
 }
 
 // writeInternalError logs the failure and returns a generic 900 document — the

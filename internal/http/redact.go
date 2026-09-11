@@ -269,6 +269,14 @@ func RedactError(err error) string {
 // body or header value (internal/indexer/registry diagnostics) — share the one
 // credential vocabulary above instead of growing a second, drifting scrub.
 func RedactSecretsInText(s string) string {
+	// A `scheme://user:password@host` URL embedded in the text (autobrr/harbrr#657).
+	// The key=value scrubs below cannot reach it: userinfo has no credential-shaped
+	// NAME to anchor on, only a colon. Download clients take a user-supplied base URL
+	// that may carry a reverse proxy's basic-auth password, and a library that formats
+	// its raw request URL into a transport error puts that password straight into the
+	// test-connection response and the grab log. net/http's own `***` stripping only
+	// covers the *url.Error it wraps, not the library's own message.
+	s = rawUserinfoRe.ReplaceAllString(s, "${1}<redacted>${2}")
 	s = authHeaderRe.ReplaceAllString(s, "${1}${2}<redacted>")
 	s = cookieHeaderRe.ReplaceAllString(s, "${1}${2}<redacted>")
 	s = jsonSecretRe.ReplaceAllString(s, `${1}"<redacted>"`)

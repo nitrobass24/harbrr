@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/base64"
 	"net/http"
 
@@ -72,5 +73,31 @@ func (rt *router) importBackup(w http.ResponseWriter, r *http.Request) {
 		ids = append(ids, inst.ID)
 	}
 	rt.Registry.ForgetInstances(r.Context(), ids...)
+	rt.reseedAppSettings(r.Context())
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// reseedAppSettings re-runs the boot-time seeding of every in-memory dial that is
+// loaded from app_settings, because a restore wipes and re-inserts that whole table
+// (backup/restore.go). Without it the DB holds the bundle's values while the process
+// keeps the pre-restore ones: GET /api/config/adult-categories and
+// /api/config/rate-limit report the stale value, every engine InvalidateAll rebuilds
+// paces at the stale rate default, and the disagreement resolves itself silently on
+// the next restart (autobrr/harbrr#650).
+//
+// Each call is the same loader app.New runs at boot, and each is non-fatal on its own
+// terms — the restore itself already succeeded, so a re-seed failure must not turn a
+// completed import into an error. A nil Cache/AdultCategories means the dial is
+// unwired, which is the same "nothing to re-seed" as a missing row.
+func (rt *router) reseedAppSettings(ctx context.Context) {
+	rt.Registry.LoadRateDefaultOverride(ctx)
+	rt.AdultCategories.LoadPersisted(ctx, rt.Logger)
+	if rt.Cache != nil {
+		if err := rt.Cache.LoadOverrides(ctx); err != nil {
+			rt.Logger.Warn().Err(err).Msg("reloading cache config after restore failed; the running cache keeps its pre-restore tuning until restart")
+		}
+	}
+	if rt.ReloadLogLevel != nil {
+		rt.ReloadLogLevel(ctx)
+	}
 }
