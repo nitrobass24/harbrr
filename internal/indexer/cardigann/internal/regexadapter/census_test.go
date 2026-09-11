@@ -1,6 +1,7 @@
 package regexadapter
 
 import (
+	"regexp"
 	"sort"
 	"testing"
 
@@ -98,9 +99,20 @@ func regexp2Reason(pat string, opts RouteOptions) string {
 		return "word-boundary"
 	case !canRewriteShorthand(pat):
 		return "unrewritable-shorthand"
+	case emptyMatchable(pat):
+		return "empty-matchable"
 	default:
 		return "re2-compile-failure"
 	}
+}
+
+// emptyMatchable mirrors Compile's (e) trigger: a pattern RE2 compiles that can
+// match the empty string (#686). A pattern RE2 rejects answers false — that one
+// routes via the compile-failure fallback.
+func emptyMatchable(pat string) bool {
+	rewritten, _ := rewriteShorthandClasses(normalizePattern(pat))
+	re, err := regexp.Compile(rewritten)
+	return err == nil && re.MatchString("")
 }
 
 func (s *censusStats) report(t *testing.T) {

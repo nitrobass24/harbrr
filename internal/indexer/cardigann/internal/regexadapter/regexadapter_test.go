@@ -138,6 +138,42 @@ func TestDifferential_DotNetOnlyPatterns(t *testing.T) {
 	}
 }
 
+// TestDifferential_EmptyMatchableRoutesToRegexp2 covers the (e) trigger: Go's
+// FindAll* drops an empty match that abuts the previous match, .NET keeps it, so
+// an empty-matchable pattern must route to regexp2 to match Jackett (#686).
+func TestDifferential_EmptyMatchableRoutesToRegexp2(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name        string
+		pattern     string
+		input       string
+		repl        string
+		wantReplace string // the .NET result
+	}{
+		{"star over a run", `a*`, "baaac", "-", "-b--c-"},
+		{"whitespace star", `\s*`, "a  b", "-", "-a--b-"},
+		{"leading run", `x*`, "xxab", "-", "--a-b-"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			routed, err := Compile(tc.pattern, RouteOptions{})
+			if err != nil {
+				t.Fatalf("Compile(%q): %v", tc.pattern, err)
+			}
+			assertEngine(t, routed, EngineRegexp2)
+
+			got, err := routed.ReplaceAllString(tc.input, tc.repl)
+			if err != nil {
+				t.Fatalf("ReplaceAllString: %v", err)
+			}
+			if got != tc.wantReplace {
+				t.Fatalf("Replace(%q,%q)=%q want %q", tc.input, tc.repl, got, tc.wantReplace)
+			}
+		})
+	}
+}
+
 // --- Routing unit tests: each trigger in isolation --------------------------
 
 func TestRouting_Triggers(t *testing.T) {
@@ -166,6 +202,11 @@ func TestRouting_Triggers(t *testing.T) {
 		{"conditional -> regexp2", `(a)(?(1)b|c)`, RouteOptions{}, EngineRegexp2},
 		// Go-native named group "(?P<name>)" is RE2-expressible -> stays RE2.
 		{"go named group -> RE2", `(?P<n>\d+)`, RouteOptions{}, EngineRE2},
+		// (e) empty-matchable: RE2 compiles these, but its FindAll semantics differ
+		// from .NET on an empty match abutting the previous one (#686).
+		{"star -> regexp2", `a*`, RouteOptions{}, EngineRegexp2},
+		{"optional group -> regexp2", `(\d+)?`, RouteOptions{}, EngineRegexp2},
+		{"empty-anchored -> regexp2", `^$`, RouteOptions{}, EngineRegexp2},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
