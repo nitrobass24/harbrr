@@ -866,8 +866,108 @@
   },
   {
     "id": "animetosho",
-    "name": "AnimeTosho",
-    "description": "AnimeTosho (native Torznab driver)",
+    "name": "AnimeTosho (Usenet)",
+    "description": "AnimeTosho (Usenet) (native Newznab driver)",
+    "language": "en-US",
+    "type": "private",
+    "encoding": "UTF-8",
+    "links": [
+      "https://feed.animetosho.org"
+    ],
+    "requestDelay": 2,
+    "settings": [
+      {
+        "Name": "apikey",
+        "Label": "API Key",
+        "Type": "text",
+        "Required": false,
+        "Default": null,
+        "Options": null,
+        "Defaults": null
+      },
+      {
+        "Name": "apiPath",
+        "Label": "API Path",
+        "Type": "text",
+        "Required": false,
+        "Default": {
+          "Value": "/api",
+          "Set": true
+        },
+        "Options": null,
+        "Defaults": null
+      }
+    ],
+    "caps": {
+      "Categories": {},
+      "CategoryMappings": [
+        {
+          "ID": {
+            "Value": "5070",
+            "Set": true
+          },
+          "Cat": "TV/Anime",
+          "Desc": "TV/Anime",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "2000",
+            "Set": true
+          },
+          "Cat": "Movies",
+          "Desc": "Movies",
+          "Default": null
+        },
+        {
+          "ID": {
+            "Value": "5000",
+            "Set": true
+          },
+          "Cat": "TV",
+          "Desc": "TV",
+          "Default": null
+        }
+      ],
+      "Modes": {
+        "Search": [
+          "q"
+        ],
+        "TVSearch": [
+          "q",
+          "season",
+          "ep",
+          "imdbid",
+          "tvdbid",
+          "tvmazeid",
+          "rid",
+          "traktid"
+        ],
+        "MovieSearch": [
+          "q",
+          "imdbid",
+          "tmdbid",
+          "traktid"
+        ],
+        "MusicSearch": [
+          "q",
+          "artist",
+          "album"
+        ],
+        "BookSearch": [
+          "q",
+          "author",
+          "title"
+        ]
+      },
+      "AllowRawSearch": null,
+      "AllowTVSearchIMDB": true
+    }
+  },
+  {
+    "id": "animetosho-torrent",
+    "name": "AnimeTosho (Torrent)",
+    "description": "AnimeTosho (Torrent) (native Torznab driver)",
     "language": "en-US",
     "type": "public",
     "encoding": "UTF-8",

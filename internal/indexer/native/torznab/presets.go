@@ -59,8 +59,8 @@ type preset struct {
 // the test fixture preset.
 var presets = []preset{
 	{
-		id:      "animetosho",
-		name:    "AnimeTosho",
+		id:      "animetosho-torrent",
+		name:    "AnimeTosho (Torrent)",
 		baseURL: "https://feed.animetosho.org",
 		// Prowlarr's GetSettings("https://feed.animetosho.org") does not override
 		// ApiPath, so the NewznabSettings constructor default "/api" applies.

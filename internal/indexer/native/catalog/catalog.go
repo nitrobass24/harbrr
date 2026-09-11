@@ -33,7 +33,19 @@ import (
 // package's former nativeFamilies() — same map, same entries.
 func All() map[string]native.Family {
 	m := make(map[string]native.Family)
-	for _, fams := range [][]native.Family{
+	for _, fams := range families() {
+		for _, f := range fams {
+			m[f.Definition.ID] = f
+		}
+	}
+	return m
+}
+
+// families lists every driver package's Families() in merge order. Ids must be
+// unique across packages (TestFamilyIDsUniqueAcrossPackages) — All() is
+// last-writer-wins, so a duplicate would silently shadow the earlier family.
+func families() [][]native.Family {
+	return [][]native.Family{
 		animebytes.Families(),
 		avistaz.Families(),
 		beyondhd.Families(),
@@ -52,10 +64,5 @@ func All() map[string]native.Family {
 		torrentday.Families(),
 		torznab.Families(),
 		xspeeds.Families(),
-	} {
-		for _, f := range fams {
-			m[f.Definition.ID] = f
-		}
 	}
-	return m
 }
