@@ -1,0 +1,32 @@
+{
+  "arrayShape": {
+    "movie_count": 3,
+    "movies": [
+      {
+        "title": "Foo",
+        "year": 2020,
+        "torrents": [
+          { "hash": "AAA", "quality": "1080p" },
+          { "hash": "BBB", "quality": "720p" }
+        ]
+      },
+      {
+        "title": "Bar",
+        "year": 2021,
+        "torrents": [{ "hash": "CCC", "quality": "2160p" }]
+      },
+      { "title": "No torrents", "year": 2019 }
+    ]
+  },
+  "objectShape": {
+    "movies": [
+      {
+        "title": "Baz",
+        "torrents": {
+          "a": { "hash": "DDD", "quality": "1080p" },
+          "b": { "hash": "EEE", "quality": "720p" }
+        }
+      }
+    ]
+  }
+}

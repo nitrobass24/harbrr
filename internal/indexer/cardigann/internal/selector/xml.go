@@ -49,6 +49,14 @@ func xmlToNode(body []byte) (*html.Node, error) {
 	root := &html.Node{Type: html.DocumentNode}
 	dec := xml.NewDecoder(bytes.NewReader(body))
 	dec.Strict = false
+	// The body reaching here is already UTF-8 (search.decodeBody transcoded it per
+	// the def's encoding:), but a feed's prolog still declares whatever the tracker
+	// wrote — `encoding="windows-1251"`, `ISO-8859-1`, even `UTF8`. Without a
+	// CharsetReader the stdlib decoder refuses any spelling other than utf-8/UTF-8
+	// on the very first token, while Jackett parses the already-decoded string with
+	// AngleSharp and ignores the declaration entirely. Pass the bytes through
+	// undecoded to match: they need no further transcoding.
+	dec.CharsetReader = func(_ string, input io.Reader) (io.Reader, error) { return input, nil }
 
 	// scopes is a stack of per-element xmlns declarations (namespace URI ->
 	// prefix, "" for the default namespace), pushed on a start tag and popped on

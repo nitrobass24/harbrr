@@ -376,6 +376,92 @@ search:
 	}
 }
 
+// TestLoadDropinByContentIDOverridesVendored covers the six vendored files whose
+// filename differs from their id: (darkpeers.yml carries darkpeers-api, plus
+// anirena, bluebird, hdzero, nordicquality, upscalevault). A drop-in named after
+// the vendored FILE is what the catalog shows as the override — LoadAll
+// enumerates by filename and keys the result by the parsed id: — so Load must
+// honour it under that same content id, which is how every indexer instance is
+// built. Before the drop-in content-id fallback, Load(darkpeers-api) fell
+// through to the unmodified vendored copy while the UI advertised the override.
+func TestLoadDropinByContentIDOverridesVendored(t *testing.T) {
+	t.Parallel()
+
+	const (
+		fileID    = "darkpeers"
+		contentID = "darkpeers-api"
+		wantName  = "DROPIN-Darkpeers (API)"
+	)
+	dir := t.TempDir()
+	override := []byte(`---
+id: ` + contentID + `
+name: ` + wantName + `
+description: "Drop-in override fixture."
+language: en-US
+type: private
+encoding: UTF-8
+links:
+  - https://example.invalid/
+
+caps:
+  categories:
+    XXX: XXX
+  modes:
+    search: [q]
+
+search:
+  path: /search
+  rows:
+    selector: tr
+  fields:
+    title:
+      selector: a
+    category:
+      selector: a.cat
+    download:
+      selector: a.dl
+    size:
+      selector: td.size
+    seeders:
+      selector: td.seeders
+`)
+	if err := os.WriteFile(filepath.Join(dir, fileID+".yml"), override, 0o600); err != nil {
+		t.Fatalf("writing drop-in: %v", err)
+	}
+
+	l := New(dir)
+
+	def, origin, err := l.load(contentID)
+	if err != nil {
+		t.Fatalf("load(%q) error: %v", contentID, err)
+	}
+	if origin != OriginDropin {
+		t.Errorf("load(%q) origin = %q, want %q", contentID, origin, OriginDropin)
+	}
+	if def.Name != wantName {
+		t.Errorf("load(%q).Name = %q, want %q", contentID, def.Name, wantName)
+	}
+
+	// The catalog and the engine must agree: LoadAll lists exactly this def for
+	// the content id, which is the id instances are keyed by.
+	defs, skipped, err := l.LoadAll()
+	if err != nil {
+		t.Fatalf("LoadAll error: %v", err)
+	}
+	if len(skipped) != 0 {
+		t.Fatalf("LoadAll skipped %d definitions, want 0: %v", len(skipped), skipped)
+	}
+	var listed []string
+	for _, d := range defs {
+		if d.ID == contentID {
+			listed = append(listed, d.Name)
+		}
+	}
+	if len(listed) != 1 || listed[0] != wantName {
+		t.Errorf("LoadAll entries for %q = %v, want exactly [%q]", contentID, listed, wantName)
+	}
+}
+
 func TestLoadNotFound(t *testing.T) {
 	t.Parallel()
 	_, err := New("").Load("this_id_does_not_exist_anywhere")

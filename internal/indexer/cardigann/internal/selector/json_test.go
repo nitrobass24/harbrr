@@ -247,6 +247,80 @@ func TestRowsJSONAttribute(t *testing.T) {
 	}
 }
 
+// TestRowsJSONMultiple pins rows.multiple against Jackett's
+// `Search.Rows.Multiple ? selObj.Values<JObject>() : [selObj]`: the
+// rows.attribute sub-object's children each become a row, so a field selector
+// resolves inside a child (yts `quality`, hebits `torrentId`) while ".." still
+// escapes to the full element. This is the yts.yml / hebits.yml shape; without
+// the flag the sub-object stays one row and the child field misses.
+func TestRowsJSONMultiple(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		rowsSelector  string
+		multiple      bool
+		wantQualities []string
+		wantTitles    []string
+	}{
+		{
+			name:          "array children each become a row",
+			rowsSelector:  "arrayShape.movies",
+			multiple:      true,
+			wantQualities: []string{"1080p", "720p", "2160p"},
+			wantTitles:    []string{"Foo", "Foo", "Bar"},
+		},
+		{
+			name:          "object children each become a row",
+			rowsSelector:  "objectShape.movies",
+			multiple:      true,
+			wantQualities: []string{"1080p", "720p"},
+			wantTitles:    []string{"Baz", "Baz"},
+		},
+		{
+			name:          "without multiple the sub-object stays one row",
+			rowsSelector:  "arrayShape.movies",
+			multiple:      false,
+			wantQualities: []string{"", ""},
+			wantTitles:    []string{"Foo", "Bar"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			doc := mustParseJSON(t, "multiple_rows.json")
+			rows, err := doc.Rows(loader.RowsBlock{
+				Selector:  tc.rowsSelector,
+				Attribute: "torrents",
+				Multiple:  boolPtr(tc.multiple),
+			})
+			if err != nil {
+				t.Fatalf("Rows: %v", err)
+			}
+			if len(rows) != len(tc.wantQualities) {
+				t.Fatalf("rows = %d, want %d", len(rows), len(tc.wantQualities))
+			}
+			for i, row := range rows {
+				quality, _, err := New().Field(row, loader.SelectorBlock{Selector: "quality"}, nil)
+				if err != nil {
+					t.Fatalf("row %d quality: %v", i, err)
+				}
+				if quality != tc.wantQualities[i] {
+					t.Errorf("row %d quality = %q, want %q", i, quality, tc.wantQualities[i])
+				}
+				title, _, err := New().Field(row, loader.SelectorBlock{Selector: "..title"}, nil)
+				if err != nil {
+					t.Fatalf("row %d ..title: %v", i, err)
+				}
+				if title != tc.wantTitles[i] {
+					t.Errorf("row %d ..title = %q, want %q", i, title, tc.wantTitles[i])
+				}
+			}
+		})
+	}
+}
+
 // TestRowsJSONCount proves a rows.count selector that resolves to an integer < 1
 // short-circuits to zero rows (Jackett's count < 1 -> continue), while a count
 // >= 1 leaves the rows intact.
@@ -388,6 +462,64 @@ music: "3000"
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got, found, err := New().Field(row(t), tc.block, nil)
+			assertField(t, fieldResult{got, found, err}, tc.wantValue, tc.wantFound, false)
+		})
+	}
+}
+
+// TestFieldJSONCaseFallthrough pins the JSON-only half of the case switch: when
+// no arm matches, Jackett's handleJsonSelector keeps the already-extracted value
+// (its post-loop check is `value == null`, and value still holds the SelectToken
+// result), so a value outside the listed arms — a UNIT3D site serialising
+// _internal as 0/1 instead of False/True — degrades to the raw value instead of
+// failing the whole parse. Only a null extraction is a miss. The HTML path still
+// misses on no match (TestFieldDefersRequiredDecision), matching handleSelector's
+// value=null start.
+func TestFieldJSONCaseFallthrough(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		block     loader.SelectorBlock
+		wantValue string
+		wantFound bool
+	}{
+		{
+			name: "no arm matches keeps the extracted value",
+			block: loader.SelectorBlock{
+				Selector: "flag",
+				Case: caseBlock(`
+ok: "1"
+ko: "0"
+`),
+			},
+			wantValue: "weird",
+			wantFound: true,
+		},
+		{
+			name: "matching arm still wins",
+			block: loader.SelectorBlock{
+				Selector: "internal",
+				Case:     caseBlock(`"False": "no"`),
+			},
+			wantValue: "no",
+			wantFound: true,
+		},
+		{
+			name: "null extraction is a miss",
+			block: loader.SelectorBlock{
+				Selector: "nullflag",
+				Case:     caseBlock(`ok: "1"`),
+			},
+			wantFound: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			row := firstJSONRow(t, "case_fallthrough.json", "data")
+			got, found, err := New().Field(row, tc.block, nil)
 			assertField(t, fieldResult{got, found, err}, tc.wantValue, tc.wantFound, false)
 		})
 	}

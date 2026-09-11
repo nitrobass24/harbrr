@@ -180,8 +180,13 @@ func (e *Engine) extract(cur node, block loader.SelectorBlock, eval EvalFunc) (s
 // positional arm, not a deferred default — it happens to always match (universal
 // CSS selector for HTML; explicit wildcard for JSON), so an earlier specific arm
 // still wins and a "*" authored before a specific arm would win over it, exactly
-// as Jackett's break-on-first-match loop does. No match returns found=false (the
-// caller treats this as required-error or optional-skip).
+// as Jackett's break-on-first-match loop does.
+//
+// No match is a miss for HTML but not for JSON, mirroring the two Jackett
+// handlers: handleSelector starts from value=null and so throws when no arm
+// matches, whereas handleJsonSelector has already assigned the SelectToken
+// result to value, only reassigns it on a match, and checks `value == null`
+// after the loop — so an unmatched non-null value passes through raw.
 func (e *Engine) applyCase(cur node, cases loader.CaseBlock, eval EvalFunc) (string, bool, error) {
 	for _, c := range cases.Ordered() {
 		ok, err := cur.caseMatch(c.Key)
@@ -196,6 +201,9 @@ func (e *Engine) applyCase(cur node, cases loader.CaseBlock, eval EvalFunc) (str
 			return "", false, err
 		}
 		return v, true, nil
+	}
+	if j, ok := cur.(*jsonNode); ok && j.value != nil {
+		return normalizeSpace(j.text()), true, nil
 	}
 	return "", false, nil
 }
