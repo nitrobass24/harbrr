@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { LoadError, LoadingBlock } from "@/components/ui/load-error"
 import { useDefinitions } from "@/hooks/useDefinitions"
 import { useIsMobile } from "@/hooks/useMediaQuery"
+import { useAllIndexerStats } from "@/hooks/useSettings"
 import {
   useDeleteIndexer,
   useIndexerCapabilitiesMany,
@@ -51,6 +52,8 @@ function IndexersPage() {
   const slugs = (indexers.data ?? []).map((ix) => ix.slug)
   const statuses = useIndexerStatuses(slugs)
   const capabilities = useIndexerCapabilitiesMany(slugs)
+  // One bulk call for the whole table's usage column (#487).
+  const stats = useAllIndexerStats()
   const toggle = useSetIndexerEnabled()
   const test = useTestIndexer()
   const testAll = useTestAllIndexers()
@@ -67,6 +70,7 @@ function IndexersPage() {
   const [sortByExpiry, setSortByExpiry] = useState(false)
 
   const defTypes = new Map((definitions.data ?? []).map((d) => [d.id, d.type]))
+  const statsBySlug = new Map((stats.data ?? []).map((s) => [s.slug, s]))
   const needle = filter.toLowerCase()
 
   const rows: IndexerRowData[] = (indexers.data ?? [])
@@ -75,6 +79,7 @@ function IndexersPage() {
       type: defTypes.get(instance.definitionId),
       categories: parentCategories(capabilities[i]?.data),
       status: statuses[i]?.data,
+      stats: statsBySlug.get(instance.slug),
       testing: test.isPending && test.variables === instance.slug,
     }))
     .filter((row) => row.instance.name.toLowerCase().includes(needle) ||

@@ -1,16 +1,20 @@
 import { useState } from "react"
+import { Link, type LinkProps } from "@tanstack/react-router"
 import { coverageNote, statsWindow } from "@/components/cache/cache-format"
 import { useAppConnections } from "@/hooks/useAppConnections"
 import { useIndexers, useIndexerStatuses } from "@/hooks/useIndexers"
-import { useCacheStats } from "@/hooks/useSettings"
+import { useAllIndexerStats, useCacheStats } from "@/hooks/useSettings"
+import { IDLE_AFTER_DAYS, isIdle } from "@/lib/usage"
 import { cn } from "@/lib/utils"
 
-// The four headline tiles: indexer health, tracker hits saved (the
-// kind-to-trackers value metric), app connections, breaker state.
+// The headline tiles: indexer health, tracker hits saved (the kind-to-trackers
+// value metric), app connections, breaker state, and idle indexers — the last one
+// answers "is anything using this?", which health deliberately does not (#487).
 export function DashboardTiles() {
   const indexers = useIndexers()
   const statuses = useIndexerStatuses((indexers.data ?? []).map((ix) => ix.slug))
   const cache = useCacheStats()
+  const stats = useAllIndexerStats()
   const connections = useAppConnections()
   // Clicking the cache tile switches between lifetime and rolling-24h stats.
   const [window24h, setWindow24h] = useState(false)
@@ -20,6 +24,7 @@ export function DashboardTiles() {
   const failing = statuses.filter((s) => s.data?.status === "failing").length
   const unknown = statuses.filter((s) => s.data?.status === "unknown").length
   const breakerOpen = (cache.data?.byIndexer ?? []).filter((r) => r.breakerOpenUntil).length
+  const idle = (stats.data ?? []).filter((s) => isIdle(s)).length
   const connected = connections.data?.length ?? 0
   const enabled = (connections.data ?? []).filter((c) => c.enabled).length
 
@@ -31,7 +36,7 @@ export function DashboardTiles() {
   const partial = window24h ? coverageNote("1d", cache.data?.windowsSince) : null
 
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
       <Tile
         label="Indexers healthy"
         value={`${healthy}/${total}`}
@@ -46,6 +51,13 @@ export function DashboardTiles() {
         onClick={() => setWindow24h((v) => !v)}
       />
       <Tile label="App connections" value={String(connected)} sub={connected > 0 ? `${enabled} enabled` : undefined} />
+      <Tile
+        label="Idle indexers"
+        value={String(idle)}
+        sub={`never queried or quiet ${IDLE_AFTER_DAYS}d+`}
+        tone={idle > 0 ? "warn" : undefined}
+        to="/indexers"
+      />
       <Tile
         label="Circuit breakers open"
         value={String(breakerOpen)}
@@ -78,24 +90,21 @@ function healthTone(total: number, healthy: number, failing: number): "ok" | "wa
   return total > 0 && healthy < total ? "warn" : "ok"
 }
 
-function Tile({ label, value, sub, tone, onClick }: {
+function Tile({ label, value, sub, tone, onClick, to }: {
   label: string
   value: string
   sub?: string
   tone?: "ok" | "warn" | "bad" | "highlight"
   onClick?: () => void
+  to?: LinkProps["to"]
 }) {
-  const Wrapper = onClick ? "button" : "div"
-  return (
-    <Wrapper
-      type={onClick ? "button" : undefined}
-      onClick={onClick}
-      className={cn(
-        "flex flex-col gap-0.5 rounded-xl border border-border bg-card px-4 py-3",
-        tone === "highlight" && "border-primary/40",
-        onClick && "cursor-pointer text-left hover:bg-accent/50"
-      )}
-    >
+  const className = cn(
+    "flex flex-col gap-0.5 rounded-xl border border-border bg-card px-4 py-3",
+    tone === "highlight" && "border-primary/40",
+    (onClick || to) && "cursor-pointer text-left hover:bg-accent/50"
+  )
+  const body = (
+    <>
       <span className="text-[11px] font-medium uppercase tracking-wider text-faint">{label}</span>
       <span className={cn(
         "text-2xl font-semibold tracking-tight",
@@ -108,6 +117,10 @@ function Tile({ label, value, sub, tone, onClick }: {
         {value}
       </span>
       {sub && <span className="text-[12px] text-faint">{sub}</span>}
-    </Wrapper>
+    </>
   )
+
+  if (to) return <Link to={to} className={className}>{body}</Link>
+  if (onClick) return <button type="button" onClick={onClick} className={className}>{body}</button>
+  return <div className={className}>{body}</div>
 }

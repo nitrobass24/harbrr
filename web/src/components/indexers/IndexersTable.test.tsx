@@ -51,6 +51,14 @@ const ROWS: IndexerRowData[] = [
   },
 ]
 
+// Usage fixtures (#487): a busy indexer, one that has gone quiet, and one nothing
+// has ever queried.
+const FAILURES = { authFailure: 0, rateLimited: 0, parseError: 0, antiBot: 0, transport: 0 }
+function stat(slug: string, queries: number, lastQueryAt?: string) {
+  return { slug, queries, grabAttempts: 0, grabs: 0, avgResponseMs: 120, failures: FAILURES, categories: [], lastQueryAt }
+}
+const DAY = 24 * 60 * 60 * 1000
+
 function noopActions(overrides: Partial<IndexerRowActions> = {}): IndexerRowActions {
   return {
     onToggle: vi.fn(),
@@ -151,5 +159,32 @@ describe("IndexersTable", () => {
     const ru = screen.getByText("rutor").closest("tr")!
     fireEvent.click(within(ru).getByRole("button", { name: /Test/ }))
     expect(onTest).toHaveBeenCalledWith("rutor")
+  })
+
+  it("shows usage per row: active, stale, and never queried (autobrr/harbrr#487)", () => {
+    const rows: IndexerRowData[] = [
+      { instance: ROWS[0].instance, stats: stat("torrentleech", 42, new Date(Date.now() - 3 * DAY).toISOString()) },
+      { instance: ROWS[1].instance, stats: stat("rutor", 7, new Date(Date.now() - 30 * DAY).toISOString()) },
+      { instance: ROWS[2].instance, stats: stat("x1337", 0) },
+      { instance: ROWS[3].instance }, // stats still loading
+    ]
+    render(<IndexersTable rows={rows} actions={noopActions()} />)
+
+    const row = (slug: string) => document.querySelector<HTMLElement>(`tr[data-slug="${slug}"]`)!
+
+    // Active: the count and a fresh age, in the plain muted style.
+    const active = within(row("torrentleech")).getByText("42 queries")
+    expect(within(row("torrentleech")).getByText("3d ago")).toBeTruthy()
+    expect(active.parentElement!.className).toContain("text-muted-foreground")
+
+    // Stale: same shape, warning tint — quiet for longer than the idle window.
+    const stale = within(row("rutor")).getByText("7 queries")
+    expect(stale.parentElement!.className).toContain("text-warn")
+
+    // Never queried gets its own words, not a "0".
+    expect(within(row("x1337")).getByText("Never queried").className).toContain("text-warn")
+
+    // Health is untouched by any of this — usage is a separate question.
+    expect(within(row("x1337")).queryByText("Failing")).toBeNull()
   })
 })

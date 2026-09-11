@@ -5,6 +5,7 @@ import { HealthCell } from "@/components/indexers/HealthCell"
 import { IndexerAvatar } from "@/components/indexers/IndexerAvatar"
 import { ProtocolPill } from "@/components/indexers/ProtocolPill"
 import { TypePill } from "@/components/indexers/TypePill"
+import { UsageCell } from "@/components/indexers/UsageCell"
 import type { IndexerRowActions, IndexerRowData } from "@/components/indexers/IndexersTable"
 import { Button } from "@/components/ui/button"
 import {
@@ -68,6 +69,10 @@ function IndexerCard({ row, actions }: { row: IndexerRowData, actions: IndexerRo
       <div className="mt-2 flex items-center justify-between gap-3">
         <HealthCell status={row.status} />
         <ExpiryCell instance={ix} />
+      </div>
+
+      <div className="mt-2">
+        <UsageCell stats={row.stats} />
       </div>
 
       <div className="mt-3 flex items-center justify-end gap-1 border-t border-border pt-3">

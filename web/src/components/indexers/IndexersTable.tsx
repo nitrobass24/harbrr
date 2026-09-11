@@ -5,6 +5,7 @@ import { HealthCell } from "@/components/indexers/HealthCell"
 import { IndexerAvatar } from "@/components/indexers/IndexerAvatar"
 import { ProtocolPill } from "@/components/indexers/ProtocolPill"
 import { TypePill } from "@/components/indexers/TypePill"
+import { UsageCell } from "@/components/indexers/UsageCell"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -17,13 +18,14 @@ import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { hostname } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import type { Instance, IndexerStatus } from "@/lib/api"
+import type { IndexerStats, Instance, IndexerStatus } from "@/lib/api"
 
 export type IndexerRowData = {
   instance: Instance
   type?: string // privacy: private | public | semi-private (from definition)
   categories?: string // parent category names, joined
   status?: IndexerStatus
+  stats?: IndexerStats // usage: is anything actually querying this? (#487)
   testing?: boolean
 }
 
@@ -56,6 +58,7 @@ export function IndexersTable({ rows, actions, sortByExpiry = false, onToggleExp
             <TableHead>Privacy</TableHead>
             <TableHead>Categories</TableHead>
             <TableHead>Health</TableHead>
+            <TableHead>Usage</TableHead>
             <TableHead>
               <button
                 type="button"
@@ -108,6 +111,7 @@ function IndexerRow({ row, actions }: { row: IndexerRowData, actions: IndexerRow
       </TableCell>
       <TableCell className="max-w-56 truncate text-muted-foreground">{row.categories ?? ""}</TableCell>
       <TableCell><HealthCell status={row.status} /></TableCell>
+      <TableCell><UsageCell stats={row.stats} /></TableCell>
       <TableCell><ExpiryCell instance={ix} /></TableCell>
       <TableCell className="text-center">
         <Switch
