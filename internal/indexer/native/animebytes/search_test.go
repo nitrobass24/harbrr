@@ -212,9 +212,11 @@ func TestSearchPopulated(t *testing.T) {
 	}
 }
 
-// TestSearchStatusDispatch proves Search maps the response status the way the contract
-// requires: 401/403 -> login.ErrLoginFailed, 429/503 -> rate-limit, other non-2xx ->
-// parse error.
+// TestSearchStatusDispatch proves Search surfaces the base dialect's status
+// classification unchanged: 401/403 -> login.ErrLoginFailed, 429/503 -> rate-limit,
+// 502/504 -> search.ErrGatewayStatus, and any other non-2xx as a plain error — never
+// collapsed into a parse error, which would have the registry treat a CDN outage as a
+// content failure.
 func TestSearchStatusDispatch(t *testing.T) {
 	t.Parallel()
 	mk := func(status int) *driver {
@@ -237,9 +239,16 @@ func TestSearchStatusDispatch(t *testing.T) {
 		}
 	}
 
+	for _, status := range []int{stdhttp.StatusBadGateway, stdhttp.StatusGatewayTimeout} {
+		_, err := mk(status).Search(context.Background(), search.Query{Keywords: "x"})
+		if !errors.Is(err, search.ErrGatewayStatus) {
+			t.Errorf("HTTP %d: err = %v, want search.ErrGatewayStatus", status, err)
+		}
+	}
+
 	_, err := mk(stdhttp.StatusInternalServerError).Search(context.Background(), search.Query{Keywords: "x"})
-	if !errors.Is(err, search.ErrParseError) {
-		t.Errorf("HTTP 500: err = %v, want search.ErrParseError", err)
+	if err == nil || errors.Is(err, search.ErrParseError) {
+		t.Errorf("HTTP 500: err = %v, want a plain HTTP error (not a parse error)", err)
 	}
 }
 
