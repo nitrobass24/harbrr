@@ -209,12 +209,17 @@ func appSyncCheck(ctx context.Context, c *http.Client, cfg Config, app appTarget
 		return []Finding{skipFinding(Finding{Indexer: ix.Slug, Check: check}, apphttp.RedactError(app.listErr))}
 	}
 	remotes := app.remotes
-	serves := appsync.IndexerServesApp(app.kind, cats)
+	// Same two gates the sync service applies: the content-category range AND the
+	// app's protocol support (qui never hosts a usenet indexer).
+	byCategory := appsync.IndexerServesApp(app.kind, cats)
+	byProtocol := appsync.AppAcceptsProtocol(app.kind, ix.Protocol)
+	serves := byCategory && byProtocol
 	matched, present := findManaged(remotes, ix.Slug)
 	switch {
 	case serves != present:
 		return []Finding{{Indexer: ix.Slug, Check: check, Status: StatusFail, Detail: fmt.Sprintf(
-			"category filter mismatch: should-serve-%s=%v but present-in-%s=%v", app.label, serves, app.label, present,
+			"app compatibility mismatch: should-serve-%s=%v (category gate %v, protocol gate %v) but present-in-%s=%v",
+			app.label, serves, byCategory, byProtocol, app.label, present,
 		)}}
 	case !present:
 		return []Finding{{Indexer: ix.Slug, Check: check, Status: StatusPass, Detail: fmt.Sprintf(

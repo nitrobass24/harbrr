@@ -35,15 +35,31 @@ func TestSmoke(t *testing.T) {
 	if len(rep.Findings) == 0 {
 		t.Skip("no enabled indexers configured in harbrr")
 	}
+	// One subtest per tracker (the operator's unit of attention), with each check
+	// nested under it, so the summary reads as one line per indexer and a failing
+	// check rolls up to its tracker.
+	byIndexer := map[string][]Finding{}
+	var order []string
 	for _, f := range rep.Findings {
-		t.Run(f.Indexer+"/"+f.Check, func(t *testing.T) {
-			switch f.Status {
-			case StatusFail:
-				t.Errorf("FAILED: %s", f.Detail)
-			case StatusSkip:
-				t.Skip(f.Detail)
-			default:
-				t.Log(f.Detail)
+		if _, seen := byIndexer[f.Indexer]; !seen {
+			order = append(order, f.Indexer)
+		}
+		byIndexer[f.Indexer] = append(byIndexer[f.Indexer], f)
+	}
+	for _, slug := range order {
+		findings := byIndexer[slug]
+		t.Run(slug, func(t *testing.T) {
+			for _, f := range findings {
+				t.Run(f.Check, func(t *testing.T) {
+					switch f.Status {
+					case StatusFail:
+						t.Errorf("FAILED: %s", f.Detail)
+					case StatusSkip:
+						t.Skip(f.Detail)
+					default:
+						t.Log(f.Detail)
+					}
+				})
 			}
 		})
 	}
