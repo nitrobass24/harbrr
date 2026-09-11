@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	stdhttp "net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -196,5 +197,147 @@ func assertNoSecret(t *testing.T, s string) {
 	t.Helper()
 	if strings.Contains(s, mamSecret) {
 		t.Errorf("string leaks the mam_id (%q): %q", mamSecret, s)
+	}
+}
+
+// TestHasUserVIP covers the jsonLoad.php user-class lookup that gates fl_vip
+// freeleech: the oracle's VIP classes map to true, anything else to false, and a
+// failed lookup degrades to non-VIP rather than failing the search.
+func TestHasUserVIP(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name   string
+		status int
+		body   string
+		want   bool
+	}{
+		{"vip class", stdhttp.StatusOK, `{"classname":"VIP"}`, true},
+		{"elite vip class", stdhttp.StatusOK, `{"classname":"Elite VIP"}`, true},
+		{"case-insensitive", stdhttp.StatusOK, `{"classname":"elite vip"}`, true},
+		{"padded class", stdhttp.StatusOK, `{"classname":"  VIP  "}`, true},
+		{"non-vip class", stdhttp.StatusOK, `{"classname":"Power User"}`, false},
+		{"missing class", stdhttp.StatusOK, `{}`, false},
+		{"malformed body", stdhttp.StatusOK, `not json`, false},
+		{"auth failure", stdhttp.StatusForbidden, ``, false},
+		{"server error", stdhttp.StatusInternalServerError, ``, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			doer := &scriptDoer{handler: func(_ *stdhttp.Request) *stdhttp.Response {
+				return resp(tc.status, tc.body)
+			}}
+			d := newDriver(doer)
+			if got := d.hasUserVIP(context.Background()); got != tc.want {
+				t.Errorf("hasUserVIP = %v, want %v", got, tc.want)
+			}
+			if len(doer.reqs) != 1 {
+				t.Fatalf("requests = %d, want 1", len(doer.reqs))
+			}
+			if doer.reqs[0].url != "https://mam.test/jsonLoad.php" {
+				t.Errorf("url = %q", doer.reqs[0].url)
+			}
+			if doer.reqs[0].cookie != "mam_id="+mamSecret {
+				t.Errorf("lookup did not ride the session cookie: %q", doer.reqs[0].cookie)
+			}
+		})
+	}
+}
+
+// TestHasUserVIPFixtures runs the lookup against the saved jsonLoad.php bodies.
+func TestHasUserVIPFixtures(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		file string
+		want bool
+	}{
+		{"testdata/user_data_vip.json", true},
+		{"testdata/user_data_nonvip.json", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.file, func(t *testing.T) {
+			t.Parallel()
+			body, err := os.ReadFile(tc.file)
+			if err != nil {
+				t.Fatalf("read fixture: %v", err)
+			}
+			d := newDriver(&scriptDoer{handler: func(_ *stdhttp.Request) *stdhttp.Response {
+				return resp(stdhttp.StatusOK, string(body))
+			}})
+			if got := d.hasUserVIP(context.Background()); got != tc.want {
+				t.Errorf("hasUserVIP = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestHasUserVIPCaches proves a successful lookup is memoized (one request for
+// repeated calls) while a FAILED lookup is not cached, so the next search retries.
+func TestHasUserVIPCaches(t *testing.T) {
+	t.Parallel()
+	ok := &scriptDoer{handler: func(_ *stdhttp.Request) *stdhttp.Response {
+		return resp(stdhttp.StatusOK, `{"classname":"VIP"}`)
+	}}
+	d := newDriver(ok)
+	for range 3 {
+		if !d.hasUserVIP(context.Background()) {
+			t.Fatal("hasUserVIP = false, want true")
+		}
+	}
+	if len(ok.reqs) != 1 {
+		t.Errorf("requests = %d, want 1 (cached)", len(ok.reqs))
+	}
+
+	failing := &scriptDoer{handler: func(_ *stdhttp.Request) *stdhttp.Response {
+		return resp(stdhttp.StatusInternalServerError, ``)
+	}}
+	f := newDriver(failing)
+	for range 2 {
+		if f.hasUserVIP(context.Background()) {
+			t.Fatal("a failed lookup must read as non-VIP")
+		}
+	}
+	if len(failing.reqs) != 2 {
+		t.Errorf("requests = %d, want 2 (a failure is not cached)", len(failing.reqs))
+	}
+}
+
+// TestSearchGatesFlVipOnUserClass is the end-to-end gate: the same fl_vip row is
+// freeleech for a VIP account and full-cost for a non-VIP one.
+func TestSearchGatesFlVipOnUserClass(t *testing.T) {
+	t.Parallel()
+	const row = `{"error":"","data":[{"id":9,"title":"Book","category":"13","main_cat":"13",` +
+		`"added":"2024-01-15 10:30:00","size":"1.00 MB","free":false,"personal_freeleech":false,"fl_vip":true}]}`
+	cases := []struct {
+		name      string
+		userClass string
+		want      float64
+	}{
+		{"vip account", "VIP", 0},
+		{"non-vip account", "Power User", 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			d := goldenDriver(t)
+			d.BaseURL = "https://mam.test/"
+			d.currentMamID = mamSecret
+			d.Doer = &scriptDoer{handler: func(req *stdhttp.Request) *stdhttp.Response {
+				if strings.Contains(req.URL.Path, "jsonLoad.php") {
+					return resp(stdhttp.StatusOK, `{"classname":"`+tc.userClass+`"}`)
+				}
+				return resp(stdhttp.StatusOK, row)
+			}}
+			rels, err := d.Search(context.Background(), search.Query{Keywords: "book"})
+			if err != nil {
+				t.Fatalf("Search: %v", err)
+			}
+			if len(rels) != 1 {
+				t.Fatalf("releases = %d, want 1", len(rels))
+			}
+			if rels[0].DownloadVolumeFactor != tc.want {
+				t.Errorf("DownloadVolumeFactor = %v, want %v", rels[0].DownloadVolumeFactor, tc.want)
+			}
+		})
 	}
 }

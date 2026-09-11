@@ -76,7 +76,7 @@ const errNothingReturned = "Nothing returned, out of"
 // size, the freeleech-derived download factor, the category, and the download URL —
 // sorted by publish date descending. A non-"Nothing returned" Error, a missing data
 // array, a malformed size, or an unparseable date is a parse error (Prowlarr throws).
-func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
+func (d *driver) parseReleases(body []byte, vip func() bool) ([]*normalizer.Release, error) {
 	var resp mamResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, fmt.Errorf("myanonamouse: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
@@ -93,7 +93,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	data := *resp.Data
 	releases := make([]*normalizer.Release, 0, len(data))
 	for i := range data {
-		rel, err := d.toRelease(&data[i])
+		rel, err := d.toRelease(&data[i], vip)
 		if err != nil {
 			return nil, err
 		}
@@ -111,8 +111,9 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 // toRelease maps one DTO row to a normalized release. Link is the explicitly-built
 // download URL (the served feed routes it through /dl because NeedsResolver=true);
 // the author (from author_info) is appended to the title and set as Author. A
-// freeleech row (free / personal_freeleech / fl_vip) carries DownloadVolumeFactor 0.
-func (d *driver) toRelease(row *mamRelease) (*normalizer.Release, error) {
+// freeleech row (free / personal_freeleech, or fl_vip for a VIP account) carries
+// DownloadVolumeFactor 0.
+func (d *driver) toRelease(row *mamRelease, vip func() bool) (*normalizer.Release, error) {
 	size, err := parseSize(row.Size)
 	if err != nil {
 		return nil, err
@@ -135,7 +136,7 @@ func (d *driver) toRelease(row *mamRelease) (*normalizer.Release, error) {
 		Leechers:             deref(row.Leechers),
 		Peers:                deref(row.Seeders) + deref(row.Leechers),
 		PublishDate:          published.Format(time.RFC3339),
-		DownloadVolumeFactor: downloadVolumeFactor(row),
+		DownloadVolumeFactor: downloadVolumeFactor(row, vip),
 		UploadVolumeFactor:   1,
 		MinimumRatio:         1,
 		MinimumSeedTime:      minimumSeedTime,
@@ -170,10 +171,17 @@ func (d *driver) categories(row *mamRelease) []int {
 	return slices.Compact(out)
 }
 
-// downloadVolumeFactor is 0 for a freeleech row (free / personal_freeleech / fl_vip),
-// else 1 (full cost), matching Prowlarr's isFreeLeech.
-func downloadVolumeFactor(row *mamRelease) float64 {
-	if bool(row.Free) || bool(row.PersonalFreeleech) || bool(row.FlVIP) {
+// downloadVolumeFactor is 0 for a freeleech row, else 1 (full cost), matching the
+// oracle's isFreeLeech = free || personal_freeleech || (vip && fl_vip): an fl_vip row
+// is only free for a VIP account, so a non-VIP account pays for it. vip is a function
+// because resolving the account's class costs an HTTP request (see hasUserVIP); it is
+// consulted only for an fl_vip row that is not already free, so a response with no
+// such row costs nothing.
+func downloadVolumeFactor(row *mamRelease, vip func() bool) float64 {
+	if bool(row.Free) || bool(row.PersonalFreeleech) {
+		return 0
+	}
+	if bool(row.FlVIP) && vip() {
 		return 0
 	}
 	return 1

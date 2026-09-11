@@ -32,7 +32,9 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 	if err != nil {
 		return nil, err
 	}
-	return d.parseReleases(resp.Body)
+	// The VIP lookup is deferred into a closure: it is an extra request, and only an
+	// fl_vip row that is not otherwise free needs the answer.
+	return d.parseReleases(resp.Body, func() bool { return d.hasUserVIP(ctx) })
 }
 
 // buildSearchURL renders the loadSearchJSONbasic.php request for a query, matching

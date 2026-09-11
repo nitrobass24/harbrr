@@ -2,7 +2,14 @@ package myanonamouse
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	stdhttp "net/http"
+	"slices"
+	"strings"
+	"time"
+
+	apphttp "github.com/autobrr/harbrr/internal/http"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
@@ -10,6 +17,67 @@ import (
 
 // mamIDCookie is the session cookie name MAM authenticates with and rotates.
 const mamIDCookie = "mam_id"
+
+// userDataPath is the account endpoint carrying the user class; vipTTL is how long
+// the derived VIP standing is memoized (the oracle's 1h).
+const (
+	userDataPath = "jsonLoad.php"
+	vipTTL       = time.Hour
+)
+
+// vipUserClasses are the classes the oracle treats as VIP for fl_vip freeleech
+// (compared case-insensitively).
+var vipUserClasses = []string{"VIP", "Elite VIP"}
+
+// userDataResponse is the jsonLoad.php subset: the account's class name.
+type userDataResponse struct {
+	ClassName string `json:"classname"`
+}
+
+// hasUserVIP reports whether the configured account is VIP, which is what makes an
+// fl_vip row actually freeleech. It fetches jsonLoad.php through the existing session
+// and memoizes the answer for vipTTL, matching the oracle. A failure (any transport,
+// status, or decode error) is logged at debug and treated as non-VIP — this must never
+// fail a search, and non-VIP is the conservative answer (a paid row is served as paid).
+func (d *driver) hasUserVIP(ctx context.Context) bool {
+	d.mu.Lock()
+	if time.Now().Before(d.vipExpires) {
+		cached := d.vipCached
+		d.mu.Unlock()
+		return cached
+	}
+	d.mu.Unlock()
+
+	vip, err := d.fetchUserVIP(ctx)
+	if err != nil {
+		d.Log.Debug().Str("driver", d.Def.ID).Str("cause", apphttp.RedactError(err)).
+			Msg("myanonamouse: user class lookup failed, treating the account as non-VIP")
+		return false
+	}
+	d.mu.Lock()
+	d.vipCached = vip
+	d.vipExpires = time.Now().Add(vipTTL)
+	d.mu.Unlock()
+	return vip
+}
+
+// fetchUserVIP performs the jsonLoad.php lookup and maps the class name to VIP.
+func (d *driver) fetchUserVIP(ctx context.Context) (bool, error) {
+	req, err := d.newRequest(ctx, d.BaseURL+userDataPath, "application/json")
+	if err != nil {
+		return false, err
+	}
+	resp, err := d.do(ctx, req)
+	if err != nil {
+		return false, err
+	}
+	var data userDataResponse
+	if err := json.Unmarshal(resp.Body, &data); err != nil {
+		return false, fmt.Errorf("myanonamouse: decode user data: %s", apphttp.DecodeErrorDetail(err, resp.Body))
+	}
+	class := strings.TrimSpace(data.ClassName)
+	return slices.ContainsFunc(vipUserClasses, func(v string) bool { return strings.EqualFold(v, class) }), nil
+}
 
 // classifyMAM is MAM's status dialect: a 403 means the mam_id session cookie expired
 // or is invalid (there is no 401), wrapped with login.ErrLoginFailed so the registry

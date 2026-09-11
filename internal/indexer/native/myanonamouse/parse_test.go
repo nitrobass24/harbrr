@@ -12,6 +12,10 @@ import (
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
+// nonVIP is the user-class resolver for parse tests on a non-VIP account (the
+// fl_vip-gated branch is covered by its own tests).
+func nonVIP() bool { return false }
+
 // goldenDriver is the family driver (full caps) for parse tests that need the category
 // map.
 func goldenDriver(t *testing.T) *driver {
@@ -40,7 +44,7 @@ func TestParseReleasesGolden(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
-	got, err := goldenDriver(t).parseReleases(body)
+	got, err := goldenDriver(t).parseReleases(body, nonVIP)
 	if err != nil {
 		t.Fatalf("parseReleases: %v", err)
 	}
@@ -80,12 +84,12 @@ func TestParseReleasesEmptyAndNothingReturned(t *testing.T) {
 	t.Parallel()
 	d := builderDriver(nil)
 	// A legitimate empty result.
-	got, err := d.parseReleases([]byte(`{"error":"","data":[]}`))
+	got, err := d.parseReleases([]byte(`{"error":"","data":[]}`), nonVIP)
 	if err != nil || len(got) != 0 {
 		t.Errorf("empty data: got %d err=%v, want 0/nil", len(got), err)
 	}
 	// MAM's "Nothing returned, out of …" Error is no-results, not a parse error.
-	got, err = d.parseReleases([]byte(`{"error":"Nothing returned, out of 0 results","data":null}`))
+	got, err = d.parseReleases([]byte(`{"error":"Nothing returned, out of 0 results","data":null}`), nonVIP)
 	if err != nil || len(got) != 0 {
 		t.Errorf("nothing-returned: got %d err=%v, want 0/nil", len(got), err)
 	}
@@ -110,7 +114,7 @@ func TestParseReleasesErrors(t *testing.T) {
 		{name: "bad date", body: `{"error":"","data":[{"id":1,"title":"x","size":"1 MB","added":"not-a-date","dl":"h"}]}`},
 	}
 	for _, tc := range cases {
-		_, err := d.parseReleases([]byte(tc.body))
+		_, err := d.parseReleases([]byte(tc.body), nonVIP)
 		if !errors.Is(err, search.ErrParseError) {
 			t.Errorf("%s: err = %v, want search.ErrParseError", tc.name, err)
 			continue
@@ -143,7 +147,7 @@ func TestParseReleasesScrubsMamID(t *testing.T) {
 		t.Fatal("no myanonamouse family")
 	}
 	body := []byte(`{"error":"Bad session for mam_id=` + mamID + `","data":[]}`)
-	_, err := d.parseReleases(body)
+	_, err := d.parseReleases(body, nonVIP)
 	if !errors.Is(err, search.ErrParseError) {
 		t.Fatalf("err = %v, want search.ErrParseError", err)
 	}
@@ -219,16 +223,20 @@ func TestDownloadVolumeFactor(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		row  mamRelease
+		vip  bool
 		want float64
 	}{
-		{mamRelease{}, 1},
-		{mamRelease{Free: true}, 0},
-		{mamRelease{PersonalFreeleech: true}, 0},
-		{mamRelease{FlVIP: true}, 0},
+		{mamRelease{}, false, 1},
+		{mamRelease{Free: true}, false, 0},
+		{mamRelease{PersonalFreeleech: true}, false, 0},
+		// fl_vip is freeleech only for a VIP account (the oracle's isFreeLeech).
+		{mamRelease{FlVIP: true}, false, 1},
+		{mamRelease{FlVIP: true}, true, 0},
+		{mamRelease{Free: true}, true, 0},
 	}
 	for _, tc := range cases {
-		if got := downloadVolumeFactor(&tc.row); got != tc.want {
-			t.Errorf("downloadVolumeFactor(%+v) = %v, want %v", tc.row, got, tc.want)
+		if got := downloadVolumeFactor(&tc.row, func() bool { return tc.vip }); got != tc.want {
+			t.Errorf("downloadVolumeFactor(%+v, vip=%v) = %v, want %v", tc.row, tc.vip, got, tc.want)
 		}
 	}
 }
@@ -243,7 +251,7 @@ func TestParseReleasesLiveIntegerShape(t *testing.T) {
 		`"id":202,"title":"Live Book","author_info":"{\"1\":\"Author X\"}",` +
 		`"category":47,"main_cat":13,"added":"2024-03-01 08:00:00","size":"1.29 GiB",` +
 		`"seeders":5,"leechers":1,"numfiles":3,"free":1,"personal_freeleech":0,"fl_vip":0,"dl":"HASH"}]}`
-	got, err := goldenDriver(t).parseReleases([]byte(body))
+	got, err := goldenDriver(t).parseReleases([]byte(body), nonVIP)
 	if err != nil {
 		t.Fatalf("parseReleases (integer shape): %v", err)
 	}
