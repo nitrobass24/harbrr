@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -100,10 +102,10 @@ func (n *jsonNode) text() string {
 // jsonRows splits a JSON Document into result rows. rows.selector is "$" (root,
 // expected to be an array) or a path to an array; each element becomes a Row.
 // Jackett's JSON row handler has no "after" merge (that is HTML-only), so After
-// is ignored here, matching Jackett. The only JSON-specific row behavior at this
-// layer is MissingAttributeEqualsNoResults, which turns a missing/non-array
-// selector into "0 rows" instead of an error (field-level Multiple handling lives
-// in the engine).
+// is ignored here, matching Jackett. The JSON-specific row behaviors at this
+// layer are MissingAttributeEqualsNoResults, which turns a missing/non-array
+// selector into "0 rows" instead of an error, and rows.multiple, which expands
+// each element's rows.attribute sub-object into one row per child.
 func (d *Document) jsonRows(block loader.RowsBlock) ([]Row, error) {
 	// Jackett evaluates rows.count first: a count selector that parses to < 1
 	// short-circuits the path to zero rows (a parse failure is ignored).
@@ -124,7 +126,7 @@ func (d *Document) jsonRows(block loader.RowsBlock) ([]Row, error) {
 		return nil, fmt.Errorf("rows selector %q: %w", block.Selector, ErrSelectorNoMatch)
 	}
 
-	return d.buildJSONRows(arr, block.Attribute), nil
+	return d.buildJSONRows(arr, block), nil
 }
 
 // jsonCountIsZero reports whether rows.count resolves to an integer < 1. Jackett
@@ -148,20 +150,50 @@ func (d *Document) jsonCountIsZero(count *loader.SelectorBlock) bool {
 // ".." field can still escape to it. A row whose attribute sub-object is absent
 // is skipped — Jackett skips it under MissingAttributeEqualsNoResults and would
 // otherwise dereference null; harbrr degrades cleanly in both cases.
-func (d *Document) buildJSONRows(arr []any, attribute string) []Row {
+func (d *Document) buildJSONRows(arr []any, block loader.RowsBlock) []Row {
 	rows := make([]Row, 0, len(arr))
 	for _, e := range arr {
 		value := e
-		if attribute != "" {
-			sub, ok := resolvePath(e, attribute)
+		if block.Attribute != "" {
+			sub, ok := resolvePath(e, block.Attribute)
 			if !ok {
 				continue
 			}
 			value = sub
 		}
-		rows = append(rows, Row{kind: kindJSON, json: &jsonNode{value: value, root: e}})
+		for _, child := range rowChildren(value, boolVal(block.Multiple)) {
+			rows = append(rows, Row{kind: kindJSON, json: &jsonNode{value: child, root: e}})
+		}
 	}
 	return rows
+}
+
+// rowChildren yields the row values one array element contributes, mirroring
+// Jackett's `Search.Rows.Multiple ? selObj.Values<JObject>() : [selObj]`: without
+// multiple the reshaped element is itself the single row; with it, the element's
+// children each become a row (a JArray's elements, a JObject's property values).
+// A scalar has no children and contributes nothing, where Jackett would throw.
+//
+// Object keys are walked sorted: encoding/json loses JSON object insertion
+// order, which is the order Newtonsoft yields. Both vendored defs that set
+// multiple (yts, hebits) put an ARRAY under rows.attribute, so the object shape
+// — and with it the ordering difference — is unreachable from the corpus.
+func rowChildren(value any, multiple bool) []any {
+	if !multiple {
+		return []any{value}
+	}
+	switch v := value.(type) {
+	case []any:
+		return v
+	case map[string]any:
+		children := make([]any, 0, len(v))
+		for _, k := range slices.Sorted(maps.Keys(v)) {
+			children = append(children, v[k])
+		}
+		return children
+	default:
+		return nil
+	}
 }
 
 // boolVal dereferences an optional bool flag, defaulting to false.
