@@ -29,9 +29,13 @@ type driver struct {
 	native.Base
 	persist func(ctx context.Context, name, value string) error
 
-	// mu guards Cfg, whose "passkey" entry is fetched on demand (request=quick_user) and
-	// persisted, so it is read while building download URLs and written by fetchPasskey.
+	// mu guards currentPasskey.
 	mu sync.Mutex
+	// currentPasskey is the download passkey, seeded from the settings and refreshed
+	// on demand (request=quick_user). It lives HERE and not in Cfg because Cfg is the
+	// registry-owned settings map, shared with readers outside this driver that do not
+	// take d.mu — writing into it would be a concurrent map write.
+	currentPasskey string
 }
 
 var _ native.Driver = (*driver)(nil)
@@ -47,44 +51,40 @@ func New(p native.Params) (native.Driver, error) {
 		return nil, err
 	}
 	return &driver{
-		Base:    b,
-		persist: p.PersistSetting,
+		Base:           b,
+		persist:        p.PersistSetting,
+		currentPasskey: strings.TrimSpace(p.Cfg["passkey"]),
 	}, nil
 }
 
-// cfgValue reads a config value under the mutex (cfg is shared with fetchPasskey, which
-// writes the passkey concurrently with download-URL builds).
+// cfgValue reads a config value. Cfg is wired once by NewBase and never written by this
+// driver (the on-demand passkey lives in currentPasskey), so this is Base's ordinary
+// read-only contract.
 func (d *driver) cfgValue(name string) string {
+	return d.Cfg[name]
+}
+
+// passkey reads the current download passkey under the mutex it shares with
+// storePasskey's writer.
+func (d *driver) passkey() string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return d.Cfg[name]
+	return d.currentPasskey
 }
 
 // scrub is GazelleGames' own value-scrub, NOT native.Base.Scrub. It shares the same
 // two primitives (loader.SecretValues + apphttp.ScrubValues) but cannot go through
-// Base.Scrub directly, for two reasons specific to this driver:
+// Base.Scrub directly: the download passkey is not a declared Settings field at all
+// (see sites.go's Families: "The download passkey is NOT a user setting"), so
+// loader.SecretValues could never see it via Cfg/Settings — it must be passed
+// explicitly, and the on-demand value is read under d.mu.
 //
-//   - Base.Scrub reads b.Cfg with no synchronization (Base's documented contract:
-//     Cfg is wired once by NewBase and read-only afterwards). GazelleGames is the
-//     ONE native driver that breaks that contract — fetchPasskey persists the
-//     on-demand download passkey back into Cfg under d.mu, concurrently with a
-//     download-URL build reading it — so deriving the scrub set from Cfg must go
-//     through the same mutex fetchPasskey's writer uses, or the read races it.
-//   - The passkey is not a declared Settings field at all (see sites.go's Families:
-//     "The download passkey is NOT a user setting"), so loader.SecretValues could
-//     never see it via Cfg/Settings regardless of locking — it must be passed
-//     explicitly.
-//
-// The derivation runs over the FULL Cfg under the mutex (loader.SecretValues only
-// reads it; the lock is released once every map read is done), so a future secret
-// setting added to the declared Settings is picked up automatically rather than
-// silently missed by a hand-built key list.
+// The derivation runs over the FULL Cfg, so a future secret setting added to the
+// declared Settings is picked up automatically rather than silently missed by a
+// hand-built key list.
 func (d *driver) scrub(s string) string {
-	d.mu.Lock()
 	secrets := loader.SecretValues(d.Def.Settings, d.Cfg)
-	passkey := strings.TrimSpace(d.Cfg["passkey"])
-	d.mu.Unlock()
-	return apphttp.ScrubValues(s, append(secrets, passkey))
+	return apphttp.ScrubValues(s, append(secrets, d.passkey()))
 }
 
 // NeedsResolver is always true: a GazelleGames download URL carries the passkey in its

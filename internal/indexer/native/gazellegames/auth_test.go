@@ -5,6 +5,7 @@ import (
 	"errors"
 	stdhttp "net/http"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
@@ -48,9 +49,9 @@ func TestFetchPasskeyPopulatesAndPersists(t *testing.T) {
 		t.Errorf("quick_user URL leaks the apikey: %q", doer.reqs[0].url)
 	}
 
-	// The passkey is now in cfg, persisted, and present in the download URL.
-	if d.cfgValue("passkey") != credPasskey {
-		t.Errorf("cfg passkey = %q, want it populated", d.cfgValue("passkey"))
+	// The passkey is now held on the driver, persisted, and present in the download URL.
+	if d.passkey() != credPasskey {
+		t.Errorf("passkey = %q, want it populated", d.passkey())
 	}
 	if persisted.name != "passkey" || persisted.value != credPasskey {
 		t.Errorf("persisted = %+v, want passkey/%s", persisted, credPasskey)
@@ -60,12 +61,12 @@ func TestFetchPasskeyPopulatesAndPersists(t *testing.T) {
 	}
 }
 
-// TestFetchPasskeyPersistFailureLeavesCfgEmpty proves the in-memory passkey is populated
+// TestFetchPasskeyPersistFailureLeavesPasskeyEmpty proves the in-memory passkey is populated
 // only AFTER persist succeeds: if persist fails, fetchPasskey returns the error AND leaves
-// cfg["passkey"] empty so ensurePasskey retries on the next search (live/stored must not
-// diverge — populating cfg before a failed persist would make ensurePasskey stop retrying
+// the learned passkey empty so ensurePasskey retries on the next search (live/stored must not
+// diverge — publishing the passkey before a failed persist would make ensurePasskey stop retrying
 // while the store has nothing).
-func TestFetchPasskeyPersistFailureLeavesCfgEmpty(t *testing.T) {
+func TestFetchPasskeyPersistFailureLeavesPasskeyEmpty(t *testing.T) {
 	t.Parallel()
 	// freshDoer serves a brand-new quick_user response per call so a retried fetch gets a
 	// readable (not already-consumed) body.
@@ -78,8 +79,8 @@ func TestFetchPasskeyPersistFailureLeavesCfgEmpty(t *testing.T) {
 	if !errors.Is(err, persistErr) {
 		t.Fatalf("fetchPasskey err = %v, want the persist error", err)
 	}
-	if got := d.cfgValue("passkey"); got != "" {
-		t.Fatalf("cfg passkey = %q, want empty after a failed persist (so ensurePasskey retries)", got)
+	if got := d.passkey(); got != "" {
+		t.Fatalf("passkey = %q, want empty after a failed persist (so ensurePasskey retries)", got)
 	}
 	// ensurePasskey must NOT short-circuit: a second attempt re-issues the quick_user fetch.
 	if err := d.ensurePasskey(context.Background()); !errors.Is(err, persistErr) {
@@ -166,4 +167,70 @@ func TestStorePasskeyScrubsStatusEcho(t *testing.T) {
 	if !strings.Contains(err.Error(), "[redacted]") {
 		t.Errorf("expected [redacted] placeholder, got %q", err.Error())
 	}
+}
+
+// TestStorePasskeyLeavesCfgAlone is the race guard: learning the passkey must not write
+// into d.Cfg, the registry-owned settings map that other goroutines read without d.mu.
+// Under -race, a concurrent reader of that map alongside the learning write would fail
+// here (and a concurrent map write is a runtime fatal in production).
+func TestStorePasskeyLeavesCfgAlone(t *testing.T) {
+	t.Parallel()
+	d := apikeyOnlyDriver(t, &scriptDoer{resp: mkResp(stdhttp.StatusOK, quickUserBody)})
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+	wg.Go(func() {
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				// A registry-side reader of the shared settings map, taking no driver lock.
+				for k := range d.Cfg {
+					_ = d.Cfg[k]
+				}
+			}
+		}
+	})
+
+	for range 50 {
+		if err := d.storePasskey(context.Background(), []byte(quickUserBody)); err != nil {
+			close(stop)
+			wg.Wait()
+			t.Fatalf("storePasskey: %v", err)
+		}
+	}
+	close(stop)
+	wg.Wait()
+
+	if d.passkey() != credPasskey {
+		t.Errorf("passkey = %q, want it learned", d.passkey())
+	}
+	if _, ok := d.Cfg["passkey"]; ok {
+		t.Error("storePasskey wrote the learned passkey into the shared settings map")
+	}
+}
+
+// TestConcurrentPasskeyReadAndLearn drives the driver's own reader (the download URL
+// build) against the learning write, which is the pairing that must be lock-clean.
+func TestConcurrentPasskeyReadAndLearn(t *testing.T) {
+	t.Parallel()
+	d := apikeyOnlyDriver(t, &scriptDoer{resp: mkResp(stdhttp.StatusOK, quickUserBody)})
+
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for range 100 {
+			_ = d.downloadURL(42)
+			_ = d.scrub("nothing to scrub")
+		}
+	})
+	wg.Go(func() {
+		for range 100 {
+			if err := d.storePasskey(context.Background(), []byte(quickUserBody)); err != nil {
+				t.Errorf("storePasskey: %v", err)
+				return
+			}
+		}
+	})
+	wg.Wait()
 }

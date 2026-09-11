@@ -55,15 +55,15 @@ type gazelleGamesUserResponse struct {
 // demand (Prowlarr fetches it in Test and keeps it on Settings). A configured passkey is
 // reused without a round-trip.
 func (d *driver) ensurePasskey(ctx context.Context) error {
-	if strings.TrimSpace(d.cfgValue("passkey")) != "" {
+	if d.passkey() != "" {
 		return nil
 	}
 	return d.fetchPasskey(ctx)
 }
 
 // fetchPasskey issues the authenticated api.php?request=quick_user call, reads the passkey
-// from the response, stores it in cfg, and persists it via the registry so it survives a
-// restart (mirroring Prowlarr's FetchPasskey). A non-success status or an empty passkey is
+// from the response, stores it on the driver, and persists it via the registry so it
+// survives a restart (mirroring Prowlarr's FetchPasskey). A non-success status or an empty passkey is
 // an auth failure (login.ErrLoginFailed). The passkey is a secret: it is never logged, and
 // any surfaced error is scrubbed of both the apikey and the passkey.
 func (d *driver) fetchPasskey(ctx context.Context) error {
@@ -75,7 +75,7 @@ func (d *driver) fetchPasskey(ctx context.Context) error {
 }
 
 // storePasskey decodes a quick_user body and, on a success status with a non-empty passkey,
-// records it in cfg and persists it. A malformed body, a non-success status, or an empty
+// records it on the driver and persists it. A malformed body, a non-success status, or an empty
 // passkey is an auth failure (login.ErrLoginFailed) — without it no working download URL can
 // be built. The passkey is never logged.
 func (d *driver) storePasskey(ctx context.Context, body []byte) error {
@@ -92,21 +92,19 @@ func (d *driver) storePasskey(ctx context.Context, body []byte) error {
 		return fmt.Errorf("gazellegames: passkey fetch failed (status %q): %w", d.scrub(resp.Status.Str()), login.ErrLoginFailed)
 	}
 
-	// Persist FIRST, then populate the in-memory cfg only on success. If persist fails,
-	// d.Cfg["passkey"] stays empty so ensurePasskey will retry on the next search rather
+	// Persist FIRST, then publish the in-memory value only on success. If persist fails,
+	// currentPasskey stays empty so ensurePasskey will retry on the next search rather
 	// than serving a passkey the store never recorded (live/stored must not diverge).
-	d.mu.Lock()
-	persist := d.persist
-	d.mu.Unlock()
-
-	if persist != nil {
-		if err := persist(ctx, "passkey", passkey); err != nil {
+	// The learned value is held on the driver, never written into d.Cfg: that map is
+	// owned by the registry and read by other goroutines that do not take d.mu.
+	if d.persist != nil {
+		if err := d.persist(ctx, "passkey", passkey); err != nil {
 			return fmt.Errorf("gazellegames: persist passkey: %w", err)
 		}
 	}
 
 	d.mu.Lock()
-	d.Cfg["passkey"] = passkey
+	d.currentPasskey = passkey
 	d.mu.Unlock()
 	return nil
 }
