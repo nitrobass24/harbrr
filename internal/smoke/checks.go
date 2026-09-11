@@ -209,7 +209,9 @@ func appSyncCheck(ctx context.Context, c *http.Client, cfg Config, app appTarget
 		return []Finding{skipFinding(Finding{Indexer: ix.Slug, Check: check}, apphttp.RedactError(app.listErr))}
 	}
 	remotes := app.remotes
-	serves := appsync.IndexerServesApp(app.kind, cats)
+	// Same two gates the sync service applies: the content-category range AND the
+	// app's protocol support (qui never hosts a usenet indexer).
+	serves := appsync.IndexerServesApp(app.kind, cats) && appsync.AppAcceptsProtocol(app.kind, ix.Protocol)
 	matched, present := findManaged(remotes, ix.Slug)
 	switch {
 	case serves != present:

@@ -13,9 +13,10 @@ import (
 
 // harbrrIndexer is the subset of harbrr's GET /api/indexers view the suite needs.
 type harbrrIndexer struct {
-	Slug    string `json:"slug"`
-	Name    string `json:"name"`
-	Enabled bool   `json:"enabled"`
+	Slug     string `json:"slug"`
+	Name     string `json:"name"`
+	Enabled  bool   `json:"enabled"`
+	Protocol string `json:"protocol"` // "torrent" or "usenet"; drives the app-sync protocol gate
 }
 
 // RunSuite runs the full operator smoke suite against a live harbrr stack: for every

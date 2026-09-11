@@ -134,9 +134,7 @@ func (s *Service) buildDesired(ctx context.Context, instances []domain.IndexerIn
 		if routed != nil && !routed[inst.ID] {
 			continue
 		}
-		// qui is a torrent-only Torznab consumer (POST /api/torznab/indexers); it has no
-		// usenet/Newznab notion, so a usenet indexer is never pushed to it.
-		if conn.Kind == domain.AppKindQui && inst.Protocol == servarrUsenetProtocol {
+		if !AppAcceptsProtocol(conn.Kind, inst.Protocol) {
 			continue
 		}
 		cats, err := s.source.Categories(ctx, inst.Slug)
@@ -342,6 +340,15 @@ func AppCategoryRange(kind string) (lo, hi int, ok bool) {
 // AND Readarr, even though 3030 sits outside Readarr's 7000s Books range. Readarr
 // accepts it as an extra so an audiobook-only tracker still reaches Readarr (parity).
 const audiobookCategory = 3030
+
+// AppAcceptsProtocol reports whether an app kind can host an indexer of the given
+// download protocol at all, independent of categories. qui is a torrent-only Torznab
+// consumer (POST /api/torznab/indexers) with no usenet/Newznab notion, so a usenet
+// indexer is never pushed to it; every other kind takes both. The smoke harness applies
+// the same rule when deciding whether an indexer should be present in an app.
+func AppAcceptsProtocol(kind, protocol string) bool {
+	return kind != domain.AppKindQui || protocol != servarrUsenetProtocol
+}
 
 func IndexerServesApp(kind string, cats []Category) bool {
 	lo, hi, ok := AppCategoryRange(kind)
