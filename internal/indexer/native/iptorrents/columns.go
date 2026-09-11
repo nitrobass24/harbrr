@@ -96,8 +96,10 @@ func coerceInt(s string) int64 {
 }
 
 // titleControlChars matches the invalid control/high characters Prowlarr's CleanTitle
-// strips (#6582).
-var titleControlChars = regexp.MustCompile(`[\x00-\x08\x0A-\x1F\x{0100}-\x{FFFF}]`)
+// strips. Prowlarr's class runs over UTF-16 code units, so its upper bound (U+FFFF)
+// also catches both halves of every surrogate pair — i.e. every astral character. RE2
+// matches code points, so the range runs to U+10FFFF to strip the same characters.
+var titleControlChars = regexp.MustCompile(`[\x00-\x08\x0A-\x1F\x{0100}-\x{10FFFF}]`)
 
 // titleRequestTag matches a bracketed REQ/REQUEST(ED) marker Prowlarr strips.
 var titleRequestTag = regexp.MustCompile(`(?i)[\(\[\{]REQ(UEST(ED)?)?[\)\]\}]`)

@@ -3635,7 +3635,8 @@
           "q",
           "season",
           "ep",
-          "imdbid"
+          "imdbid",
+          "tvdbid"
         ],
         "MovieSearch": [
           "q",

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -190,7 +191,7 @@ func (d *driver) toRelease(g *group, t *torrent) (*normalizer.Release, bool) {
 	if err != nil {
 		return nil, false
 	}
-	props := torrentProperties(t.Property)
+	props := torrentProperties(t)
 	seeders := t.Seeders.Int64()
 	leechers := t.Leechers.Int64()
 	rel := &normalizer.Release{
@@ -232,12 +233,70 @@ func minimumSeedTime(size int64) int64 {
 // minimumRatio is the fixed 1 Prowlarr sets for every AnimeBytes release.
 const minimumRatio = 1
 
-// torrentProperties splits a torrent Property string into its ordered, de-duplicated
+// torrentProperties is the descriptor list a release's title is built from: the split,
+// de-duplicated Property list with Prowlarr's three post-split transforms applied —
+// "BR-DISK" appended for an M2TS torrent, H.265/H.264 rewritten to HEVC/AVC on a
+// Blu-ray-disc torrent (RAW / M2TS* / ISO*), and " Remux" appended to a resolution
+// property when a file name says Remux.
+func torrentProperties(t *torrent) []string {
+	props := splitTorrentProperties(t.Property)
+	if slices.ContainsFunc(props, isM2TSProperty) {
+		props = append(props, "BR-DISK")
+	}
+	blurayDisk := slices.ContainsFunc(props, isBluRayDiscProperty)
+	remux := hasRemuxFile(t.FileList)
+	for i, p := range props {
+		if blurayDisk {
+			p = h265Re.ReplaceAllString(p, "HEVC")
+			p = h264Re.ReplaceAllString(p, "AVC")
+		}
+		if remux && isRemuxResolution(p) {
+			p += " Remux"
+		}
+		props[i] = p
+	}
+	return props
+}
+
+// isM2TSProperty / isBluRayDiscProperty reproduce Prowlarr's ordinal (case-sensitive)
+// property probes: an M2TS property adds the "BR-DISK" marker, and RAW / M2TS* / ISO*
+// mark the torrent as a Blu-ray disc (which is what turns H.265/H.264 into HEVC/AVC).
+func isM2TSProperty(p string) bool { return strings.HasPrefix(p, "M2TS") }
+
+func isBluRayDiscProperty(p string) bool {
+	return p == "RAW" || strings.HasPrefix(p, "M2TS") || strings.HasPrefix(p, "ISO")
+}
+
+// h265Re / h264Re are Prowlarr's case-insensitive codec rewrites, applied only to a
+// Blu-ray-disc torrent's properties.
+var (
+	h265Re = regexp.MustCompile(`(?i)\bH\.?265\b`)
+	h264Re = regexp.MustCompile(`(?i)\bH\.?264\b`)
+)
+
+// remuxResolutions are the resolution properties Prowlarr suffixes with " Remux" when
+// the torrent's file list names a remux (matched case-insensitively).
+var remuxResolutions = []string{"1080i", "1080p", "2160p", "4K"}
+
+// isRemuxResolution reports whether a property is one of the remux-eligible resolutions.
+func isRemuxResolution(p string) bool {
+	return slices.ContainsFunc(remuxResolutions, func(r string) bool { return strings.EqualFold(p, r) })
+}
+
+// hasRemuxFile reports whether any file name contains "Remux" (case-insensitive),
+// Prowlarr's trigger for the " Remux" resolution suffix.
+func hasRemuxFile(files []file) bool {
+	return slices.ContainsFunc(files, func(f file) bool {
+		return strings.Contains(strings.ToLower(f.FileName), "remux")
+	})
+}
+
+// splitTorrentProperties splits a torrent Property string into its ordered, de-duplicated
 // descriptor list, HTML-decoding the whole string first and dropping the "Freeleech"
 // marker (Prowlarr ExcludedProperties). Order is the insertion order of first
 // appearance, matching .NET's de-facto HashSet iteration for these small, removal-free
 // sets — which the synthesized title relies on.
-func torrentProperties(property string) []string {
+func splitTorrentProperties(property string) []string {
 	decoded := html.UnescapeString(property)
 	seen := map[string]struct{}{}
 	out := make([]string, 0, 8)

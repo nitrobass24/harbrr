@@ -51,7 +51,7 @@ func TestParseReleasesGolden(t *testing.T) {
 		t.Fatalf("parseReleases: %v", err)
 	}
 
-	// Releases are sorted by download link; the ids already order this way.
+	// Releases come back in the tracker's own row order (see TestParseKeepsTrackerOrder).
 	want := []*normalizer.Release{
 		{
 			Title:                "Some Movie 2024 2160p UHD BluRay x265-GROUP",
@@ -147,6 +147,31 @@ func TestParseReleasesMalformedArray(t *testing.T) {
 	// offset N"). The sentinel wrap (errorsIsParse above) must still hold.
 	if msg := err.Error(); !strings.Contains(msg, "offset") && !strings.Contains(msg, "invalid") {
 		t.Errorf("err = %q, want an actionable token (\"offset\" or \"invalid\")", msg)
+	}
+}
+
+// TestParseKeepsTrackerOrder proves the parser serves rows in the order t.json returned
+// them — newest first — rather than re-sorting by torrent id. Neither oracle reorders,
+// and the serve path pages in driver order, so an ascending re-sort would put the oldest
+// rows on page 1 and hide the newest beyond the page window.
+func TestParseKeepsTrackerOrder(t *testing.T) {
+	t.Parallel()
+	body := `[
+	  {"t":2800000,"name":"Newest","ctime":1718900000,"c":7},
+	  {"t":2799851,"name":"Older","ctime":1718800000,"c":7},
+	  {"t":2799999,"name":"Middle","ctime":1718850000,"c":7}
+	]`
+	got, err := parseDriver(t, nil).parseReleases([]byte(body))
+	if err != nil {
+		t.Fatalf("parseReleases: %v", err)
+	}
+	want := []string{"Newest", "Older", "Middle"}
+	titles := make([]string, len(got))
+	for i, rel := range got {
+		titles[i] = rel.Title
+	}
+	if !reflect.DeepEqual(titles, want) {
+		t.Errorf("titles = %v, want %v (the tracker's own order)", titles, want)
 	}
 }
 

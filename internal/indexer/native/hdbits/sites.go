@@ -44,8 +44,10 @@ func Families() []native.Family {
 // 4 Music->Audio, 5 Sport->TV/Sport, 6 Audio Track->Audio, 7 XXX->XXX, 8 Misc/Demo->Other.
 // Categories 4 and 6 both collapse to Audio (3000); both tracker descriptions are kept so
 // the torznab caps round-trip. The search modes mirror Prowlarr's SupportedSearchParameters:
-// basic q; movie q+imdbid; tv q+imdbid+season+ep (tvdbid is the wire id but the request
-// generator resolves it from the season/ep query, so only the standard params are advertised).
+// basic q; movie q+imdbid; tv q+season+ep+tvdbid — tvdbid is the id HDBits' api/torrents
+// scopes an episode by (the tvdb object carries season+episode), so it must be advertised
+// or Sonarr never sends it. imdbid stays advertised for tv as well (harbrr's imdb branch
+// keeps the episode scope in the search term), which Prowlarr's tv caps omit.
 func hdbitsCaps() loader.Caps {
 	allowIMDB := true
 	return loader.Caps{
@@ -62,7 +64,7 @@ func hdbitsCaps() loader.Caps {
 		Modes: loader.Modes{
 			Search:      []string{"q"},
 			MovieSearch: []string{"q", "imdbid"},
-			TVSearch:    []string{"q", "season", "ep", "imdbid"},
+			TVSearch:    []string{"q", "season", "ep", "imdbid", "tvdbid"},
 		},
 		AllowTVSearchIMDB: &allowIMDB,
 	}

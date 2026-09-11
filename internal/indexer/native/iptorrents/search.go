@@ -15,11 +15,15 @@ const searchPath = "t"
 
 // Search issues the IPTorrents list request for the query and returns the parsed
 // releases. A 401/403 is an auth failure; a 429/503 is a rate-limit error; any other
-// non-2xx is an error. The cookie + User-Agent ride as headers (added by get), never
-// the URL, so the served (recorded) URL carries no secret.
+// non-2xx is an error, and a 200 login page (no lout.php marker) is an auth failure too.
+// The cookie + User-Agent ride as headers (added by get), never the URL, so the served
+// (recorded) URL carries no secret.
 func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
 	resp, err := d.get(ctx, d.buildSearchURL(q), "text/html", false)
 	if err != nil {
+		return nil, err
+	}
+	if err := requireLoggedIn(resp.Body); err != nil {
 		return nil, err
 	}
 	return d.parseReleases(resp.Body)

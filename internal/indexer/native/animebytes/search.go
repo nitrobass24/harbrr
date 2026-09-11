@@ -2,8 +2,6 @@ package animebytes
 
 import (
 	"context"
-	"errors"
-	stdhttp "net/http"
 	"net/url"
 	"regexp"
 	"strings"
@@ -26,18 +24,15 @@ const (
 
 // Search issues the scrape.php request for the query and returns the parsed releases.
 // The full URL carries the username + passkey, so it is never logged (get redacts it on
-// a transport error). A 401/403 is an auth failure (login.ErrLoginFailed); a 429/503 is
-// a rate-limit error; any other non-2xx is an error. On 2xx the body is parsed by
-// parseReleases, which also discriminates the JSON {"error":…} envelope AnimeBytes
-// returns with HTTP 200.
+// a transport error). Status classification is the base dialect's and is surfaced as-is:
+// a 401/403 is an auth failure (login.ErrLoginFailed), a 429/503 a rate-limit error, a
+// 502/504/52x a gateway error (search.ErrGatewayStatus), any other non-2xx a plain HTTP
+// error — collapsing those into a parse error would have the registry treat a CDN outage
+// as bad content. On 2xx the body is parsed by parseReleases, which also discriminates
+// the JSON {"error":…} envelope AnimeBytes returns with HTTP 200.
 func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Release, error) {
 	resp, err := d.get(ctx, d.buildSearchURL(q), "application/json", false)
 	if err != nil {
-		if resp != nil && resp.StatusCode != stdhttp.StatusUnauthorized && resp.StatusCode != stdhttp.StatusForbidden {
-			if _, ok := errors.AsType[*search.RateLimitedError](err); !ok {
-				return nil, search.ErrParseError
-			}
-		}
 		return nil, err
 	}
 	return d.parseReleases(resp.Body)
