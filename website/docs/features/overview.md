@@ -106,6 +106,7 @@ No .NET runtime, no separate frontend service. One Go binary, SQLite, and a data
 | Per-release language and subtitle attributes from definitions | 🚧 [#379](https://github.com/autobrr/harbrr/issues/379) |
 | Out-of-band definition updates — tracker fixes arrive without waiting for a harbrr release | 🚧 [#388](https://github.com/autobrr/harbrr/issues/388) |
 | Tri-state indexer health — healthy / failing / unknown, where unknown means never tested; a broken tracker leaves rotation and costs nothing until it recovers | ✅ |
+| Indexer usage beside health — query count and last-query age in the indexer table, a **Never queried** state for an indexer nothing is using, and an **Idle indexers** dashboard tile (never queried, or quiet for 7+ days) | ✅ |
 | Per-failure-kind backoff curves — a dead network is not punished like a dead tracker — plus `status:healthy` aggregate feeds that skip indexers known to be broken | ✅ |
 | Punctuation-tolerant matching (opt-in, per indexer) — recovers releases that \*arr-stripped search terms would otherwise drop | ✅ |
 | Degenerate-query gating (opt-in, per indexer) — a search the indexer's own filters strip down to a bare year is skipped instead of sent, and reported as skipped rather than failed | ✅ |

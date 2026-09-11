@@ -200,6 +200,9 @@ default** minimum spacing between requests to any tracker host (the seed is 1s),
 every configured indexer immediately. A single indexer overrides that default with its
 `rate_interval` reserved setting. Either way a definition's own `requestDelay` is a **floor**
 that always wins — you can slow harbrr down, never speed it past what the definition asks for.
+Both knobs are in the web UI too: **Settings → System → Default request spacing** for the
+global default, and **Request spacing** under an indexer's advanced options for the
+per-indexer override (leave it empty to use the global default).
 
 Per-indexer `timeout` and proxy settings are set when you
 [add an indexer](guides/add-indexer.md).
