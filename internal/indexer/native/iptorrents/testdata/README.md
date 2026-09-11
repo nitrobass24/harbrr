@@ -17,8 +17,9 @@ search/grab are the **live-validation** gate.
   freeleech, one not). The header columns are in a **deliberately non-default order**
   (`Sort by size` at index 3, not Prowlarr's positional default of 5) so `parse_test.go`
   proves the parser resolves the size/snatches/seeders/leechers columns **by header
-  text**, not by a hardcoded index. The page contains `lout.php` so the `Test()` logged-in
-  marker check passes, a `div.sub` relative "time ago" date, a category-icon link
+  text**, not by a hardcoded index. The page contains `lout.php` so the logged-in
+  marker check (applied to both `Test()` and `Search`, as Prowlarr's CheckIfLoginNeeded
+  is) passes, a `div.sub` relative "time ago" date, a category-icon link
   (`a[href^="?"]`), and a `download.php` link.
 
 ## Request divergences (`IPTorrentsRequestGenerator`)

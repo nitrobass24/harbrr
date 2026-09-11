@@ -87,7 +87,7 @@ func TestBuildSearchURL(t *testing.T) {
 func TestSearchIssuesCookieRequest(t *testing.T) {
 	t.Parallel()
 	doer := &scriptDoer{handler: func(_ *stdhttp.Request) *stdhttp.Response {
-		return resp(stdhttp.StatusOK, `<table id="torrents"></table>`)
+		return resp(stdhttp.StatusOK, `<a href="/lout.php">logout</a><table id="torrents"></table>`)
 	}}
 	d := testDriver(doer, nil)
 	if _, err := d.Search(context.Background(), search.Query{Categories: []string{"72"}, Keywords: "dune"}); err != nil {
@@ -146,6 +146,24 @@ func TestSearchStatusDispatch(t *testing.T) {
 	_, err = mk(stdhttp.StatusForbidden).Search(context.Background(), search.Query{Keywords: "x"})
 	if !errors.Is(err, login.ErrLoginFailed) {
 		t.Errorf("403: err = %v, want login.ErrLoginFailed", err)
+	}
+}
+
+// TestSearchLoggedOut proves Search applies Prowlarr's CheckIfLoginNeeded marker check:
+// an expired cookie is answered with a 200 login page carrying no lout.php link, which
+// must surface as an auth failure rather than a silently empty result.
+func TestSearchLoggedOut(t *testing.T) {
+	t.Parallel()
+	d := testDriver(&scriptDoer{handler: func(_ *stdhttp.Request) *stdhttp.Response {
+		return resp(stdhttp.StatusOK, `<html><body><form action="/take_login.php">login</form></body></html>`)
+	}}, nil)
+
+	releases, err := d.Search(context.Background(), search.Query{Keywords: "dune"})
+	if !errors.Is(err, login.ErrLoginFailed) {
+		t.Errorf("err = %v, want login.ErrLoginFailed", err)
+	}
+	if releases != nil {
+		t.Errorf("releases = %v, want nil", releases)
 	}
 }
 

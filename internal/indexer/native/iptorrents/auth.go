@@ -1,6 +1,7 @@
 package iptorrents
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	stdhttp "net/http"
@@ -41,18 +42,25 @@ func (d *driver) get(ctx context.Context, rawurl, accept string, download bool) 
 	return d.Do(ctx, req, native.ClassifyAuth403)
 }
 
+// requireLoggedIn mirrors Prowlarr's CheckIfLoginNeeded, which runs on every indexer
+// response, not just the test one: an expired cookie is answered with a 200 login page,
+// so the absence of the logout link (lout.php) is an auth failure wrapped with
+// login.ErrLoginFailed (the registry records an auth_failure health event) rather than
+// a silently empty result.
+func requireLoggedIn(body []byte) error {
+	if bytes.Contains(body, []byte(loggedInMarker)) {
+		return nil
+	}
+	return fmt.Errorf("iptorrents: cookie authentication failed: %w", login.ErrLoginFailed)
+}
+
 // Test verifies the configured cookie still authenticates (the management
-// "test indexer" action). It fetches the torrent list page and, mirroring Prowlarr's
-// CheckIfLoginNeeded, treats the absence of the logout link (lout.php) as an auth
-// failure wrapped with login.ErrLoginFailed (so the registry records an auth_failure
-// health event).
+// "test indexer" action) by fetching the torrent list page and checking the logged-in
+// marker.
 func (d *driver) Test(ctx context.Context) error {
 	resp, err := d.get(ctx, d.BaseURL+searchPath, "text/html", false)
 	if err != nil {
 		return err
 	}
-	if !strings.Contains(string(resp.Body), loggedInMarker) {
-		return fmt.Errorf("iptorrents: cookie authentication failed: %w", login.ErrLoginFailed)
-	}
-	return nil
+	return requireLoggedIn(resp.Body)
 }
