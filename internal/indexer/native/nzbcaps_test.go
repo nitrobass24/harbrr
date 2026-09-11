@@ -1,9 +1,15 @@
 package native
 
 import (
+	"context"
 	"errors"
+	"io"
+	stdhttp "net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
@@ -237,5 +243,73 @@ func TestNzbAPIURL(t *testing.T) {
 				t.Errorf("NzbAPIURL = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestNzbCapsCoalescesConcurrentRefresh proves two callers hitting a cold cache at the
+// same moment issue exactly ONE ?t=caps fetch and ONE persist pair: the refresh is owned
+// by one of them and the other, queued behind it, finds the freshly stored document. The
+// server holds the first fetch open until both callers are inside Capabilities, so the
+// second one provably races the refresh rather than arriving after it.
+func TestNzbCapsCoalescesConcurrentRefresh(t *testing.T) {
+	t.Parallel()
+	var capsHits, persists atomic.Int64
+	entered := make(chan struct{}, 2)
+	release := make(chan struct{})
+	srv := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+		if r.URL.Query().Get("t") != "caps" {
+			w.WriteHeader(stdhttp.StatusNotFound)
+			return
+		}
+		capsHits.Add(1)
+		<-release
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = io.WriteString(w, capsDoc)
+	}))
+	t.Cleanup(srv.Close)
+
+	base, err := NewBase("newznab", Params{Def: testDef(), Doer: srv.Client(), BaseURL: srv.URL})
+	if err != nil {
+		t.Fatalf("NewBase: %v", err)
+	}
+	caps := NewNzbCaps(NzbCapsParams{
+		Base: &base,
+		Get: func(ctx context.Context, rawurl string) (*Response, error) {
+			req, rerr := base.NewRequest(ctx, stdhttp.MethodGet, rawurl, nil)
+			if rerr != nil {
+				return nil, rerr
+			}
+			return base.Do(ctx, req, Classify{})
+		},
+		APIPath: "/api",
+		Persist: func(context.Context, string, string) error {
+			persists.Add(1)
+			return nil
+		},
+	})
+
+	var wg sync.WaitGroup
+	built := make([]*mapper.Capabilities, 2)
+	for i := range built {
+		wg.Go(func() {
+			entered <- struct{}{}
+			built[i] = caps.Capabilities(context.Background())
+		})
+	}
+	<-entered
+	<-entered
+	close(release)
+	wg.Wait()
+
+	if got := capsHits.Load(); got != 1 {
+		t.Errorf("caps fetches = %d, want 1 (the concurrent refresh is coalesced)", got)
+	}
+	if got := persists.Load(); got != 2 {
+		t.Errorf("persist writes = %d, want 2 (one cache + fetched-at pair)", got)
+	}
+	for i, b := range built {
+		if b == nil || len(b.CategoryMap.MapTrackerCatToNewznab("5040")) == 0 {
+			t.Errorf("caller %d got no live caps: %+v", i, b)
+		}
 	}
 }

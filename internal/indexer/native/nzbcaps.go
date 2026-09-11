@@ -53,8 +53,13 @@ type NzbCapsParams struct {
 // NzbCaps holds the parsed capabilities behind a mutex with the fetched-at timestamp for
 // the TTL check. A driver is shared across concurrent searches, so the cache is guarded.
 type NzbCaps struct {
-	p         NzbCapsParams
-	mu        sync.Mutex
+	p  NzbCapsParams
+	mu sync.Mutex
+	// refreshMu gives ONE caller ownership of a refresh. Callers that find a cold or
+	// stale cache queue behind it and recheck freshness after acquiring it, so a cold
+	// start or a TTL expiry with several concurrent searches issues one ?t=caps fetch
+	// and one persist pair instead of one per caller.
+	refreshMu sync.Mutex
 	built     *mapper.Capabilities
 	fetchedAt time.Time
 }
@@ -95,7 +100,7 @@ func (c *NzbCaps) Capabilities(ctx context.Context) *mapper.Capabilities {
 	// the placeholder caps): there is no way to fetch, so serve any cached caps or the
 	// placeholder fallback without a network attempt.
 	if c.p.Base.Doer != nil {
-		if built, err := c.Fetch(ctx); err == nil {
+		if built, err := c.refresh(ctx); err == nil {
 			return built
 		}
 	}
@@ -111,6 +116,23 @@ func (c *NzbCaps) Capabilities(ctx context.Context) *mapper.Capabilities {
 // to resolve a requested child category through.
 func (c *NzbCaps) CategoryMap(ctx context.Context) *mapper.CategoryMap {
 	return c.Capabilities(ctx).CategoryMap
+}
+
+// refresh is the coalescing path Capabilities takes when the cache is cold or stale:
+// one caller owns the refresh, and the callers queued behind it recheck freshness on
+// acquiring ownership — the owner has just stored a document, so they serve it instead
+// of repeating the fetch and the persist writes. A failed refresh returns its error and
+// Capabilities falls back to the stale cache or the placeholder as before.
+//
+// Fetch itself stays an unconditional probe: it is the "test this indexer" request and
+// must actually reach the server.
+func (c *NzbCaps) refresh(ctx context.Context) (*mapper.Capabilities, error) {
+	c.refreshMu.Lock()
+	defer c.refreshMu.Unlock()
+	if built, ok := c.fresh(c.p.Base.Clock()); ok {
+		return built, nil
+	}
+	return c.Fetch(ctx)
 }
 
 // Fetch GETs the remote ?t=caps through the family's own GET (so a 401 is bad credentials
