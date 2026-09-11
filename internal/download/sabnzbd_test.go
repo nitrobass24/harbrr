@@ -25,12 +25,13 @@ func TestSabnzbdGPLHeaderPresent(t *testing.T) {
 // all ride as query params on a single GET /api endpoint, so the stub keys its
 // response on the mode param and records the full query for assertions.
 type sabnzbdStub struct {
-	// wantInvalidBody simulates a rejected apikey the way a real SABnzbd instance
-	// would for mode=version (no ApiError field on VersionResponse to carry a
-	// structured error) — a body Version's ported client can't JSON-decode, which
-	// is the only way its Test surfaces a rejection (the ported client never
-	// checks HTTP status).
-	wantInvalidBody bool
+	// goodKey, when set, is the only apikey the stub accepts on a mode that SABnzbd
+	// actually checks the key for. A mismatch answers the way a real instance does:
+	// HTTP 200 with {"status": false, "error": "API Key Incorrect"} (interface.py's
+	// report() for output=json). mode=version and mode=auth are exempt from the
+	// check upstream, so the stub answers those for ANY key — which is the whole
+	// point of autobrr/harbrr#658.
+	goodKey string
 	// wantAPIError simulates a rejected apikey on mode=addurl, which DOES have an
 	// ApiError-shaped response (AddFileResponse embeds it) the driver reads.
 	wantAPIError bool
@@ -50,18 +51,20 @@ func newSabnzbdStub(t *testing.T, s *sabnzbdStub) *httptest.Server {
 			s.readUpload(t, r)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if s.wantInvalidBody {
-			w.WriteHeader(http.StatusForbidden)
-			_, _ = w.Write([]byte("API Key Incorrect"))
-			return
-		}
 		if s.wantAPIError {
 			_, _ = w.Write([]byte(`{"error":"API Key Incorrect"}`))
 			return
 		}
-		switch s.lastQuery.Get("mode") {
+		mode := s.lastQuery.Get("mode")
+		if s.goodKey != "" && mode != "version" && s.lastQuery.Get("apikey") != s.goodKey {
+			_, _ = w.Write([]byte(`{"status":false,"error":"API Key Incorrect"}`))
+			return
+		}
+		switch mode {
 		case "version":
 			_, _ = w.Write([]byte(`{"version":"4.3.0"}`))
+		case "queue":
+			_, _ = w.Write([]byte(`{"queue":{"status":"Idle","slots":[]}}`))
 		case "addurl", "addfile":
 			_, _ = w.Write([]byte(`{"nzo_ids":["SABnzbd_nzo_abc"]}`))
 		default:
@@ -128,13 +131,27 @@ func TestSabnzbdTest_TransportErrorRedactsAPIKey(t *testing.T) {
 	}
 }
 
+// TestSabnzbdTest_BadKey is the #658 regression against a stub that behaves like a
+// real SABnzbd: mode=version is exempt from the apikey check upstream and answers 200
+// for ANY key, so the connection test has to use a mode that is checked. A rejected
+// key arrives as HTTP 200 with an error field, not as a transport failure.
 func TestSabnzbdTest_BadKey(t *testing.T) {
 	t.Parallel()
-	stub := &sabnzbdStub{wantInvalidBody: true}
+	stub := &sabnzbdStub{goodKey: "goodkey"}
 	srv := newSabnzbdStub(t, stub)
-	drv := newTestSabnzbdDriver(srv.URL, "wrongkey", "")
-	if err := drv.Test(context.Background()); err == nil {
+
+	if err := newTestSabnzbdDriver(srv.URL, "goodkey", "").Test(context.Background()); err != nil {
+		t.Fatalf("Test with the right key: %v", err)
+	}
+	err := newTestSabnzbdDriver(srv.URL, "wrongkey", "").Test(context.Background())
+	if err == nil {
 		t.Fatal("expected an error for a bad apikey")
+	}
+	if !strings.Contains(err.Error(), "API Key Incorrect") {
+		t.Errorf("error = %v, want SABnzbd's reported reason", err)
+	}
+	if mode := stub.lastQuery.Get("mode"); mode == "version" {
+		t.Error("Test used mode=version, which SABnzbd exempts from the apikey check")
 	}
 }
 
