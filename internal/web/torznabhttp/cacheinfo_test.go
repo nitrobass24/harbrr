@@ -50,6 +50,16 @@ func TestRequestNoCache(t *testing.T) {
 		{"cache-control no-cache", func(r *http.Request) { r.Header.Set("Cache-Control", "no-cache") }, true},
 		{"pragma no-cache", func(r *http.Request) { r.Header.Set("Pragma", "no-cache") }, true},
 		{"cache-control max-age", func(r *http.Request) { r.Header.Set("Cache-Control", "max-age=60") }, false},
+		// RFC 9110 lets a sender split a list-valued header across lines; Header.Get
+		// would only ever see the first (autobrr/harbrr#655).
+		{"cache-control split across lines", func(r *http.Request) {
+			r.Header.Add("Cache-Control", "max-age=0")
+			r.Header.Add("Cache-Control", "no-cache")
+		}, true},
+		{"pragma split across lines", func(r *http.Request) {
+			r.Header.Add("Pragma", "token")
+			r.Header.Add("Pragma", "no-cache")
+		}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -126,6 +136,9 @@ func TestRevalidateWrongVariantOrPageGuard(t *testing.T) {
 		page servedPage
 		// bypass selects the /full freeleech-bypass variant for the revalidate call.
 		bypass bool
+		// headers overrides the request headers passed to revalidate; nil means the
+		// single-line If-None-Match carrying the captured page-0 ETag.
+		headers http.Header
 		// wantHandled is whether the call may answer 304: only the SAME variant and
 		// page as the captured ETag — a cross-variant or cross-page match must fall
 		// through to a 200 with the correct body instead.
@@ -163,11 +176,24 @@ func TestRevalidateWrongVariantOrPageGuard(t *testing.T) {
 			wantHandled:  true,
 			wantSameETag: true,
 		},
+		{
+			// The matching validator arrives on a SECOND If-None-Match line, which
+			// Header.Get would never see (autobrr/harbrr#655).
+			name:         "matching validator on a later header line is 304",
+			page:         honorPage0,
+			headers:      http.Header{"If-None-Match": {`"stale"`, honorPage0ETag}},
+			wantHandled:  true,
+			wantSameETag: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			if handled := h.revalidate(rec, ifNoneMatch, ci, tt.page, tt.bypass, false); handled != tt.wantHandled {
+			headers := tt.headers
+			if headers == nil {
+				headers = ifNoneMatch
+			}
+			if handled := h.revalidate(rec, headers, ci, tt.page, tt.bypass, false); handled != tt.wantHandled {
 				t.Errorf("revalidate handled = %v, want %v", handled, tt.wantHandled)
 			}
 			if sameETag := rec.Header().Get("ETag") == honorPage0ETag; sameETag != tt.wantSameETag {

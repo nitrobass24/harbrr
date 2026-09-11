@@ -18,10 +18,18 @@ import (
 // `Pragma: no-cache` request header. It is the header-based sibling of the `nocache=1`
 // query param — both force a live fetch and suppress the 304 short-circuit.
 func requestNoCache(r *http.Request) bool {
-	if hasNoCacheDirective(r.Header.Get("Cache-Control")) {
+	if hasNoCacheDirective(joinHeaderLines(r.Header, "Cache-Control")) {
 		return true
 	}
-	return strings.Contains(strings.ToLower(r.Header.Get("Pragma")), "no-cache")
+	return strings.Contains(strings.ToLower(joinHeaderLines(r.Header, "Pragma")), "no-cache")
+}
+
+// joinHeaderLines folds every line of a list-valued request header into one
+// comma-separated value. Header.Get returns only the FIRST line, and RFC 9110 lets a
+// sender split Cache-Control / If-None-Match / Pragma across several lines — the later
+// directives and validators would then be silently ignored (autobrr/harbrr#655).
+func joinHeaderLines(h http.Header, name string) string {
+	return strings.Join(h.Values(name), ",")
 }
 
 // hasNoCacheDirective reports whether a Cache-Control header value carries a no-cache
@@ -143,7 +151,7 @@ func (h *handler) revalidate(w http.ResponseWriter, requestHeaders http.Header, 
 	}
 	etag := pagedETag(view, page.offset, page.limit, page.total)
 	setCacheValidators(w, etag, ci.ExpiresAt, h.clock())
-	if fresh || !ifNoneMatchMatches(requestHeaders.Get("If-None-Match"), etag) {
+	if fresh || !ifNoneMatchMatches(joinHeaderLines(requestHeaders, "If-None-Match"), etag) {
 		return false
 	}
 	w.WriteHeader(http.StatusNotModified)
