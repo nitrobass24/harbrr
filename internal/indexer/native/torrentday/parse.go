@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strconv"
 	"time"
 
@@ -53,7 +52,9 @@ type torrentDayRow struct {
 // download.php/<id>/<id>.torrent. When freeleech_only is set, a non-freeleech row
 // (download-multiplier != 0) is dropped. An empty body ([]) yields zero releases; a body
 // that is not a JSON array (a login-redirect HTML page, a truncated response) is a parse
-// error. Releases are sorted by torrent id for a deterministic feed.
+// error. Rows keep the order the tracker returned them in (t.json is newest-first and
+// neither oracle reorders): the serve path pages in driver order, so re-sorting would
+// put the oldest rows on page 1 and drop the newest.
 func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	// TorrentDay always returns a JSON array; anything else — an HTML login page from
 	// a redirect, an error stub — is not a result page and is a parse error, not a
@@ -74,9 +75,6 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 		}
 		releases = append(releases, d.toRelease(&rows[i]))
 	}
-	sort.SliceStable(releases, func(i, j int) bool {
-		return releases[i].Link < releases[j].Link
-	})
 	native.TraceReleases(d.Log, d.Def.ID, releases)
 	return releases, nil
 }
