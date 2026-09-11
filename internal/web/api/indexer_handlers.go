@@ -195,15 +195,26 @@ func (rt *router) listIndexers(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]instanceResponse, 0, len(list))
 	for _, inst := range list {
-		resp := toInstanceResponse(inst)
-		freeleech, err := rt.Registry.Freeleech(r.Context(), inst)
-		if err != nil {
-			rt.Logger.Warn().Err(err).Str("slug", inst.Slug).Msg("resolve freeleech state")
-		}
-		resp.Freeleech = freeleech
-		out = append(out, resp)
+		out = append(out, rt.instanceResponse(r.Context(), inst))
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// instanceResponse is toInstanceResponse plus the one field the domain row cannot
+// answer on its own: Freeleech is derived from the instance's settings through the
+// registry. Every route that serializes an instance goes through here so the list,
+// detail and create views cannot disagree about the freeleech checkbox's canonical
+// state, which the OpenAPI Instance schema documents as required
+// (autobrr/harbrr#653). Resolution is best-effort: a definition that fails to load
+// must not turn a readable indexer into a 500, so it degrades to false and logs.
+func (rt *router) instanceResponse(ctx context.Context, inst domain.IndexerInstance) instanceResponse {
+	resp := toInstanceResponse(inst)
+	freeleech, err := rt.Registry.Freeleech(ctx, inst)
+	if err != nil {
+		rt.Logger.Warn().Err(err).Str("slug", inst.Slug).Msg("resolve freeleech state")
+	}
+	resp.Freeleech = freeleech
+	return resp
 }
 
 // addIndexer creates a configured indexer.
@@ -241,7 +252,7 @@ func (rt *router) addIndexer(w http.ResponseWriter, r *http.Request) {
 		rt.writeServiceError(w, "add indexer", err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, toInstanceResponse(inst))
+	writeJSON(w, http.StatusCreated, rt.instanceResponse(r.Context(), inst))
 }
 
 // getIndexer returns one indexer with its settings (secrets redacted).
@@ -270,7 +281,7 @@ func (rt *router) getIndexer(w http.ResponseWriter, r *http.Request) {
 		failover.EffectiveBaseURL = inst.BaseURL
 	}
 	writeJSON(w, http.StatusOK, instanceDetailResponse{
-		instanceResponse: toInstanceResponse(inst),
+		instanceResponse: rt.instanceResponse(r.Context(), inst),
 		Settings:         settings,
 		EffectiveBaseURL: failover.EffectiveBaseURL,
 		FailoverBaseURL:  failover.PromotedBaseURL,

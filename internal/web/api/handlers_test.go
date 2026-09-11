@@ -327,9 +327,13 @@ func TestIndexerPriorityAndMinSeedersViaAPI(t *testing.T) {
 	mustStatus(t, resp, body, http.StatusBadRequest)
 }
 
-// TestListIndexersReportsFreeleechState pins the list-time freeleech view
-// (autobrr/harbrr#188): GET /api/indexers surfaces each instance's freeleech-only
-// checkbox using the same canonical rule the engine applies at build time.
+// TestListIndexersReportsFreeleechState pins the freeleech view
+// (autobrr/harbrr#188): each instance's freeleech-only checkbox is surfaced using the
+// same canonical rule the engine applies at build time. All three routes that
+// serialize an instance are checked, because the create and detail responses used to
+// answer freeleech:false for an instance the list reported as true
+// (autobrr/harbrr#653) — the OpenAPI Instance schema is shared by all three and
+// documents the field as required.
 func TestListIndexersReportsFreeleechState(t *testing.T) {
 	t.Parallel()
 
@@ -365,6 +369,15 @@ func TestListIndexersReportsFreeleechState(t *testing.T) {
 	for _, tt := range tests {
 		resp, body := do(t, c, http.MethodPost, base+"/api/indexers", tt.add, nil)
 		mustStatus(t, resp, body, http.StatusCreated)
+		if got := decodeJSONField[bool](t, body, "freeleech"); got != tt.want {
+			t.Errorf("%s: POST /api/indexers 201 body freeleech = %v, want %v", tt.name, got, tt.want)
+		}
+
+		resp, body = do(t, c, http.MethodGet, base+"/api/indexers/"+tt.add.Slug, nil, nil)
+		mustStatus(t, resp, body, http.StatusOK)
+		if got := decodeJSONField[bool](t, body, "freeleech"); got != tt.want {
+			t.Errorf("%s: GET /api/indexers/%s freeleech = %v, want %v", tt.name, tt.add.Slug, got, tt.want)
+		}
 	}
 
 	resp, body := do(t, c, http.MethodGet, base+"/api/indexers", nil, nil)
