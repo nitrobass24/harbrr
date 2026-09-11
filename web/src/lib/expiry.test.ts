@@ -10,7 +10,7 @@ function instance(over: Partial<Instance> = {}): Instance {
     id: 1, slug: "tt", definitionId: "tt", name: "TT", enabled: true, protocol: "torrent",
     freeleech: false, priority: 25, minSeeders: 0, syncCategories: [],
     enableRss: true, enableAutomaticSearch: true, enableInteractiveSearch: true,
-    expiresAt: "", expiryKind: "", expiryLifetime: false,
+    expiresAt: "", expiryKind: "", expiryLifetime: false, failoverDisabled: false,
     createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
     ...over,
   }

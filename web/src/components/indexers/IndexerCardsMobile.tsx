@@ -48,7 +48,7 @@ function IndexerCard({ row, actions }: { row: IndexerRowData, actions: IndexerRo
               <span className={cn("truncate font-medium", ix.enabled ? "text-foreground" : "text-muted-foreground")}>
                 {ix.name}
               </span>
-              <FailoverPill detail={row.detail} />
+              <FailoverPill instance={ix} />
             </span>
             <span className="truncate text-[12px] text-faint">{hostname(ix.baseUrl) || ix.definitionId}</span>
           </span>
