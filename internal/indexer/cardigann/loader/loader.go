@@ -138,10 +138,12 @@ func New(dropinDir string) *Loader {
 	return &Loader{dropinDir: dropinDir}
 }
 
-// Load resolves a definition by id with precedence dropin > vendored. It first
-// tries <dropinDir>/<id>.yml on disk, then the vendored snapshot (by filename
-// vendor/<id>.yml, then by content id:). If neither exists it returns an error
-// wrapping ErrNotFound.
+// Load resolves a definition by id with precedence dropin > vendored. Each
+// source is tried by filename first and by content id: second — drop-ins as
+// <dropinDir>/<id>.yml then any drop-in declaring id:, the vendored snapshot as
+// vendor/<id>.yml then any vendored file declaring id: — so the handful of
+// Jackett files whose name differs from their id resolve identically from both.
+// If neither source has it, Load returns an error wrapping ErrNotFound.
 func (l *Loader) Load(id string) (*Definition, error) {
 	def, _, err := l.load(id)
 	return def, err
@@ -159,7 +161,7 @@ func (l *Loader) load(id string) (*Definition, Origin, error) {
 	}
 
 	if l.dropinDir != "" {
-		data, ok, err := l.readDropin(id)
+		data, ok, err := l.readDropinFor(id)
 		if err != nil {
 			return nil, OriginDropin, err
 		}
@@ -365,6 +367,55 @@ func (l *Loader) readDropin(id string) (data []byte, ok bool, err error) {
 		return nil, false, fmt.Errorf("reading drop-in definition %q: %w", id, err)
 	}
 	return data, true, nil
+}
+
+// readDropinFor resolves the drop-in for id the same way the catalog does:
+// first <dropinDir>/<id>.yml, then any drop-in file whose content id: equals id.
+// The second step matters for the vendored files whose filename differs from
+// their id (darkpeers.yml carries darkpeers-api, and five siblings): an operator
+// copies that file into the drop-in dir under its own name, LoadAll keys the
+// result by the parsed id: and advertises the override in the catalog, so
+// Load(darkpeers-api) — how every indexer instance is built — must honour it too
+// rather than falling through to the unmodified vendored copy.
+func (l *Loader) readDropinFor(id string) (data []byte, ok bool, err error) {
+	data, ok, err = l.readDropin(id)
+	if err != nil || ok {
+		return data, ok, err
+	}
+	return l.dropinByContentID(id)
+}
+
+// dropinByContentID scans the drop-in directory for a definition whose content
+// id: equals id. Unlike the vendored index this is never cached: the drop-in
+// directory is live on disk and an operator's edit must take effect on the next
+// Load. It runs only after the filename lookup misses, and a drop-in directory
+// holds a handful of hand-placed overrides, so the scan stays cheap. A file that
+// cannot be read or carries no id: is skipped — LoadAll is where a malformed
+// drop-in surfaces as a visible skip; one bad file must not break resolution for
+// every other id.
+func (l *Loader) dropinByContentID(id string) (data []byte, ok bool, err error) {
+	entries, err := os.ReadDir(l.dropinDir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("enumerating drop-in definitions: %w", err)
+	}
+	for _, e := range entries {
+		fileID, isDef := definitionID(e.Name(), e.IsDir())
+		if !isDef || fileID == id {
+			// The filename match was already tried by readDropin.
+			continue
+		}
+		candidate, err := os.ReadFile(filepath.Join(l.dropinDir, e.Name()))
+		if err != nil {
+			continue
+		}
+		if ProbeID(candidate) == id {
+			return candidate, true, nil
+		}
+	}
+	return nil, false, nil
 }
 
 // withinDir reports whether path resolves to a location inside dir (not dir
