@@ -86,8 +86,22 @@ captured from a live MAM. The live Prowlarr differential and a real search/grab 
   Prowlarr converts to *local* time; harbrr keeps UTC, the engine-wide convention. An
   unparseable date is a parse error for the whole response.
 - **Freeleech → DownloadVolumeFactor** — `[Accepted]`. `free` OR `personal_freeleech`
-  OR `fl_vip` ⇒ `DownloadVolumeFactor=0`, else `1`; `UploadVolumeFactor=1`,
-  `MinimumRatio=1`, `MinimumSeedTime=259200` (72h, Prowlarr's fixed value).
+  OR (`fl_vip` AND the account is VIP) ⇒ `DownloadVolumeFactor=0`, else `1`;
+  `UploadVolumeFactor=1`, `MinimumRatio=1`, `MinimumSeedTime=259200` (72h, Prowlarr's
+  fixed value). An `fl_vip` row is only free for a VIP account, so the user class is
+  resolved from `jsonLoad.php` (`classname`, VIP when it is `VIP` or `Elite VIP`,
+  case-insensitively) through the same session and memoized for 1h — the oracle's rule
+  and TTL. Fixtures: `user_data_vip.json` / `user_data_nonvip.json`.
+- **The user-class lookup is deferred, not per-search** — `[Deliberate]`. The oracle
+  fetches `jsonLoad.php` once per parsed response; harbrr consults it only when a row
+  has `fl_vip` set and is not already free, so a response that cannot be affected costs
+  no extra request. The served output is identical. A failed lookup reads as non-VIP
+  (logged at debug, never failing the search) and is not cached, so the next search
+  retries.
+- **Title flag suffixes** — `[Accepted]`. After the author append, a non-empty
+  `lang_code` and `filetype` (upper-cased) are joined with `" / "` into a
+  `" [ENG / EPUB]"` bracket, and a `vip` row gets a trailing `" [VIP]"` — the oracle's
+  order and formatting. These are the only format/quality hints a MAM title carries.
 - **`"Nothing returned, out of …"` Error → no results** — `[Accepted]`. An `Error`
   matching that prefix is treated as zero results (matching Prowlarr); any *other*
   non-empty `Error`, a missing `data` array, or a malformed body is a parse error.

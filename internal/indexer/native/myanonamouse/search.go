@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -32,7 +33,20 @@ func (d *driver) Search(ctx context.Context, q search.Query) ([]*normalizer.Rele
 	if err != nil {
 		return nil, err
 	}
-	return d.parseReleases(resp.Body)
+	// The VIP lookup is deferred into a closure: it is an extra request, and only an
+	// fl_vip row that is not otherwise free needs the answer. The closure memoizes its
+	// first result for the rest of THIS search — including a failed lookup, which the
+	// driver-level cache deliberately does not store — so a page of fl_vip rows costs
+	// at most one user-class request even while the lookup is failing. The next search
+	// still retries.
+	var (
+		vipOnce sync.Once
+		vip     bool
+	)
+	return d.parseReleases(resp.Body, func() bool {
+		vipOnce.Do(func() { vip = d.hasUserVIP(ctx) })
+		return vip
+	})
 }
 
 // buildSearchURL renders the loadSearchJSONbasic.php request for a query, matching

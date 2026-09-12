@@ -92,10 +92,13 @@ func setSearchCriteria(req *bhdRequest, q search.Query) {
 
 // tvSearchTerm builds the keyword for a (possibly TV) query: a season/episode signal
 // appends the formatted episode component (a daily episode becomes " yyyy-MM-dd", a
-// season+episode " SxxExx", a season alone " Sxx") to the trimmed keyword; a plain query is
-// the trimmed keyword. An empty result (bare browse/RSS) drops the search field.
+// season+episode " SxxExx", a season alone " Sxx") to the sanitized keyword; a plain query
+// is the sanitized keyword. An empty result (bare browse/RSS) drops the search field. The
+// keyword goes through SanitizeSearchTerm first because the oracle passes
+// SanitizedSearchTerm / SanitizedTvSearchString (= sanitized term + episode string), so
+// punctuation outside its whitelist ("Mr. Robot: S01") must not reach the request.
 func tvSearchTerm(q search.Query) string {
-	keywords := strings.TrimSpace(q.Keywords)
+	keywords := strings.TrimSpace(native.SanitizeSearchTerm(q.Keywords))
 	suffix := episodeSearchString(q.Season, q.Ep)
 	if suffix == "" {
 		return keywords

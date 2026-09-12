@@ -366,7 +366,7 @@ func (d *driver) downloadURL(torrentID int64) string {
 	params.Set("action", "download")
 	params.Set("id", strconv.FormatInt(torrentID, 10))
 	params.Set("authkey", downloadAuthKeyDummy)
-	params.Set("torrent_pass", strings.TrimSpace(d.cfgValue("passkey")))
+	params.Set("torrent_pass", d.passkey())
 	return d.BaseURL + torrentsPath + "?" + params.Encode()
 }
 

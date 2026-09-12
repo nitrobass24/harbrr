@@ -91,6 +91,12 @@ func TestBuildRequest(t *testing.T) {
 		{"season+episode appends SxxExx", search.Query{Keywords: "some show", Season: "1", Ep: "2"}, `{` + rss + `,"search":"some show S01E02"}`},
 		{"season only appends Sxx", search.Query{Keywords: "some show", Season: "1"}, `{` + rss + `,"search":"some show S01"}`},
 		{"daily appends date", search.Query{Keywords: "some show", Season: "2024", Ep: "01/15"}, `{` + rss + `,"search":"some show 2024-01-15"}`},
+		{"colon dropped by sanitize", search.Query{Keywords: "Mr. Robot: S01"}, `{` + rss + `,"search":"Mr. Robot S01"}`},
+		{"ampersand and question mark dropped", search.Query{Keywords: "Law & Order"}, `{` + rss + `,"search":"Law  Order"}`},
+		{"curly quote normalised", search.Query{Keywords: "Marvel’s Agents"}, `{` + rss + `,"search":"Marvel's Agents"}`},
+		{"dash run collapsed", search.Query{Keywords: "Foo — Bar"}, `{` + rss + `,"search":"Foo - Bar"}`},
+		{"sanitize applies before the season suffix", search.Query{Keywords: "What If...?", Season: "1"}, `{` + rss + `,"search":"What If... S01"}`},
+		{"punctuation-only keyword drops the field", search.Query{Keywords: "???"}, `{` + rss + `}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

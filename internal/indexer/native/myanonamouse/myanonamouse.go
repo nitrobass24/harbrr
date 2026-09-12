@@ -11,6 +11,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
@@ -32,6 +33,13 @@ type driver struct {
 
 	mu           sync.Mutex
 	currentMamID string // rotating session cookie, seeded from cfg["mam_id"]
+	// vipCached / vipExpires memoize the account's VIP standing (the user class
+	// behind fl_vip freeleech) for vipTTL, matching the oracle's 1h cache. The cache
+	// is NOT keyed on the session: MAM rotates mam_id on every response, so a
+	// session-keyed cache would never hit; the account's class is what is cached and
+	// it does not change with the token.
+	vipCached  bool
+	vipExpires time.Time
 }
 
 var _ native.Driver = (*driver)(nil)
