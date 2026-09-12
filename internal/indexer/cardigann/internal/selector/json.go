@@ -43,7 +43,9 @@ func (e *Engine) ParseJSON(body []byte) (*Document, error) {
 	if err := dec.Decode(&v); err != nil {
 		return nil, fmt.Errorf("parsing JSON document: %w", err)
 	}
-	return &Document{kind: kindJSON, json: &jsonNode{value: v}}, nil
+	// The raw body is kept for the rows node's order-preserving re-read (#681);
+	// nothing else re-parses it.
+	return &Document{kind: kindJSON, json: &jsonNode{value: v}, raw: body}, nil
 }
 
 func (n *jsonNode) query(sel string) (node, bool, error) {
@@ -151,8 +153,15 @@ func (d *Document) jsonCountIsZero(count *loader.SelectorBlock) bool {
 // is skipped — Jackett skips it under MissingAttributeEqualsNoResults and would
 // otherwise dereference null; harbrr degrades cleanly in both cases.
 func (d *Document) buildJSONRows(arr []any, block loader.RowsBlock) []Row {
+	multiple := boolVal(block.Multiple)
+	// Document property order for the object shape, recovered from the raw body (#681).
+	var orders [][]string
+	if multiple {
+		orders = d.rowKeyOrders(block)
+	}
+
 	rows := make([]Row, 0, len(arr))
-	for _, e := range arr {
+	for i, e := range arr {
 		value := e
 		if block.Attribute != "" {
 			sub, ok := resolvePath(e, block.Attribute)
@@ -161,7 +170,11 @@ func (d *Document) buildJSONRows(arr []any, block loader.RowsBlock) []Row {
 			}
 			value = sub
 		}
-		for _, child := range rowChildren(value, boolVal(block.Multiple)) {
+		var order []string
+		if i < len(orders) {
+			order = orders[i]
+		}
+		for _, child := range rowChildren(value, multiple, order) {
 			rows = append(rows, Row{kind: kindJSON, json: &jsonNode{value: child, root: e}})
 		}
 	}
@@ -174,11 +187,12 @@ func (d *Document) buildJSONRows(arr []any, block loader.RowsBlock) []Row {
 // children each become a row (a JArray's elements, a JObject's property values).
 // A scalar has no children and contributes nothing, where Jackett would throw.
 //
-// Object keys are walked sorted: encoding/json loses JSON object insertion
-// order, which is the order Newtonsoft yields. Both vendored defs that set
-// multiple (yts, hebits) put an ARRAY under rows.attribute, so the object shape
-// — and with it the ordering difference — is unreachable from the corpus.
-func rowChildren(value any, multiple bool) []any {
+// Object keys are walked in the order the document wrote them — the order
+// Newtonsoft's Values<JObject>() yields (#681). encoding/json has already lost
+// it by this point, so the caller supplies it from the raw body; an order that
+// does not describe this object (nil, or out of reach — see rowKeyOrders) falls
+// back to sorted keys, which is at least deterministic.
+func rowChildren(value any, multiple bool, order []string) []any {
 	if !multiple {
 		return []any{value}
 	}
@@ -186,8 +200,11 @@ func rowChildren(value any, multiple bool) []any {
 	case []any:
 		return v
 	case map[string]any:
+		if len(order) != len(v) {
+			order = slices.Sorted(maps.Keys(v))
+		}
 		children := make([]any, 0, len(v))
-		for _, k := range slices.Sorted(maps.Keys(v)) {
+		for _, k := range order {
 			children = append(children, v[k])
 		}
 		return children

@@ -63,6 +63,29 @@ func TestClassifyHealth(t *testing.T) {
 		// not parse (#234) — even when the underlying cause is a bespoke error shape
 		// that isn't itself an EOF or net.Error.
 		{"body-read marker", fmt.Errorf("newznab: %w: %w", native.ErrBodyRead, errors.New("bespoke stream error")), domain.HealthTransport, true},
+		// The two seedpool.org outage shapes (#683). Neither cause is a net.Error, so
+		// before the http2 prefix match a flattened (redacted) chain classified as
+		// nothing at all and no health event was recorded.
+		{
+			"http2 header-wait timeout",
+			fmt.Errorf("cardigann: login: %w", errors.New("http2: timeout awaiting response headers")),
+			domain.HealthTransport, true,
+		},
+		{
+			"http2 peer stream error",
+			fmt.Errorf("cardigann: login: %w", errors.New("stream error: stream ID 1; INTERNAL_ERROR; received from peer")),
+			domain.HealthTransport, true,
+		},
+		{
+			"http2 marker after unrelated text is not transport",
+			errors.New("parse: definition mentions \"stream error:\" in a title"),
+			"", false,
+		},
+		{
+			"header-wait text inside a wrapper message only is not transport",
+			errors.New("saw http2: timeout awaiting response headers earlier, then succeeded"),
+			"", false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

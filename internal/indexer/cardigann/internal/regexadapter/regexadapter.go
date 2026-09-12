@@ -114,6 +114,19 @@ func Compile(pattern string, opts RouteOptions) (*Regexp, error) {
 
 	re, err := regexp.Compile(rewritten)
 	if err == nil {
+		// (e) empty-match trigger, knowable only once RE2 has compiled the pattern:
+		// Go's FindAll* family DROPS an empty match that abuts the previous match,
+		// while .NET's Regex keeps it — so `a*` on "baaac" replaces 3 times under RE2
+		// and 4 times under .NET (#686). Emulating .NET on the RE2 side means slicing
+		// the input, which breaks ^/$ and lookaround context, so route instead.
+		if re.MatchString("") {
+			r, err2 := compileRegexp2(normalized)
+			if err2 != nil {
+				return nil, err2
+			}
+			compileCache.Set(key, r, ttlcache.DefaultTTL)
+			return r, nil
+		}
 		r := &Regexp{engine: EngineRE2, re: re}
 		compileCache.Set(key, r, ttlcache.DefaultTTL)
 		return r, nil

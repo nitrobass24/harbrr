@@ -28,5 +28,17 @@
         }
       }
     ]
+  },
+  "unorderedShape": {
+    "movies": [
+      {
+        "title": "Qux",
+        "torrents": {
+          "zeta": { "hash": "FFF", "quality": "2160p" },
+          "alpha": { "hash": "GGG", "quality": "1080p" },
+          "mid": { "hash": "HHH", "quality": "720p" }
+        }
+      }
+    ]
   }
 }

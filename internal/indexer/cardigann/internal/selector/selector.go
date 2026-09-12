@@ -61,6 +61,7 @@ type Document struct {
 	kind docKind
 	html *htmlNode // root, kindHTML
 	json *jsonNode // root, kindJSON
+	raw  []byte    // kindJSON only: the response body, re-read for rows property order (#681)
 }
 
 // Row is a single result row: one HTML element or one JSON element, scoping the
