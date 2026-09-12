@@ -341,3 +341,47 @@ func TestSearchGatesFlVipOnUserClass(t *testing.T) {
 		})
 	}
 }
+
+// TestSearchMemoizesFailedVIPLookupPerSearch proves a failing user-class lookup is
+// asked once per search, not once per fl_vip row: the driver cache does not store a
+// failure (so the next search retries), but within one page the closure reuses it.
+func TestSearchMemoizesFailedVIPLookupPerSearch(t *testing.T) {
+	t.Parallel()
+	const rows = `{"error":"","data":[` +
+		`{"id":1,"title":"A","category":"13","main_cat":"13","added":"2024-01-15 10:30:00","size":"1.00 MB","free":false,"personal_freeleech":false,"fl_vip":true},` +
+		`{"id":2,"title":"B","category":"13","main_cat":"13","added":"2024-01-15 10:30:00","size":"1.00 MB","free":false,"personal_freeleech":false,"fl_vip":true},` +
+		`{"id":3,"title":"C","category":"13","main_cat":"13","added":"2024-01-15 10:30:00","size":"1.00 MB","free":false,"personal_freeleech":false,"fl_vip":true}]}`
+	d := goldenDriver(t)
+	d.BaseURL = "https://mam.test/"
+	d.currentMamID = mamSecret
+	lookups := 0
+	d.Doer = &scriptDoer{handler: func(req *stdhttp.Request) *stdhttp.Response {
+		if strings.Contains(req.URL.Path, "jsonLoad.php") {
+			lookups++
+			return resp(stdhttp.StatusInternalServerError, "")
+		}
+		return resp(stdhttp.StatusOK, rows)
+	}}
+	rels, err := d.Search(context.Background(), search.Query{Keywords: "book"})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(rels) != 3 {
+		t.Fatalf("releases = %d, want 3", len(rels))
+	}
+	if lookups != 1 {
+		t.Fatalf("user-class lookups = %d, want 1 (a failed lookup is memoized for the rest of the search)", lookups)
+	}
+	for i, r := range rels {
+		if r.DownloadVolumeFactor != 1 {
+			t.Errorf("release %d DownloadVolumeFactor = %v, want 1 (non-VIP on lookup failure)", i, r.DownloadVolumeFactor)
+		}
+	}
+	// A second search retries: the driver cache never stored the failure.
+	if _, err := d.Search(context.Background(), search.Query{Keywords: "book"}); err != nil {
+		t.Fatalf("second Search: %v", err)
+	}
+	if lookups != 2 {
+		t.Fatalf("user-class lookups after a second search = %d, want 2", lookups)
+	}
+}
