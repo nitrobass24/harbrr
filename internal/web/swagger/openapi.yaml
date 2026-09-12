@@ -2604,7 +2604,7 @@ components:
             configured host stops answering and another of the definition's links
             works. It is honoured only while the definition still lists that host.
             Setting it to "" reverts the indexer to its configured host; it is surfaced
-            read-side as InstanceDetail.failoverBaseUrl.
+            read-side as Instance.failoverBaseUrl.
         failover_disabled:
           type: string
           description: >
@@ -2767,7 +2767,18 @@ components:
         expiryLifetime: { type: boolean, description: "never expires; wins over expiresAt and never notifies" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
-      required: [id, slug, definitionId, name, enabled, protocol, freeleech, priority, minSeeders, syncCategories, enableRss, enableAutomaticSearch, enableInteractiveSearch, expiresAt, expiryKind, expiryLifetime, createdAt, updatedAt]
+        failoverBaseUrl:
+          type: string
+          description: >
+            present only while a failover promotion is in effect — the host the
+            indexer moved to after the configured one stopped answering. Revert by
+            PATCHing the indexer with settings.failover_base_url = "".
+        failoverDisabled:
+          type: boolean
+          description: >
+            the operator pin (settings.failover_disabled): automatic failover is off
+            for this indexer. Choosing a host in the base-URL picker does NOT set it.
+      required: [id, slug, definitionId, name, enabled, protocol, freeleech, priority, minSeeders, syncCategories, enableRss, enableAutomaticSearch, enableInteractiveSearch, expiresAt, expiryKind, expiryLifetime, createdAt, updatedAt, failoverDisabled]
     DiagnosticCapture:
       type: object
       description: >
@@ -2955,19 +2966,9 @@ components:
                 the host this indexer actually talks to right now: the configured
                 baseUrl (or the definition's first link when unset), unless the
                 automatic base-URL failover promoted another of the definition's links
-                (autobrr/harbrr#375).
-            failoverBaseUrl:
-              type: string
-              description: >
-                present only while a failover promotion is in effect — the host the
-                indexer moved to after the configured one stopped answering. Revert by
-                PATCHing the indexer with settings.failover_base_url = "".
-            failoverDisabled:
-              type: boolean
-              description: >
-                the operator pin (settings.failover_disabled): automatic failover is off
-                for this indexer. Choosing a host in the base-URL picker does NOT set it.
-          required: [settings, effectiveBaseUrl, failoverDisabled]
+                (autobrr/harbrr#375). failoverBaseUrl/failoverDisabled are on Instance,
+                so the list carries them too (autobrr/harbrr#684).
+          required: [settings, effectiveBaseUrl]
     AddIndexer:
       type: object
       properties:

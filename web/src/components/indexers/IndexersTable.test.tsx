@@ -6,7 +6,7 @@ import { IndexersTable } from "./IndexersTable"
 const BASE = {
   proxyId: null, solverId: null, protocol: "torrent" as const, freeleech: false, priority: 25, minSeeders: 0,
   syncCategories: [], enableRss: true, enableAutomaticSearch: true, enableInteractiveSearch: true,
-  expiresAt: "", expiryKind: "" as const, expiryLifetime: false,
+  expiresAt: "", expiryKind: "" as const, expiryLifetime: false, failoverDisabled: false,
   createdAt: "2026-07-01T00:00:00Z", updatedAt: "2026-07-01T00:00:00Z",
 }
 
@@ -189,18 +189,16 @@ describe("IndexersTable", () => {
   })
 
   it("flags a base-URL failover promotion, and only that (autobrr/harbrr#375)", () => {
-    const detail = (over: Record<string, unknown>) => ({
-      ...ROWS[0].instance, settings: [], effectiveBaseUrl: "https://www.torrentleech.org/", failoverDisabled: false, ...over,
-    })
+    // The standing rides on the list row itself since autobrr/harbrr#684 — no per-slug
+    // detail fetch behind this.
     const rows: IndexerRowData[] = [
       {
-        instance: ROWS[0].instance,
-        detail: detail({ effectiveBaseUrl: "https://mirror.tl.org/", failoverBaseUrl: "https://mirror.tl.org/" }),
+        instance: { ...ROWS[0].instance, failoverBaseUrl: "https://mirror.tl.org/", failoverDisabled: false },
       },
-      { instance: ROWS[1].instance, detail: detail({ id: 2, slug: "rutor" }) },
-      // No override configured at all: effectiveBaseUrl is the definition's own first
-      // link, which is NOT a promotion and must not raise the pill.
-      { instance: ROWS[2].instance, detail: detail({ id: 3, slug: "x1337", baseUrl: undefined }) },
+      { instance: { ...ROWS[1].instance, failoverDisabled: false } },
+      // No promotion and no base URL configured at all: the indexer simply follows the
+      // definition's own first link, which must not raise the pill.
+      { instance: { ...ROWS[2].instance, baseUrl: undefined, failoverDisabled: false } },
     ]
     render(<IndexersTable rows={rows} actions={noopActions()} />)
 

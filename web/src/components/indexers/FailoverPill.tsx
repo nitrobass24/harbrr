@@ -1,11 +1,11 @@
 import { failoverHosts } from "@/lib/failover"
-import type { InstanceDetail } from "@/lib/api"
+import type { Instance } from "@/lib/api"
 
 // Beside the indexer's name when the automatic base-URL failover moved it to
 // another of the definition's hosts (autobrr/harbrr#375). Styled after the other
 // row pills; the hosts are in the tooltip so the row stays one line.
-export function FailoverPill({ detail }: { detail?: InstanceDetail }) {
-  const hosts = failoverHosts(detail)
+export function FailoverPill({ instance }: { instance?: Instance }) {
+  const hosts = failoverHosts(instance)
   if (!hosts) return null
 
   return (

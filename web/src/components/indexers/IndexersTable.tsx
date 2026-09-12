@@ -19,7 +19,7 @@ import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { hostname } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import type { IndexerStats, Instance, IndexerStatus, InstanceDetail } from "@/lib/api"
+import type { IndexerStats, Instance, IndexerStatus } from "@/lib/api"
 
 export type IndexerRowData = {
   instance: Instance
@@ -27,7 +27,6 @@ export type IndexerRowData = {
   categories?: string // parent category names, joined
   status?: IndexerStatus
   stats?: IndexerStats // usage: is anything actually querying this? (#487)
-  detail?: InstanceDetail // carries the base-URL failover standing (#375)
   testing?: boolean
 }
 
@@ -101,7 +100,7 @@ function IndexerRow({ row, actions }: { row: IndexerRowData, actions: IndexerRow
               <span className={cn("font-medium", ix.enabled ? "text-foreground" : "text-muted-foreground")}>
                 {ix.name}
               </span>
-              <FailoverPill detail={row.detail} />
+              <FailoverPill instance={ix} />
             </span>
             <span className="text-[12px] text-faint">{hostname(ix.baseUrl) || ix.definitionId}</span>
           </span>

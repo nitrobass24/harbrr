@@ -6,7 +6,7 @@ import type { IndexerRowActions, IndexerRowData } from "./IndexersTable"
 const BASE = {
   proxyId: null, solverId: null, protocol: "torrent" as const, freeleech: false, priority: 25, minSeeders: 0,
   syncCategories: [], enableRss: true, enableAutomaticSearch: true, enableInteractiveSearch: true,
-  expiresAt: "", expiryKind: "" as const, expiryLifetime: false,
+  expiresAt: "", expiryKind: "" as const, expiryLifetime: false, failoverDisabled: false,
   createdAt: "2026-07-01T00:00:00Z", updatedAt: "2026-07-01T00:00:00Z",
 }
 

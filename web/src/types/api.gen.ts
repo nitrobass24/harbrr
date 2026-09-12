@@ -1567,7 +1567,7 @@ export interface components {
              * @enum {string}
              */
             limits_unit?: "day" | "hour";
-            /** @description written by the automatic base-URL failover (autobrr/harbrr#375) when the configured host stops answering and another of the definition's links works. It is honoured only while the definition still lists that host. Setting it to "" reverts the indexer to its configured host; it is surfaced read-side as InstanceDetail.failoverBaseUrl. */
+            /** @description written by the automatic base-URL failover (autobrr/harbrr#375) when the configured host stops answering and another of the definition's links works. It is honoured only while the definition still lists that host. Setting it to "" reverts the indexer to its configured host; it is surfaced read-side as Instance.failoverBaseUrl. */
             failover_base_url?: string;
             /** @description the operator pin: any truthy value ("true") disables automatic base-URL failover for this indexer entirely, whatever the failure looks like. Selecting a host in the base-URL picker does NOT set this. */
             failover_disabled?: string;
@@ -1713,6 +1713,10 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+            /** @description present only while a failover promotion is in effect — the host the indexer moved to after the configured one stopped answering. Revert by PATCHing the indexer with settings.failover_base_url = "". */
+            failoverBaseUrl?: string;
+            /** @description the operator pin (settings.failover_disabled): automatic failover is off for this indexer. Choosing a host in the base-URL picker does NOT set it. */
+            failoverDisabled: boolean;
         };
         /** @description One recent failed tracker fetch, retained in memory only. kind is the health classification the failure was given. method/url are always present; status, headers and body are present only when a response was actually received (a transport failure captures the request summary alone). Every value is redacted. */
         DiagnosticCapture: {
@@ -1851,12 +1855,8 @@ export interface components {
         };
         InstanceDetail: components["schemas"]["Instance"] & {
             settings: components["schemas"]["Setting"][];
-            /** @description the host this indexer actually talks to right now: the configured baseUrl (or the definition's first link when unset), unless the automatic base-URL failover promoted another of the definition's links (autobrr/harbrr#375). */
+            /** @description the host this indexer actually talks to right now: the configured baseUrl (or the definition's first link when unset), unless the automatic base-URL failover promoted another of the definition's links (autobrr/harbrr#375). failoverBaseUrl/failoverDisabled are on Instance, so the list carries them too (autobrr/harbrr#684). */
             effectiveBaseUrl: string;
-            /** @description present only while a failover promotion is in effect — the host the indexer moved to after the configured one stopped answering. Revert by PATCHing the indexer with settings.failover_base_url = "". */
-            failoverBaseUrl?: string;
-            /** @description the operator pin (settings.failover_disabled): automatic failover is off for this indexer. Choosing a host in the base-URL picker does NOT set it. */
-            failoverDisabled: boolean;
         };
         AddIndexer: {
             /** @description defaults to definitionId when omitted */
