@@ -10,7 +10,7 @@ Cardigann can't express — and how far each is validated.
   account on that tracker). See **[Test status](test-status.md)** for the evidence behind this
   column and the auth/fetch patterns proven live.
 
-**596 trackers** total: 553 Cardigann corpus (all built) · 26 native drivers built · 17 native
+**595 trackers** total: 552 Cardigann corpus (all built) · 26 native drivers built · 17 native
 drivers planned. To configure one, see **[Adding an indexer](guides/add-indexer.md)**.
 
 ## Native drivers
@@ -74,7 +74,7 @@ Native drivers we have issues for but haven't built. 👍 or comment on the issu
 
 Served through the shared engine from the vendored Jackett snapshot — all built. Live-tested where an operator instance covers them.
 
-### Private (405)
+### Private (404)
 
 | Tracker | Built | Live-tested |
 |---|:--:|:--:|
@@ -178,7 +178,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Drugari | ✅ | ⬜ |
 | DS-Reloaded | ✅ | ⬜ |
 | dubhe (天枢) | ✅ | ⬜ |
-| Ebooks-Shares | ✅ | ⬜ |
 | Empornium | ✅ | ⬜ |
 | Empornium2FA | ✅ | ⬜ |
 | eMuwarez (API) | ✅ | ⬜ |
@@ -210,7 +209,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | hawke-uno | ✅ | ⬜ |
 | HD Dolby | ✅ | ⬜ |
 | HD-CLUB | ✅ | ⬜ |
-| HD-Forever API | ✅ | ⬜ |
+| HD-Forever (API) | ✅ | ⬜ |
 | HD-Olimpo (API) | ✅ | ⬜ |
 | HD-Only (API) | ✅ | ⬜ |
 | HD-Space | ✅ | ✅ |
@@ -640,7 +639,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | XXXClub | ✅ | ⬜ |
 | xxxtor | ✅ | ⬜ |
 | YTS | ✅ | ⬜ |
-| Zamunda RIP | ✅ | ⬜ |
+| Zamunda LIFE | ✅ | ⬜ |
 
 ## Don't see yours?
 
