@@ -85,10 +85,10 @@ func probeWritable(dir string) error {
 // Add writes the payload into the protocol's configured watch folder: fetched
 // bytes go straight to disk, a URL without bytes is fetched first (blackhole
 // has no "hand the client a URL" fallback — a magnet URI is the sole
-// exception, since it has no fetchable content). AddOptions is unused: a
-// watch folder has no category/tags/paused concept of its own — whatever
-// polls the folder applies its own categorization.
-func (d *blackholeDriver) Add(ctx context.Context, p Payload, _ AddOptions) error {
+// exception, since it has no fetchable content). A watch folder has no
+// category/tags/paused concept of its own — whatever polls the folder applies
+// its own categorization.
+func (d *blackholeDriver) Add(ctx context.Context, p Payload) error {
 	dir, ext, limit, err := dirForProtocol(d.settings, p.Protocol)
 	if err != nil {
 		return err

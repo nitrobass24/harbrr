@@ -99,7 +99,7 @@ func TestDelugeConnectErrorClosesTheSocket(t *testing.T) {
 	}{
 		{"Test", func(d *delugeDriver) error { return d.Test(context.Background()) }},
 		{"Add", func(d *delugeDriver) error {
-			return d.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:abc"}, AddOptions{})
+			return d.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:abc"})
 		}},
 	}
 	for _, tt := range tests {
@@ -122,7 +122,7 @@ func TestDelugeAdd_ViaMagnet(t *testing.T) {
 	drv := newDelugeDriver(fake, domain.DelugeSettings{})
 
 	uri := "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: uri}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: uri}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if fake.lastAdd != "magnet" || fake.lastArg != uri {
@@ -136,7 +136,7 @@ func TestDelugeAdd_ViaURL(t *testing.T) {
 	drv := newDelugeDriver(fake, domain.DelugeSettings{})
 
 	url := "http://tracker.example/dl?token=sealed"
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: url}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: url}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if fake.lastAdd != "url" || fake.lastArg != url {
@@ -149,7 +149,7 @@ func TestDelugeAdd_ViaBytes(t *testing.T) {
 	fake := &delugeFake{addHash: "abc123"}
 	drv := newDelugeDriver(fake, domain.DelugeSettings{})
 
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, Bytes: []byte("d8:announce...e"), Name: "test.torrent"}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, Bytes: []byte("d8:announce...e"), Name: "test.torrent"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if fake.lastAdd != "file" || fake.lastArg != "test.torrent" {
@@ -165,7 +165,7 @@ func TestDelugeAdd_OptionMapping(t *testing.T) {
 	fake := &delugeFake{addHash: "abc123"}
 	drv := newDelugeDriver(fake, domain.DelugeSettings{DownloadDir: "/downloads/deluge", StartPaused: true})
 
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if fake.lastOpts.AddPaused == nil || !*fake.lastOpts.AddPaused {
@@ -185,7 +185,7 @@ func TestDelugeAdd_LabelFallbackToSettings(t *testing.T) {
 	fake := &delugeFake{addHash: "abc123"}
 	drv := newDelugeDriver(fake, domain.DelugeSettings{Label: "from-settings"})
 
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if len(fake.setLabelSeen) != 1 || fake.setLabelSeen[0].label != "from-settings" {
@@ -199,9 +199,9 @@ func TestDelugeAdd_LabelUnknownRetry(t *testing.T) {
 		addHash:      "abc123",
 		setLabelErrs: []error{deluge.RPCError{ExceptionMessage: "Unknown Label"}},
 	}
-	drv := newDelugeDriver(fake, domain.DelugeSettings{})
+	drv := newDelugeDriver(fake, domain.DelugeSettings{Label: "tv-sonarr"})
 
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, AddOptions{Category: "tv-sonarr"}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if len(fake.addLabelSeen) != 1 || fake.addLabelSeen[0] != "tv-sonarr" {
@@ -215,9 +215,9 @@ func TestDelugeAdd_LabelUnknownRetry(t *testing.T) {
 func TestDelugeAdd_LabelPluginDisabled(t *testing.T) {
 	t.Parallel()
 	fake := &delugeFake{addHash: "abc123", setLabelErrs: []error{errDelugeLabelPluginDisabled}}
-	drv := newDelugeDriver(fake, domain.DelugeSettings{})
+	drv := newDelugeDriver(fake, domain.DelugeSettings{Label: "tv-sonarr"})
 
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, AddOptions{Category: "tv-sonarr"}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if len(fake.addLabelSeen) != 0 {
@@ -230,7 +230,7 @@ func TestDelugeAdd_NoCategoryOrLabelSkipsLabeling(t *testing.T) {
 	fake := &delugeFake{addHash: "abc123"}
 	drv := newDelugeDriver(fake, domain.DelugeSettings{})
 
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if len(fake.setLabelSeen) != 0 {
@@ -243,7 +243,7 @@ func TestDelugeAdd_UsenetUnsupported(t *testing.T) {
 	fake := &delugeFake{}
 	drv := newDelugeDriver(fake, domain.DelugeSettings{})
 
-	err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: "https://example.com/release.nzb"}, AddOptions{})
+	err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: "https://example.com/release.nzb"})
 	if !errors.Is(err, ErrUnsupportedProtocol) {
 		t.Fatalf("Add(usenet) error = %v, want ErrUnsupportedProtocol", err)
 	}

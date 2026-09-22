@@ -87,11 +87,10 @@ func (d *downloadStationDriver) Test(ctx context.Context) error {
 }
 
 // Add creates a download task for a torrent or nzb payload (DS's create call is
-// protocol-agnostic — the same endpoint takes either). opts.Category, if set,
-// overrides the configured directory (DS's only foldering concept); opts.Tags and
-// opts.Paused have no DS equivalent and are ignored. The create response carries
-// no task id worth reading (per #242) — success:true is the only check.
-func (d *downloadStationDriver) Add(ctx context.Context, p Payload, opts AddOptions) error {
+// protocol-agnostic — the same endpoint takes either) into the configured directory
+// (DS's only foldering concept; tags and paused have no DS equivalent). The create
+// response carries no task id worth reading (per #242) — success:true is the only check.
+func (d *downloadStationDriver) Add(ctx context.Context, p Payload) error {
 	if p.Protocol != ProtocolTorrent && p.Protocol != ProtocolUsenet {
 		return fmt.Errorf("download: download-station: %w: %s", ErrUnsupportedProtocol, p.Protocol)
 	}
@@ -100,9 +99,6 @@ func (d *downloadStationDriver) Add(ctx context.Context, p Payload, opts AddOpti
 		return err
 	}
 	destination := d.directory
-	if opts.Category != "" {
-		destination = strings.TrimPrefix(opts.Category, "/")
-	}
 
 	base := d.host + "/webapi/" + sess.taskPath
 	if len(p.Bytes) > 0 {

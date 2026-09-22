@@ -59,19 +59,14 @@ func (d *floodDriver) Test(ctx context.Context) error {
 }
 
 // Add posts a torrent (magnet/http URL or raw bytes) to Flood's add-urls or
-// add-files endpoint. Torrent-only — Flood has no usenet client. Flood has no
-// category concept, so opts.Category is folded into the tag set. `start` is
+// add-files endpoint. Torrent-only — Flood has no usenet client. `start` is
 // always sent explicitly (Flood's default is false = added stopped).
-func (d *floodDriver) Add(ctx context.Context, p Payload, opts AddOptions) error {
+func (d *floodDriver) Add(ctx context.Context, p Payload) error {
 	if p.Protocol != ProtocolTorrent {
 		return fmt.Errorf("download: flood: %w: %s", ErrUnsupportedProtocol, p.Protocol)
 	}
 
-	tags := mergeTags(d.tags, opts.Tags)
-	if opts.Category != "" {
-		tags = mergeTags(tags, []string{opts.Category})
-	}
-	start := !d.startPaused && !opts.Paused
+	start := !d.startPaused
 
 	payload := struct {
 		URLs        []string `json:"urls,omitempty"`
@@ -79,7 +74,7 @@ func (d *floodDriver) Add(ctx context.Context, p Payload, opts AddOptions) error
 		Destination string   `json:"destination,omitempty"`
 		Tags        []string `json:"tags,omitempty"`
 		Start       bool     `json:"start"`
-	}{Destination: d.destination, Tags: tags, Start: start}
+	}{Destination: d.destination, Tags: d.tags, Start: start}
 
 	path := "/api/torrents/add-urls"
 	if len(p.Bytes) > 0 {

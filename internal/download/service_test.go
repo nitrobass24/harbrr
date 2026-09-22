@@ -409,8 +409,7 @@ func TestTestConnectionUnknownID(t *testing.T) {
 }
 
 // TestGrabEndToEnd: Grab loads the client, builds its driver, and hands the payload
-// over — with the per-client settings folded in by the driver, since Grab itself passes
-// empty AddOptions.
+// over, with the per-client settings folded in by the driver.
 func TestGrabEndToEnd(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

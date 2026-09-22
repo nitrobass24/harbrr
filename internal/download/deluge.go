@@ -154,7 +154,7 @@ func (d *delugeDriver) Test(ctx context.Context) error {
 // it. Only AddPaused and DownloadLocation ride on the add call — Options also
 // carries StopAtRatio/RemoveAtRatio, which this driver never sets
 // (no-hit-and-run).
-func (d *delugeDriver) Add(ctx context.Context, p Payload, opts AddOptions) error {
+func (d *delugeDriver) Add(ctx context.Context, p Payload) error {
 	if p.Protocol != ProtocolTorrent {
 		return fmt.Errorf("download: deluge: %w: %s", ErrUnsupportedProtocol, p.Protocol)
 	}
@@ -164,15 +164,12 @@ func (d *delugeDriver) Add(ctx context.Context, p Payload, opts AddOptions) erro
 		return fmt.Errorf("download: deluge: connect: %w", err)
 	}
 
-	hash, err := d.addTorrent(ctx, p, d.addOptions(opts))
+	hash, err := d.addTorrent(ctx, p, d.addOptions())
 	if err != nil {
 		return fmt.Errorf("download: deluge: add torrent: %w", err)
 	}
 
-	label := opts.Category
-	if label == "" {
-		label = d.settings.Label
-	}
+	label := d.settings.Label
 	if label == "" {
 		return nil
 	}
@@ -182,11 +179,10 @@ func (d *delugeDriver) Add(ctx context.Context, p Payload, opts AddOptions) erro
 	return nil
 }
 
-// addOptions builds the add-torrent Options: AddPaused from opts/settings,
-// DownloadLocation from settings.
-func (d *delugeDriver) addOptions(opts AddOptions) *deluge.Options {
+// addOptions builds the add-torrent Options (AddPaused, DownloadLocation) from settings.
+func (d *delugeDriver) addOptions() *deluge.Options {
 	rpcOpts := &deluge.Options{}
-	if paused := opts.Paused || d.settings.StartPaused; paused {
+	if paused := d.settings.StartPaused; paused {
 		rpcOpts.AddPaused = &paused
 	}
 	if d.settings.DownloadDir != "" {

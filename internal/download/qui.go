@@ -74,19 +74,12 @@ func (d *quiDriver) Test(ctx context.Context) error {
 // to. Never emits ratioLimit/seedingTimeLimit: harbrr does not hit-and-run a
 // client-managed torrent (the qBittorrent driver's #246/no-hit-and-run
 // precedent).
-func (d *quiDriver) Add(ctx context.Context, p Payload, opts AddOptions) error {
+func (d *quiDriver) Add(ctx context.Context, p Payload) error {
 	if p.Protocol != ProtocolTorrent {
 		return fmt.Errorf("download: qui: %w: %s", ErrUnsupportedProtocol, p.Protocol)
 	}
 
-	category := d.category
-	if opts.Category != "" {
-		category = opts.Category
-	}
-	tags := mergeTags(d.tags, opts.Tags)
-	paused := d.paused || opts.Paused
-
-	body, contentType, err := quiAddBody(p, category, tags, paused)
+	body, contentType, err := quiAddBody(p, d.category, d.tags, d.paused)
 	if err != nil {
 		return fmt.Errorf("download: qui: build request body: %w", err)
 	}

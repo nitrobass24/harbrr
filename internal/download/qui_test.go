@@ -100,7 +100,7 @@ func TestQuiAdd_ViaURL(t *testing.T) {
 	drv := newTestQui(srv.URL, 7, "the-key", domain.QuiSettings{})
 
 	const magnet = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=test"
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: magnet}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: magnet}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if stub.addWasBytes {
@@ -117,7 +117,7 @@ func TestQuiAdd_ViaBytes(t *testing.T) {
 	srv := newQuiStub(t, 7, stub)
 	drv := newTestQui(srv.URL, 7, "the-key", domain.QuiSettings{})
 
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, Bytes: []byte("d8:announce...e"), Name: "test.torrent"}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, Bytes: []byte("d8:announce...e"), Name: "test.torrent"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if !stub.addWasBytes {
@@ -129,21 +129,17 @@ func TestQuiAdd_OptionMapping(t *testing.T) {
 	t.Parallel()
 	stub := &quiStub{}
 	srv := newQuiStub(t, 7, stub)
-	drv := newTestQui(srv.URL, 7, "the-key", domain.QuiSettings{Category: "default-cat", Tags: []string{"base"}})
+	drv := newTestQui(srv.URL, 7, "the-key", domain.QuiSettings{Category: "tv-sonarr", Tags: []string{"base", "harbrr"}, StartPaused: true})
 
-	err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, AddOptions{
-		Category: "tv-sonarr",
-		Tags:     []string{"harbrr"},
-		Paused:   true,
-	})
+	err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"})
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if got := first(stub.addForm["category"]); got != "tv-sonarr" {
-		t.Fatalf("category = %q, want tv-sonarr (opts override settings default)", got)
+		t.Fatalf("category = %q, want tv-sonarr", got)
 	}
 	if got := first(stub.addForm["tags"]); got != "base,harbrr" {
-		t.Fatalf("tags = %q, want base,harbrr (settings ∪ opts)", got)
+		t.Fatalf("tags = %q, want base,harbrr", got)
 	}
 	if got := first(stub.addForm["paused"]); got != "true" {
 		t.Fatalf("paused = %q, want true", got)
@@ -156,7 +152,7 @@ func TestQuiAdd_PausedEscalatesFromSettings(t *testing.T) {
 	srv := newQuiStub(t, 7, stub)
 	drv := newTestQui(srv.URL, 7, "the-key", domain.QuiSettings{StartPaused: true})
 
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if got := first(stub.addForm["paused"]); got != "true" {
@@ -170,11 +166,9 @@ func TestQuiAdd_NoHitAndRun(t *testing.T) {
 	t.Parallel()
 	stub := &quiStub{}
 	srv := newQuiStub(t, 7, stub)
-	drv := newTestQui(srv.URL, 7, "the-key", domain.QuiSettings{})
+	drv := newTestQui(srv.URL, 7, "the-key", domain.QuiSettings{Category: "tv-sonarr", Tags: []string{"harbrr"}})
 
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, AddOptions{
-		Category: "tv-sonarr", Tags: []string{"harbrr"},
-	}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	for _, forbidden := range []string{"ratioLimit", "seedingTimeLimit", "inactiveSeedingTimeLimit"} {
@@ -190,7 +184,7 @@ func TestQuiAdd_UsenetUnsupported(t *testing.T) {
 	srv := newQuiStub(t, 7, stub)
 	drv := newTestQui(srv.URL, 7, "the-key", domain.QuiSettings{})
 
-	err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: "https://example.com/release.nzb"}, AddOptions{})
+	err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: "https://example.com/release.nzb"})
 	if !errors.Is(err, ErrUnsupportedProtocol) {
 		t.Fatalf("Add(usenet) error = %v, want ErrUnsupportedProtocol", err)
 	}
@@ -204,7 +198,7 @@ func TestQuiAdd_ErrorRedactsSecret(t *testing.T) {
 	srv := newQuiStub(t, 7, stub)
 	drv := newTestQui(srv.URL, 7, "the-key", domain.QuiSettings{})
 
-	err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, AddOptions{})
+	err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"})
 	if err == nil {
 		t.Fatal("expected an add error from the 409 stub")
 	}

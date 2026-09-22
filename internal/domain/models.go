@@ -505,7 +505,7 @@ type QuiSettings struct {
 }
 
 // FloodSettings holds the Flood-specific per-client options. Flood has no category
-// concept, so a caller's AddOptions.Category is folded into Tags by the driver.
+// concept; only tags apply.
 type FloodSettings struct {
 	Destination string   `json:"destination,omitempty"`
 	Tags        []string `json:"tags,omitempty"`

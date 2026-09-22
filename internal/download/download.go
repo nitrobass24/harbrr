@@ -32,15 +32,6 @@ type Payload struct {
 	Name     string
 }
 
-// AddOptions are the caller's (harbrr's) intent for a newly-added release. It
-// deliberately excludes any share-limit or auto-removal fields — harbrr never
-// hit-and-runs a client-managed torrent (see #240's driver tests).
-type AddOptions struct {
-	Category string
-	Tags     []string
-	Paused   bool
-}
-
 // ErrUnsupportedProtocol is returned by a Driver whose client cannot handle the
 // given Payload's Protocol (e.g. a torrent-only client sent a usenet payload).
 var ErrUnsupportedProtocol = errors.New("download: client does not support payload protocol")
@@ -53,10 +44,12 @@ var ErrURLRequired = errors.New("download: client requires a URL payload (bytes-
 
 // Driver is the minimal interface a download-client kind implements. Test proves
 // the configured client is reachable with its stored credentials; Add hands it a
-// resolved release to start downloading.
+// resolved release to start downloading. Category, tags and start-paused come from
+// the client's own settings — the client owns them (#7), so there is no per-add
+// override; a driver never sets a share-limit or auto-removal field (no-hit-and-run).
 type Driver interface {
 	Test(ctx context.Context) error
-	Add(ctx context.Context, p Payload, opts AddOptions) error
+	Add(ctx context.Context, p Payload) error
 }
 
 // driverBuilder constructs a Driver for one configured client. secret is the
@@ -114,35 +107,6 @@ func newDriver(c domain.DownloadClient, secret string, client *http.Client) (Dri
 		return nil, fmt.Errorf("%w: unregistered download client kind %q", domain.ErrInvalid, c.Kind)
 	}
 	return spec.build(c, secret, client)
-}
-
-// mergeTags returns the union of base and extra, deduped and order-preserving
-// (base first). Shared by qui and Flood, whose Add merges a client's configured
-// default tags with the caller's per-add AddOptions.Tags.
-func mergeTags(base, extra []string) []string {
-	seen := make(map[string]struct{}, len(base)+len(extra))
-	out := make([]string, 0, len(base)+len(extra))
-	for _, t := range base {
-		if t == "" {
-			continue
-		}
-		if _, ok := seen[t]; ok {
-			continue
-		}
-		seen[t] = struct{}{}
-		out = append(out, t)
-	}
-	for _, t := range extra {
-		if t == "" {
-			continue
-		}
-		if _, ok := seen[t]; ok {
-			continue
-		}
-		seen[t] = struct{}{}
-		out = append(out, t)
-	}
-	return out
 }
 
 // releaseFilename derives a payload's filename from the release title: the upload name

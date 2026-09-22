@@ -45,7 +45,7 @@ func TestBlackholeAdd_TorrentBytes(t *testing.T) {
 	dir := t.TempDir()
 	drv := newBlackholeDriver(t, domain.BlackholeSettings{TorrentDir: dir})
 
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, Bytes: []byte("d8:announce...e"), Name: "Some Release"}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, Bytes: []byte("d8:announce...e"), Name: "Some Release"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 
@@ -75,7 +75,7 @@ func TestBlackholeAdd_NZBBytes(t *testing.T) {
 	dir := t.TempDir()
 	drv := newBlackholeDriver(t, domain.BlackholeSettings{NZBDir: dir})
 
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, Bytes: []byte("<nzb/>"), Name: "Some Release"}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, Bytes: []byte("<nzb/>"), Name: "Some Release"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 
@@ -95,7 +95,7 @@ func TestBlackholeAdd_TorrentURLFetch(t *testing.T) {
 
 	dir := t.TempDir()
 	drv := newBlackholeDriver(t, domain.BlackholeSettings{TorrentDir: dir})
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: srv.URL, Name: "fetched"}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: srv.URL, Name: "fetched"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	got, err := os.ReadFile(filepath.Join(dir, "fetched.torrent"))
@@ -117,7 +117,7 @@ func TestBlackholeAdd_NZBURLFetch(t *testing.T) {
 
 	dir := t.TempDir()
 	drv := newBlackholeDriver(t, domain.BlackholeSettings{NZBDir: dir})
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: srv.URL, Name: "fetched"}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: srv.URL, Name: "fetched"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	got, err := os.ReadFile(filepath.Join(dir, "fetched.nzb"))
@@ -139,7 +139,7 @@ func TestBlackholeAdd_TorrentFetchExceedsCap(t *testing.T) {
 
 	dir := t.TempDir()
 	drv := newBlackholeDriver(t, domain.BlackholeSettings{TorrentDir: dir})
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: srv.URL, Name: "big"}, AddOptions{}); err == nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: srv.URL, Name: "big"}); err == nil {
 		t.Fatal("expected an error for an oversized torrent fetch")
 	}
 	if names := dirEntries(t, dir); len(names) != 0 {
@@ -161,7 +161,7 @@ func TestBlackholeAdd_NZBCapIsSeparate(t *testing.T) {
 
 	dir := t.TempDir()
 	drv := newBlackholeDriver(t, domain.BlackholeSettings{NZBDir: dir})
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: srv.URL, Name: "big"}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: srv.URL, Name: "big"}); err != nil {
 		t.Fatalf("Add(within nzb cap, over torrent cap): %v", err)
 	}
 
@@ -170,7 +170,7 @@ func TestBlackholeAdd_NZBCapIsSeparate(t *testing.T) {
 		_, _ = w.Write(oversized)
 	}))
 	t.Cleanup(srv2.Close)
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: srv2.URL, Name: "toobig"}, AddOptions{}); err == nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: srv2.URL, Name: "toobig"}); err == nil {
 		t.Fatal("expected an error for an oversized nzb fetch")
 	}
 }
@@ -181,7 +181,7 @@ func TestBlackholeAdd_MagnetSaved(t *testing.T) {
 	drv := newBlackholeDriver(t, domain.BlackholeSettings{TorrentDir: dir, SaveMagnetFiles: true})
 
 	const magnet = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=test"
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: magnet, Name: "magnet-release"}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: magnet, Name: "magnet-release"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	got, err := os.ReadFile(filepath.Join(dir, "magnet-release.magnet"))
@@ -198,7 +198,7 @@ func TestBlackholeAdd_MagnetNotSaved(t *testing.T) {
 	dir := t.TempDir()
 	drv := newBlackholeDriver(t, domain.BlackholeSettings{TorrentDir: dir})
 
-	err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x", Name: "n"}, AddOptions{})
+	err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x", Name: "n"})
 	if !errors.Is(err, errMagnetNotSaved) {
 		t.Fatalf("err = %v, want errMagnetNotSaved", err)
 	}
@@ -211,7 +211,7 @@ func TestBlackholeAdd_UnsupportedProtocol(t *testing.T) {
 	t.Parallel()
 	drv := newBlackholeDriver(t, domain.BlackholeSettings{TorrentDir: t.TempDir()})
 
-	err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, Bytes: []byte("<nzb/>"), Name: "n"}, AddOptions{})
+	err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, Bytes: []byte("<nzb/>"), Name: "n"})
 	if !errors.Is(err, ErrUnsupportedProtocol) {
 		t.Fatalf("err = %v, want ErrUnsupportedProtocol", err)
 	}
@@ -223,7 +223,7 @@ func TestBlackholeAdd_ReAddOverwritesNoResidue(t *testing.T) {
 	drv := newBlackholeDriver(t, domain.BlackholeSettings{TorrentDir: dir})
 
 	for _, content := range []string{"first", "second"} {
-		if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, Bytes: []byte(content), Name: "dup"}, AddOptions{}); err != nil {
+		if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, Bytes: []byte(content), Name: "dup"}); err != nil {
 			t.Fatalf("Add(%s): %v", content, err)
 		}
 	}
@@ -250,7 +250,7 @@ func TestBlackholeAdd_KeepsLongNameIntact(t *testing.T) {
 	d := newBlackholeDriver(t, domain.BlackholeSettings{TorrentDir: dir})
 	name := strings.Repeat("a", 60) + ".shared.prefix.but.a.different.release" // 98 runes
 
-	if err := d.Add(context.Background(), Payload{Protocol: ProtocolTorrent, Bytes: []byte("x"), Name: name}, AddOptions{}); err != nil {
+	if err := d.Add(context.Background(), Payload{Protocol: ProtocolTorrent, Bytes: []byte("x"), Name: name}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	names := dirEntries(t, dir)
@@ -276,7 +276,7 @@ func TestBlackholeAdd_SanitizesName(t *testing.T) {
 			t.Parallel()
 			subDir := t.TempDir()
 			d := newBlackholeDriver(t, domain.BlackholeSettings{TorrentDir: subDir})
-			if err := d.Add(context.Background(), Payload{Protocol: ProtocolTorrent, Bytes: []byte("x"), Name: tt.in}, AddOptions{}); err != nil {
+			if err := d.Add(context.Background(), Payload{Protocol: ProtocolTorrent, Bytes: []byte("x"), Name: tt.in}); err != nil {
 				t.Fatalf("Add: %v", err)
 			}
 			names := dirEntries(t, subDir)

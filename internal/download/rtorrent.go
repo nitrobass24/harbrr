@@ -88,16 +88,16 @@ func (d *rtorrentDriver) Test(ctx context.Context) error {
 // AddTorrent/AddTorrentStopped. Paused uses the Stopped variant. Label and
 // directory ride as extra d.custom1/d.directory field-set args on the same
 // call — no ratio/seed-time/removal field exists to set.
-func (d *rtorrentDriver) Add(ctx context.Context, p Payload, opts AddOptions) error {
+func (d *rtorrentDriver) Add(ctx context.Context, p Payload) error {
 	if p.Protocol != ProtocolTorrent {
 		return fmt.Errorf("download: rtorrent: %w: %s", ErrUnsupportedProtocol, p.Protocol)
 	}
 
-	args, err := d.fieldArgs(opts)
+	args, err := d.fieldArgs()
 	if err != nil {
 		return err
 	}
-	paused := opts.Paused || d.settings.StartPaused
+	paused := d.settings.StartPaused
 
 	switch {
 	case len(p.Bytes) > 0 && paused:
@@ -116,15 +116,9 @@ func (d *rtorrentDriver) Add(ctx context.Context, p Payload, opts AddOptions) er
 }
 
 // fieldArgs builds the d.custom1 (label) / d.directory extra args for the add
-// call: label falls back to settings when no category is given; directory is
-// settings-only (harbrr has no per-add directory option). Only the values that
-// will actually be emitted are checked for an injection-capable '"' — a stored
-// label a per-add category overrides is never sent, so it can't reject the add.
-func (d *rtorrentDriver) fieldArgs(opts AddOptions) ([]*rtorrent.FieldValue, error) {
-	label := opts.Category
-	if label == "" {
-		label = d.settings.Label
-	}
+// call from settings, rejecting any value carrying an injection-capable '"'.
+func (d *rtorrentDriver) fieldArgs() ([]*rtorrent.FieldValue, error) {
+	label := d.settings.Label
 	for _, v := range []string{label, d.settings.Directory} {
 		if strings.Contains(v, `"`) {
 			return nil, fmt.Errorf("%w: %q", errRTorrentFieldValue, v)
