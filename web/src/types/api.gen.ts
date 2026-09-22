@@ -2011,6 +2011,8 @@ export interface components {
         /** @description A normalized release — the same shape the Torznab feed serializes. For a resolver-needing indexer, `link` is the opaque /dl proxy URL (the passkey is sealed inside, never exposed here). Zero values for size/seeders/leechers/ peers and the volume factors are meaningful and always present. */
         Release: {
             title: string;
+            /** @description Source page URL on the indexer, when available. */
+            details?: string;
             link?: string;
             magnet?: string;
             infohash?: string;

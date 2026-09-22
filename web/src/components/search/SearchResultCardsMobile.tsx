@@ -7,6 +7,7 @@ import { useState } from "react"
 import { ChevronDown, ChevronRight, Download, Magnet } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { acquisitionLink, SendToClientMenu } from "@/components/search/SendToClientMenu"
+import { ResultTitle } from "@/components/search/ResultTitle"
 import { bestMember, rowKey, type ResultGroup } from "@/components/search/search-group"
 import { categoryName, IndexerBadge } from "@/components/search/SearchResultsTable"
 import type { DownloadClient } from "@/lib/api"
@@ -78,6 +79,7 @@ function GroupCard({ group, sort, catNames, clients }: {
         <div className="mt-2 flex flex-col gap-3 border-t border-border pt-2">
           {group.members.map((m) => (
             <div key={rowKey(m)} className="flex flex-col gap-1">
+              <ResultTitle release={m.release} className="line-clamp-2 break-all text-[13px] text-muted-foreground" />
               <div className="flex items-center justify-between gap-2">
                 <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted-foreground">
                   <IndexerBadge slug={m.indexer} />
@@ -103,7 +105,9 @@ function CardHeading({ row }: { row: SearchRow }) {
   const r = row.release
   return (
     <div className="mb-2 flex items-start justify-between gap-2">
-      <h3 className="line-clamp-2 break-all text-[13px] font-medium" title={r.title}>{r.title}</h3>
+      <h3 className="line-clamp-2 break-all text-[13px] font-medium">
+        <ResultTitle release={r} />
+      </h3>
       {r.downloadVolumeFactor === 0 && <FreeleechBadge />}
     </div>
   )

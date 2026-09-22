@@ -3145,6 +3145,9 @@ components:
         peers and the volume factors are meaningful and always present.
       properties:
         title: { type: string }
+        details:
+          type: string
+          description: Source page URL on the indexer, when available.
         link: { type: string }
         magnet: { type: string }
         infohash: { type: string }

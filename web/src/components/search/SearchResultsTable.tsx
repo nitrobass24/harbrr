@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { indexerHue } from "@/components/indexers/IndexerAvatar"
 import { acquisitionLink, SendToClientMenu } from "@/components/search/SendToClientMenu"
+import { ResultTitle } from "@/components/search/ResultTitle"
 import { bestMember, rowKey, type ResultGroup } from "@/components/search/search-group"
 import type { DownloadClient } from "@/lib/api"
 import { formatSize, relativeTime } from "@/lib/format"
@@ -118,7 +119,7 @@ function GroupRows({ group, sort, catNames, clients }: {
             >
               {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
             </button>
-            <span className="truncate font-medium" title={r.title}>{r.title}</span>
+            <ResultTitle release={r} className="truncate font-medium" />
             {r.downloadVolumeFactor === 0 && <FreeleechBadge />}
           </span>
         </TableCell>
@@ -174,7 +175,7 @@ function ResultRow({ row, catNames, clients, nested }: {
     <TableRow className={cn(nested && "bg-muted/30")}>
       <TableCell className={cn("max-w-md py-2.5", nested ? "pl-12" : "pl-5")}>
         <span className="flex items-center gap-2">
-          <span className={cn("truncate", nested ? "text-muted-foreground" : "font-medium")} title={r.title}>{r.title}</span>
+          <ResultTitle release={r} className={cn("truncate", nested ? "text-muted-foreground" : "font-medium")} />
           {freeleech && <FreeleechBadge />}
         </span>
       </TableCell>
