@@ -36,13 +36,7 @@ func newQui(c domain.DownloadClient, secret string, client *http.Client) (Driver
 		settings = *c.Settings.Qui
 	}
 	return &quiDriver{
-		jc: apphttp.NewJSONClient(apphttp.JSONClient{
-			Prefix: "download: qui",
-			Base:   c.Host,
-			Auth:   http.Header{"X-API-Key": {secret}},
-			Client: client,
-			Secret: secret,
-		}),
+		jc:         apphttp.NewAPIKeyClient("download: qui", c.Host, secret, client),
 		instanceID: settings.InstanceID,
 		category:   settings.Category,
 		tags:       settings.Tags,

@@ -189,3 +189,20 @@ type scrubbedError struct {
 
 func (e *scrubbedError) Error() string { return e.msg }
 func (e *scrubbedError) Unwrap() error { return e.cause }
+
+// apiKeyHeader is the header every app harbrr pushes to authenticates with — qui's
+// X-API-Key and cross-seed v6's x-api-key are the same header, case-insensitive.
+const apiKeyHeader = "X-API-Key" //nolint:gosec // G101: an HTTP header name, not a credential.
+
+// NewAPIKeyClient is NewJSONClient for the common case: one static X-API-Key, that
+// same key value-scrubbed from every error, and JSONClient's status-only default
+// (no Reason parser) — the four qui/cross-seed callers all hand-built this literal.
+func NewAPIKeyClient(prefix, base, key string, client *stdhttp.Client) *JSONClient {
+	return NewJSONClient(JSONClient{
+		Prefix: prefix,
+		Base:   base,
+		Auth:   stdhttp.Header{apiKeyHeader: {key}},
+		Client: client,
+		Secret: key,
+	})
+}
