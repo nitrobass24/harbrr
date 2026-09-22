@@ -1,6 +1,7 @@
 package http
 
 import (
+	"slices"
 	"sort"
 	"strings"
 )
@@ -29,7 +30,7 @@ func ScrubValues(s string, values []string) string {
 	if len(values) == 0 {
 		return s
 	}
-	sorted := append([]string(nil), values...)
+	sorted := slices.Clone(values)
 	sort.Slice(sorted, func(i, j int) bool { return len(sorted[i]) > len(sorted[j]) })
 	for _, v := range sorted {
 		if v == "" {

@@ -1,6 +1,7 @@
 package torznab
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -201,7 +202,7 @@ func TestCapsSupportedParamsOracle(t *testing.T) {
 		"book-search":  "q,title,author",
 	}
 	for _, m := range searchModes {
-		got := m.supportedParams(caps)
+		got := strings.Join(m.supportedParams(caps), ",")
 		if got != want[m.xmlElem] {
 			t.Errorf("%s supportedParams = %q, want %q", m.xmlElem, got, want[m.xmlElem])
 		}
@@ -222,7 +223,7 @@ func TestCapsTVImdbGate(t *testing.T) {
 		ID: "tvimdb-off", Links: []string{"https://e.com"},
 		Caps: loader.Caps{Modes: loader.Modes{Search: []string{"q"}, TVSearch: []string{"q", "imdbid"}}},
 	})
-	if strings.Contains(tvMode.supportedParams(off), "imdbid") {
+	if slices.Contains(tvMode.supportedParams(off), "imdbid") {
 		t.Error("tv-search advertised imdbid with AllowTVSearchIMDB off")
 	}
 
@@ -231,7 +232,7 @@ func TestCapsTVImdbGate(t *testing.T) {
 		ID: "tvimdb-on", Links: []string{"https://e.com"},
 		Caps: loader.Caps{AllowTVSearchIMDB: boolPtr(true), Modes: loader.Modes{Search: []string{"q"}, TVSearch: []string{"q", "season"}}},
 	})
-	if !strings.Contains(tvMode.supportedParams(on), "imdbid") {
+	if !slices.Contains(tvMode.supportedParams(on), "imdbid") {
 		t.Error("tv-search omitted imdbid with AllowTVSearchIMDB on")
 	}
 }

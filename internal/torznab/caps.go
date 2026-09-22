@@ -2,6 +2,7 @@ package torznab
 
 import (
 	"encoding/xml"
+	"strings"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 )
@@ -86,7 +87,7 @@ func buildSearching(caps *mapper.Capabilities) capsSearching {
 		modes = append(modes, capsMode{
 			XMLName:         xml.Name{Local: m.xmlElem},
 			Available:       availableAttr(m.available(caps)),
-			SupportedParams: m.supportedParams(caps),
+			SupportedParams: strings.Join(m.supportedParams(caps), ","),
 			SearchEngine:    rawSearchEngine(caps.AllowRawSearch),
 		})
 	}
