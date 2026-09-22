@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -169,7 +169,7 @@ func normalizeCategoryIDs(ids []int) ([]int, error) {
 		seen[id] = true
 		out = append(out, id)
 	}
-	sort.Ints(out)
+	slices.Sort(out)
 	return out, nil
 }
 
@@ -798,7 +798,7 @@ func (r *StatsReporter) AllStatuses(ctx context.Context) ([]HealthStatus, error)
 	if err != nil {
 		return nil, fmt.Errorf("registry: all statuses: %w", err)
 	}
-	sort.Slice(list, func(i, j int) bool { return list[i].Slug < list[j].Slug })
+	slices.SortFunc(list, func(a, b domain.IndexerInstance) int { return cmp.Compare(a.Slug, b.Slug) })
 	out := make([]HealthStatus, 0, len(list))
 	for _, inst := range list {
 		snap, err := r.statusOf(ctx, inst.ID, 1)

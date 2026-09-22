@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -589,11 +590,10 @@ func classifyHealth(err error) (string, bool) {
 // (401/403 auth, 404/500...) are the tracker answering, not a gateway outage, so they
 // stay unclassified.
 func isTransportError(err error) bool {
-	var (
-		netErr net.Error
-		urlErr *url.Error
-	)
-	if errors.As(err, &netErr) || errors.As(err, &urlErr) {
+	if _, ok := errors.AsType[net.Error](err); ok {
+		return true
+	}
+	if _, ok := errors.AsType[*url.Error](err); ok {
 		return true
 	}
 	// The native Base marks a mid-body read failure (after a 200) with ErrBodyRead —
@@ -637,11 +637,7 @@ func isHTTP2TransportError(err error) bool {
 // (factor 0.5/0.75) are not freeleech and are excluded, matching Jackett's freeleech
 // selector, which keys on the 100%-free marker.
 func filterFreeleechOnly(releases []*normalizer.Release) []*normalizer.Release {
-	out := make([]*normalizer.Release, 0, len(releases))
-	for _, r := range releases {
-		if r != nil && r.DownloadVolumeFactor == 0 {
-			out = append(out, r)
-		}
-	}
-	return out
+	return slices.DeleteFunc(slices.Clone(releases), func(r *normalizer.Release) bool {
+		return r == nil || r.DownloadVolumeFactor != 0
+	})
 }

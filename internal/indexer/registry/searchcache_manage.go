@@ -1,9 +1,10 @@
 package registry
 
 import (
+	"cmp"
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"time"
 )
 
@@ -155,7 +156,7 @@ func sortedInstanceStats(merged map[int64]*InstanceCacheStats) []InstanceCacheSt
 	for _, row := range merged {
 		out = append(out, *row)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].InstanceID < out[j].InstanceID })
+	slices.SortFunc(out, func(a, b InstanceCacheStats) int { return cmp.Compare(a.InstanceID, b.InstanceID) })
 	return out
 }
 

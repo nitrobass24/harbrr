@@ -93,9 +93,9 @@ type pacedDoer struct {
 	// limiter is the per-host limiter lookup, injectable in tests (defaults to the
 	// process-wide map).
 	limiter func(host string) *rate.Limiter
-	// timer is the backoff sleep seam, injectable in tests for deterministic backoff;
-	// nil uses the real time.After.
-	timer backoffTimer
+	// after is the backoff sleep seam (time.After), replaced in tests for
+	// deterministic backoff.
+	after func(time.Duration) <-chan time.Time
 	// log traces each outbound request (method/redacted-URL/status/duration) at debug.
 	// A Nop logger (the registry default) makes Debug()/Trace() zero-cost no-ops.
 	log zerolog.Logger
@@ -110,16 +110,11 @@ func newPacedDoer(base search.Doer, interval time.Duration, log zerolog.Logger) 
 		backoff:  retryBackoff,
 		budget:   maxPacingBudget,
 		now:      time.Now,
+		after:    time.After,
 		log:      log,
 	}
 	d.limiter = func(host string) *rate.Limiter { return limiterFor(host, d.interval) }
 	return d
-}
-
-// backoffTimer is the injectable sleep seam for deterministic backoff in tests;
-// nil uses the real time.After.
-type backoffTimer interface {
-	After(time.Duration) <-chan time.Time
 }
 
 // rateLimitInfo remembers a 429/503 status + parsed Retry-After so Do can surface a
@@ -328,12 +323,8 @@ func (d *pacedDoer) pacedSleep(ctx context.Context, delay, remaining time.Durati
 	if remaining <= 0 {
 		return 0, context.DeadlineExceeded
 	}
-	after := time.After
-	if d.timer != nil {
-		after = d.timer.After
-	}
 	start := d.now()
-	delayCh := after(delay)
+	delayCh := d.after(delay)
 	select {
 	case <-delayCh:
 		return d.now().Sub(start), nil

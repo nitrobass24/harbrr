@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"slices"
 	"sync"
 	"time"
 
@@ -62,7 +63,7 @@ func (d *diagnostics) list(instanceID int64) []FailureCapture {
 	if len(ring) == 0 {
 		return nil
 	}
-	return append([]FailureCapture(nil), ring...)
+	return slices.Clone(ring)
 }
 
 // ForgetInstance drops a deleted instance's captures, mirroring the other
