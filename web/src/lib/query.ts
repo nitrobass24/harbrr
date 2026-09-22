@@ -65,7 +65,6 @@ export const keys = {
   },
   indexers: {
     all: ["indexers"] as const,
-    list: () => ["indexers"] as const,
     detail: (slug: string) => ["indexers", slug] as const,
     status: (slug: string) => ["indexers", slug, "status"] as const,
     diagnostics: (slug: string) => ["indexers", slug, "diagnostics"] as const,

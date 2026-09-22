@@ -6,7 +6,7 @@ import { keys } from "@/lib/query"
 
 export function useIndexers() {
   return useQuery({
-    queryKey: keys.indexers.list(),
+    queryKey: keys.indexers.all,
     queryFn: () => unwrap(api.http.GET("/api/indexers")),
   })
 }
@@ -110,13 +110,13 @@ export function useSetIndexerEnabled() {
     mutationFn: ({ slug, enabled }: { slug: string, enabled: boolean }) => api.setIndexerEnabled(slug, enabled),
     onMutate: async ({ slug, enabled }) => {
       await qc.cancelQueries({ queryKey: keys.indexers.all })
-      const previous = qc.getQueryData<Instance[]>(keys.indexers.list())
-      qc.setQueryData<Instance[]>(keys.indexers.list(), (list) =>
+      const previous = qc.getQueryData<Instance[]>(keys.indexers.all)
+      qc.setQueryData<Instance[]>(keys.indexers.all, (list) =>
         list?.map((ix) => (ix.slug === slug ? { ...ix, enabled } : ix)))
       return { previous }
     },
     onError: (err, vars, context) => {
-      if (context?.previous) qc.setQueryData(keys.indexers.list(), context.previous)
+      if (context?.previous) qc.setQueryData(keys.indexers.all, context.previous)
       notifyError(`${vars.enabled ? "Enabling" : "Disabling"} ${vars.slug} failed`, err)
     },
     onSettled: () => qc.invalidateQueries({ queryKey: keys.indexers.all }),

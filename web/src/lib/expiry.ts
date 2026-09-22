@@ -21,7 +21,7 @@ const URGENT_DAYS = 7
 // daysUntil is the whole-day distance to a YYYY-MM-DD date, both sides taken as bare
 // UTC dates so no timezone can shift the count by one. It mirrors the backend's
 // daysUntil exactly — the UI must not disagree with the notification.
-export function daysUntil(date: string, now: Date = new Date()): number | null {
+function daysUntil(date: string, now: Date = new Date()): number | null {
   const target = Date.parse(`${date}T00:00:00Z`)
   if (Number.isNaN(target)) return null
   // getUTC* — not getFullYear/getMonth/getDate — or an operator west of UTC reads one

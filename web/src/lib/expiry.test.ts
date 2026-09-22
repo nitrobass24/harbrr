@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { daysUntil, expirySortKey, expiryState } from "@/lib/expiry"
+import { expirySortKey, expiryState } from "@/lib/expiry"
 import type { Instance } from "@/lib/api"
 
 // NOW is fixed so "in 7 days" means the same thing on every machine and in every month.
@@ -16,12 +16,13 @@ function instance(over: Partial<Instance> = {}): Instance {
   }
 }
 
-describe("daysUntil", () => {
+// The day arithmetic is internal to expiry.ts; `expiryState().days` is where it shows.
+describe("expiry day count", () => {
   it("uses the UTC calendar date even when the local date differs", () => {
     // 23:30 at UTC-6 is 05:30Z the NEXT day: the UTC basis must win, matching the
     // backend that decides when the notification fires.
     const eveningWestOfUTC = new Date("2026-07-31T23:30:00-06:00")
-    expect(daysUntil("2026-08-01", eveningWestOfUTC)).toBe(0)
+    expect(expiryState(instance({ expiresAt: "2026-08-01" }), eveningWestOfUTC).days).toBe(0)
   })
 
   it.each([
@@ -29,11 +30,11 @@ describe("daysUntil", () => {
     ["today", "2026-07-25", 0],
     ["already past", "2026-07-20", -5],
   ])("%s", (_name, date, want) => {
-    expect(daysUntil(date, NOW)).toBe(want)
+    expect(expiryState(instance({ expiresAt: date }), NOW).days).toBe(want)
   })
 
   it("returns null for a value that is not a date", () => {
-    expect(daysUntil("whenever", NOW)).toBeNull()
+    expect(expiryState(instance({ expiresAt: "whenever" }), NOW).days).toBeNull()
   })
 })
 
