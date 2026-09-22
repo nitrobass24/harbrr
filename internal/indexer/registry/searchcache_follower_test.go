@@ -192,7 +192,7 @@ func TestServeMissReturnsOwnCancellation(t *testing.T) {
 //
 // The SECOND call (the follower retry flight — autobrr/harbrr#342) optionally blocks on
 // retryRelease too, signaling retrySeen on entry: this lets a test hold the retry flight
-// open long enough for a SECOND follower to coalesce onto it (proving retryMissFlight
+// open long enough for a SECOND follower to coalesce onto it (proving the retry flight
 // re-coalesces surviving followers instead of each running its own independent live
 // search). Both fields are nil in the original single-follower test, where the second
 // call must return immediately — a nil retryRelease skips the gate entirely.
@@ -318,7 +318,7 @@ func TestSingleflightFollowerSurvivesLeaderCancel(t *testing.T) {
 // TestFollowersCoalesceOnLeaderCancel extends TestSingleflightFollowerSurvivesLeaderCancel
 // to TWO followers (autobrr/harbrr#342): the leader's client disconnects mid-fetch, and
 // BOTH followers inherit the cancellation while their own contexts stay live.
-// retryMissFlight's job is to re-coalesce every surviving follower onto ONE fresh flight
+// The retry flight's job is to re-coalesce every surviving follower onto ONE fresh flight
 // rather than each running its own independent live search — this proves that: the
 // tracker is hit exactly twice total (the leader's original attempt + ONE retry), never
 // three times (a follower stampede), and both followers still get fresh results.

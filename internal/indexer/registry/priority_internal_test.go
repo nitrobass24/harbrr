@@ -74,7 +74,7 @@ func TestValidateMinSeeders(t *testing.T) {
 	}
 }
 
-// TestResolvePriority proves the PATCH pointer semantics: nil keeps the instance's
+// TestResolvePriority proves patchErr's PATCH pointer semantics: nil keeps the instance's
 // current (already-valid) priority untouched — no re-validation of a value that was
 // never resubmitted — while a present pointer runs through normalizePriority.
 func TestResolvePriority(t *testing.T) {
@@ -97,18 +97,18 @@ func TestResolvePriority(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := resolvePriority(tt.update, tt.current)
+			got, err := patchErr(tt.update, tt.current, normalizePriority)
 			if tt.wantErr {
 				if !errors.Is(err, ErrInvalid) {
-					t.Fatalf("resolvePriority err = %v, want ErrInvalid", err)
+					t.Fatalf("patchErr(priority) err = %v, want ErrInvalid", err)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("resolvePriority unexpected err: %v", err)
+				t.Fatalf("patchErr(priority) unexpected err: %v", err)
 			}
 			if got != tt.want {
-				t.Errorf("resolvePriority = %d, want %d", got, tt.want)
+				t.Errorf("patchErr(priority) = %d, want %d", got, tt.want)
 			}
 		})
 	}
@@ -134,18 +134,18 @@ func TestResolveMinSeeders(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := resolveMinSeeders(tt.update, tt.current)
+			got, err := patchErr(tt.update, tt.current, minSeedersPatch)
 			if tt.wantErr {
 				if !errors.Is(err, ErrInvalid) {
-					t.Fatalf("resolveMinSeeders err = %v, want ErrInvalid", err)
+					t.Fatalf("patchErr(minSeeders) err = %v, want ErrInvalid", err)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("resolveMinSeeders unexpected err: %v", err)
+				t.Fatalf("patchErr(minSeeders) unexpected err: %v", err)
 			}
 			if got != tt.want {
-				t.Errorf("resolveMinSeeders = %d, want %d", got, tt.want)
+				t.Errorf("patchErr(minSeeders) = %d, want %d", got, tt.want)
 			}
 		})
 	}

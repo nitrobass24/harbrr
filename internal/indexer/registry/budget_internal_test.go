@@ -23,7 +23,7 @@ func openBudgetDB(t *testing.T, path string) *database.DB {
 }
 
 // TestRequestBudget_UnsetIsUnlimited proves that with no query_limit/grab_limit
-// configured, ReserveQuery/ReserveGrab always allow — the corrected #251 premise
+// configured, reserve always allows — the corrected #251 premise
 // that an unset budget is disabled, never an invented default.
 func TestRequestBudget_UnsetIsUnlimited(t *testing.T) {
 	t.Parallel()
@@ -33,8 +33,8 @@ func TestRequestBudget_UnsetIsUnlimited(t *testing.T) {
 	now := time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)
 
 	for i := range 5000 {
-		if !b.ReserveQuery(context.Background(), instID, resolveBudgetLimits(nil), now) {
-			t.Fatalf("ReserveQuery refused on call %d with no configured limit", i)
+		if !b.reserve(context.Background(), instID, resolveBudgetLimits(nil), budgetKindQuery, now) {
+			t.Fatalf("reserve refused on call %d with no configured limit", i)
 		}
 	}
 }
@@ -52,7 +52,7 @@ func TestRequestBudget_ConfiguredLimitRefusesOverCap(t *testing.T) {
 
 	allowed := 0
 	for range 2005 {
-		if b.ReserveQuery(context.Background(), instID, resolveBudgetLimits(cfg), now) {
+		if b.reserve(context.Background(), instID, resolveBudgetLimits(cfg), budgetKindQuery, now) {
 			allowed++
 		}
 	}
@@ -60,8 +60,8 @@ func TestRequestBudget_ConfiguredLimitRefusesOverCap(t *testing.T) {
 		t.Fatalf("allowed = %d, want exactly 2000", allowed)
 	}
 	// The 2001st (and every subsequent) call within the same period must still refuse.
-	if b.ReserveQuery(context.Background(), instID, resolveBudgetLimits(cfg), now) {
-		t.Fatal("ReserveQuery allowed a query past the configured cap")
+	if b.reserve(context.Background(), instID, resolveBudgetLimits(cfg), budgetKindQuery, now) {
+		t.Fatal("reserve allowed a query past the configured cap")
 	}
 }
 
@@ -75,17 +75,17 @@ func TestRequestBudget_QueryAndGrabAreIndependent(t *testing.T) {
 	cfg := map[string]string{"query_limit": "1", "grab_limit": "1"}
 	now := time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)
 
-	if !b.ReserveQuery(context.Background(), instID, resolveBudgetLimits(cfg), now) {
+	if !b.reserve(context.Background(), instID, resolveBudgetLimits(cfg), budgetKindQuery, now) {
 		t.Fatal("first query should be allowed")
 	}
-	if b.ReserveQuery(context.Background(), instID, resolveBudgetLimits(cfg), now) {
+	if b.reserve(context.Background(), instID, resolveBudgetLimits(cfg), budgetKindQuery, now) {
 		t.Fatal("second query should be refused (query_limit=1)")
 	}
 	// The grab budget must be untouched by the query exhaustion above.
-	if !b.ReserveGrab(context.Background(), instID, resolveBudgetLimits(cfg), now) {
+	if !b.reserve(context.Background(), instID, resolveBudgetLimits(cfg), budgetKindGrab, now) {
 		t.Fatal("first grab should still be allowed despite the query budget being spent")
 	}
-	if b.ReserveGrab(context.Background(), instID, resolveBudgetLimits(cfg), now) {
+	if b.reserve(context.Background(), instID, resolveBudgetLimits(cfg), budgetKindGrab, now) {
 		t.Fatal("second grab should be refused (grab_limit=1)")
 	}
 }
@@ -102,13 +102,13 @@ func TestRequestBudget_ResetsAtUTCMidnight(t *testing.T) {
 	beforeMidnight := time.Date(2026, 7, 17, 23, 59, 59, 0, time.UTC)
 	afterMidnight := time.Date(2026, 7, 18, 0, 0, 1, 0, time.UTC)
 
-	if !b.ReserveQuery(context.Background(), instID, resolveBudgetLimits(cfg), beforeMidnight) {
+	if !b.reserve(context.Background(), instID, resolveBudgetLimits(cfg), budgetKindQuery, beforeMidnight) {
 		t.Fatal("first query of the day should be allowed")
 	}
-	if b.ReserveQuery(context.Background(), instID, resolveBudgetLimits(cfg), beforeMidnight) {
+	if b.reserve(context.Background(), instID, resolveBudgetLimits(cfg), budgetKindQuery, beforeMidnight) {
 		t.Fatal("second query before midnight should be refused (query_limit=1)")
 	}
-	if !b.ReserveQuery(context.Background(), instID, resolveBudgetLimits(cfg), afterMidnight) {
+	if !b.reserve(context.Background(), instID, resolveBudgetLimits(cfg), budgetKindQuery, afterMidnight) {
 		t.Fatal("first query of the NEW UTC day should be allowed again")
 	}
 }
@@ -124,13 +124,13 @@ func TestRequestBudget_HourlyUnit(t *testing.T) {
 	hour1 := time.Date(2026, 7, 17, 10, 30, 0, 0, time.UTC)
 	hour2 := time.Date(2026, 7, 17, 11, 0, 1, 0, time.UTC)
 
-	if !b.ReserveQuery(context.Background(), instID, resolveBudgetLimits(cfg), hour1) {
+	if !b.reserve(context.Background(), instID, resolveBudgetLimits(cfg), budgetKindQuery, hour1) {
 		t.Fatal("first query of the hour should be allowed")
 	}
-	if b.ReserveQuery(context.Background(), instID, resolveBudgetLimits(cfg), hour1) {
+	if b.reserve(context.Background(), instID, resolveBudgetLimits(cfg), budgetKindQuery, hour1) {
 		t.Fatal("second query in the same hour should be refused")
 	}
-	if !b.ReserveQuery(context.Background(), instID, resolveBudgetLimits(cfg), hour2) {
+	if !b.reserve(context.Background(), instID, resolveBudgetLimits(cfg), budgetKindQuery, hour2) {
 		t.Fatal("first query of the NEXT hour should be allowed again")
 	}
 }
@@ -146,20 +146,20 @@ func TestRequestBudget_MarkQuotaSpentLatchesEvenUnconfigured(t *testing.T) {
 	instID := insertTestInstance(t, db)
 	now := time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)
 
-	if !b.ReserveQuery(context.Background(), instID, resolveBudgetLimits(nil), now) {
+	if !b.reserve(context.Background(), instID, resolveBudgetLimits(nil), budgetKindQuery, now) {
 		t.Fatal("query should be allowed before any quota error is observed")
 	}
 	b.MarkQuotaSpent(context.Background(), instID, resolveBudgetLimits(nil), budgetKindQuery, now)
-	if b.ReserveQuery(context.Background(), instID, resolveBudgetLimits(nil), now) {
+	if b.reserve(context.Background(), instID, resolveBudgetLimits(nil), budgetKindQuery, now) {
 		t.Fatal("query should be refused after MarkQuotaSpent, even with no configured limit")
 	}
 	// The grab kind is untouched by a query-kind quota mark.
-	if !b.ReserveGrab(context.Background(), instID, resolveBudgetLimits(nil), now) {
+	if !b.reserve(context.Background(), instID, resolveBudgetLimits(nil), budgetKindGrab, now) {
 		t.Fatal("grab should still be allowed; MarkQuotaSpent was for the query kind only")
 	}
 	// Rolling into the next day clears the reactive-learned latch too.
 	nextDay := now.Add(25 * time.Hour)
-	if !b.ReserveQuery(context.Background(), instID, resolveBudgetLimits(nil), nextDay) {
+	if !b.reserve(context.Background(), instID, resolveBudgetLimits(nil), budgetKindQuery, nextDay) {
 		t.Fatal("the learned-exhausted latch should reset at the next UTC midnight")
 	}
 }
@@ -176,11 +176,11 @@ func TestRequestBudget_ReleaseRefundsWithinPeriod(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)
 
-	if !b.ReserveQuery(ctx, instID, resolveBudgetLimits(nil), now) {
+	if !b.reserve(ctx, instID, resolveBudgetLimits(nil), budgetKindQuery, now) {
 		t.Fatal("query should be allowed with no configured limit")
 	}
 	b.MarkQuotaSpent(ctx, instID, resolveBudgetLimits(nil), budgetKindQuery, now)
-	b.ReleaseQuery(ctx, instID, resolveBudgetLimits(nil), now)
+	b.release(ctx, instID, resolveBudgetLimits(nil), budgetKindQuery, now)
 
 	st := b.Status(ctx, instID, resolveBudgetLimits(nil), now)
 	if st.Query.Used != 0 {
@@ -191,8 +191,8 @@ func TestRequestBudget_ReleaseRefundsWithinPeriod(t *testing.T) {
 	}
 
 	// A refund with nothing outstanding must not push the counter negative.
-	b.ReleaseQuery(ctx, instID, resolveBudgetLimits(nil), now)
-	b.ReleaseGrab(ctx, instID, resolveBudgetLimits(nil), now)
+	b.release(ctx, instID, resolveBudgetLimits(nil), budgetKindQuery, now)
+	b.release(ctx, instID, resolveBudgetLimits(nil), budgetKindGrab, now)
 	st = b.Status(ctx, instID, resolveBudgetLimits(nil), now)
 	if st.Query.Used != 0 || st.Grab.Used != 0 {
 		t.Fatalf("used = (query %d, grab %d) after refunding nothing, want 0/0", st.Query.Used, st.Grab.Used)
@@ -211,14 +211,14 @@ func TestRequestBudget_ReleaseAfterRolloverKeepsNewPeriod(t *testing.T) {
 	beforeMidnight := time.Date(2026, 7, 17, 23, 59, 59, 0, time.UTC)
 	afterMidnight := time.Date(2026, 7, 18, 0, 0, 1, 0, time.UTC)
 
-	if !b.ReserveQuery(ctx, instID, resolveBudgetLimits(nil), beforeMidnight) {
+	if !b.reserve(ctx, instID, resolveBudgetLimits(nil), budgetKindQuery, beforeMidnight) {
 		t.Fatal("reserve before midnight should be allowed")
 	}
 	// The new day's first query rolls the counter; the old reservation is already gone.
-	if !b.ReserveQuery(ctx, instID, resolveBudgetLimits(nil), afterMidnight) {
+	if !b.reserve(ctx, instID, resolveBudgetLimits(nil), budgetKindQuery, afterMidnight) {
 		t.Fatal("reserve after midnight should be allowed")
 	}
-	b.ReleaseQuery(ctx, instID, resolveBudgetLimits(nil), beforeMidnight)
+	b.release(ctx, instID, resolveBudgetLimits(nil), budgetKindQuery, beforeMidnight)
 
 	if got := b.Status(ctx, instID, resolveBudgetLimits(nil), afterMidnight).Query.Used; got != 1 {
 		t.Fatalf("new-period query used = %d after a stale refund, want 1", got)
@@ -237,7 +237,7 @@ func TestRequestBudget_PersistsAcrossRestart(t *testing.T) {
 	db1 := openBudgetDB(t, path)
 	b1 := newRequestBudget(db1, time.Now, zerolog.Nop())
 	instID := insertTestInstance(t, db1)
-	if !b1.ReserveQuery(context.Background(), instID, resolveBudgetLimits(cfg), now) {
+	if !b1.reserve(context.Background(), instID, resolveBudgetLimits(cfg), budgetKindQuery, now) {
 		t.Fatal("first query should be allowed")
 	}
 	b1.MarkQuotaSpent(context.Background(), instID, resolveBudgetLimits(cfg), budgetKindGrab, now)
@@ -250,10 +250,10 @@ func TestRequestBudget_PersistsAcrossRestart(t *testing.T) {
 	t.Cleanup(func() { _ = db2.Close() })
 	b2 := newRequestBudget(db2, time.Now, zerolog.Nop())
 
-	if b2.ReserveQuery(context.Background(), instID, resolveBudgetLimits(cfg), now) {
+	if b2.reserve(context.Background(), instID, resolveBudgetLimits(cfg), budgetKindQuery, now) {
 		t.Fatal("query budget should still read as spent (count=1, limit=1) after restart")
 	}
-	if b2.ReserveGrab(context.Background(), instID, resolveBudgetLimits(cfg), now) {
+	if b2.reserve(context.Background(), instID, resolveBudgetLimits(cfg), budgetKindGrab, now) {
 		t.Fatal("grab budget should still read as reactively exhausted after restart")
 	}
 }
@@ -338,7 +338,7 @@ func TestRequestBudget_StatusReportsCurrentPeriod(t *testing.T) {
 			b := newRequestBudget(db, time.Now, zerolog.Nop())
 			instID := insertTestInstance(t, db)
 			for i := 0; i < tt.reserveQuery; i++ {
-				b.ReserveQuery(context.Background(), instID, resolveBudgetLimits(tt.cfg), now)
+				b.reserve(context.Background(), instID, resolveBudgetLimits(tt.cfg), budgetKindQuery, now)
 			}
 			if tt.markGrabSpent {
 				b.MarkQuotaSpent(context.Background(), instID, resolveBudgetLimits(tt.cfg), budgetKindGrab, now)
@@ -367,7 +367,7 @@ func TestRequestBudget_StatusIsReadOnly(t *testing.T) {
 	if _, found, err := (database.BudgetCountersStore{}).Get(context.Background(), db, instID); err != nil || found {
 		t.Fatalf("Status persisted a row for an untouched instance: found=%v err=%v", found, err)
 	}
-	if !b.ReserveQuery(context.Background(), instID, resolveBudgetLimits(cfg), now) {
+	if !b.reserve(context.Background(), instID, resolveBudgetLimits(cfg), budgetKindQuery, now) {
 		t.Fatal("Status consumed budget: the single configured query was already spent")
 	}
 }
@@ -384,7 +384,7 @@ func TestRequestBudget_StatusRollsOverAndReloads(t *testing.T) {
 	db1 := openBudgetDB(t, path)
 	b1 := newRequestBudget(db1, time.Now, zerolog.Nop())
 	instID := insertTestInstance(t, db1)
-	b1.ReserveQuery(context.Background(), instID, resolveBudgetLimits(cfg), now)
+	b1.reserve(context.Background(), instID, resolveBudgetLimits(cfg), budgetKindQuery, now)
 	b1.MarkQuotaSpent(context.Background(), instID, resolveBudgetLimits(cfg), budgetKindQuery, now)
 
 	nextDay := now.Add(24 * time.Hour)
@@ -426,7 +426,7 @@ func TestRequestBudget_PersistOrderUnderConcurrency(t *testing.T) {
 	var allows atomic.Int64
 	for range 128 {
 		wg.Go(func() {
-			if b.ReserveQuery(context.Background(), instID, resolveBudgetLimits(cfg), now) {
+			if b.reserve(context.Background(), instID, resolveBudgetLimits(cfg), budgetKindQuery, now) {
 				allows.Add(1)
 			}
 		})

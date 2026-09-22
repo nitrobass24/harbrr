@@ -109,34 +109,13 @@ func (b *RequestBudget) ensureLoaded(ctx context.Context, instanceID int64, st *
 	st.loaded = true
 }
 
-// ReserveQuery reports whether a query is allowed to reach the tracker right now,
-// counting it against the budget if so. limits is the instance's resolved budget
-// knobs (resolveBudgetLimits) — the adapter's build-time snapshot on the serve
-// path, a fresh per-read view on the stats path.
-func (b *RequestBudget) ReserveQuery(ctx context.Context, instanceID int64, limits budgetLimits, now time.Time) bool {
-	return b.reserve(ctx, instanceID, limits, budgetKindQuery, now)
-}
-
-// ReserveGrab is ReserveQuery for the grab budget (grab_limit).
-func (b *RequestBudget) ReserveGrab(ctx context.Context, instanceID int64, limits budgetLimits, now time.Time) bool {
-	return b.reserve(ctx, instanceID, limits, budgetKindGrab, now)
-}
-
-// ReleaseQuery gives back a unit reserved by ReserveQuery when the request never
-// reached the tracker (autobrr/harbrr#489's reachedTracker shapes: an *arr hanging up,
-// a user navigating away from a /dl link, the pacing budget never granting a token).
+// release gives a unit of kind's budget back when the request never reached the
+// tracker (autobrr/harbrr#489's reachedTracker shapes: an *arr hanging up, a user
+// navigating away from a /dl link, the pacing budget never granting a token).
 // reservedAt MUST be the same timestamp the reservation was made with — it is what
 // pins the refund to the period the unit was counted under.
-func (b *RequestBudget) ReleaseQuery(ctx context.Context, instanceID int64, limits budgetLimits, reservedAt time.Time) {
-	b.release(ctx, instanceID, limits, budgetKindQuery, reservedAt)
-}
-
-// ReleaseGrab is ReleaseQuery for the grab budget.
-func (b *RequestBudget) ReleaseGrab(ctx context.Context, instanceID int64, limits budgetLimits, reservedAt time.Time) {
-	b.release(ctx, instanceID, limits, budgetKindGrab, reservedAt)
-}
-
-// release is the shared refund for both kinds: it decrements kind's counter ONLY while
+//
+// It decrements kind's counter ONLY while
 // the stored period is still the one reservedAt fell in. A period that has rolled over
 // (or been rolled forward by a concurrent reserve) already dropped the reservation, so
 // decrementing then would steal from the fresh period's allowance — the refund is
@@ -162,7 +141,12 @@ func (b *RequestBudget) release(ctx context.Context, instanceID int64, limits bu
 	b.persist(ctx, st.row(instanceID, b.clock()))
 }
 
-// reserve is the shared count-and-check for both kinds: it rolls the counter over to
+// reserve reports whether a request of kind is allowed to reach the tracker right now,
+// counting it against the budget if so. limits is the instance's resolved budget knobs
+// (resolveBudgetLimits) — the adapter's build-time snapshot on the serve path, a fresh
+// per-read view on the stats path.
+//
+// It rolls the counter over to
 // a fresh period when the period key has changed (which also clears any
 // reactively-learned exhausted latch — a new day/hour is a clean slate even if the
 // tracker refused yesterday), then allows the call when neither the learned-exhausted

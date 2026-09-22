@@ -271,8 +271,8 @@ func New(db dbinterface.Querier, ldr *loader.Loader, keyring secretsKeyring, fam
 	res.circuitMu = &sync.Mutex{}
 	// Manager and StatsReporter are built last, from the resolver's finalized handles: the
 	// same clock and the same *IndexerStats pointer. Manager reaches the resolver only
-	// through the two narrow cleanup seams (serveEvicter / instanceForgetter), both
-	// satisfied by res; it never holds a *Resolver.
+	// through the narrow cleanup seam (serveCleaner), satisfied by res; it never holds
+	// a *Resolver.
 	r.Manager = &Manager{
 		db:        res.db,
 		instances: res.instances,
@@ -280,8 +280,7 @@ func New(db dbinterface.Querier, ldr *loader.Loader, keyring secretsKeyring, fam
 		clock:     res.clock,
 		loader:    res.loader,
 		native:    res.native,
-		evicter:   res,
-		forgetter: res,
+		cleanup:   res,
 	}
 	r.StatsReporter = &StatsReporter{
 		stats:       res.stats,

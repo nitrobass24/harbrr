@@ -9,8 +9,8 @@ import (
 	"github.com/autobrr/harbrr/internal/database/dbtest"
 )
 
-// fakeCleanup is a test double satisfying BOTH post-mutation seams (serveEvicter and
-// instanceForgetter), recording every call so Delete's cleanup fan-out
+// fakeCleanup is a test double satisfying the post-mutation cleanup seam
+// (serveCleaner), recording every call so Delete's cleanup fan-out
 // (autobrr/harbrr#345) can be asserted directly. What forgetInstance itself evicts is
 // asserted against the real Resolver in forgetinstances_test.go.
 type fakeCleanup struct {
@@ -43,7 +43,7 @@ func TestDeleteForgetsInstance(t *testing.T) {
 	db := dbtest.OpenMigrated(t)
 	instID := insertTestInstance(t, db)
 	inv := &fakeCleanup{}
-	mgr := &Manager{db: db, instances: database.Instances{}, evicter: inv, forgetter: inv}
+	mgr := &Manager{db: db, instances: database.Instances{}, cleanup: inv}
 
 	if err := mgr.Delete(context.Background(), "fake"); err != nil {
 		t.Fatalf("Delete: %v", err)

@@ -225,7 +225,7 @@ func (a *indexerAdapter) budgetedLiveSearch(ctx context.Context, query search.Qu
 		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, err)
 	}
 	reservedAt := a.clock()
-	if !a.budget.ReserveQuery(ctx, a.instanceID, a.settings.Budget, reservedAt) {
+	if !a.budget.reserve(ctx, a.instanceID, a.settings.Budget, budgetKindQuery, reservedAt) {
 		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, core.ErrBudgetExhausted)
 	}
 	return a.liveSearch(ctx, query, reservedAt)
@@ -254,7 +254,7 @@ func (a *indexerAdapter) liveSearch(ctx context.Context, query search.Query, res
 	start := a.clock()
 	releases, err := a.inner.Search(ctx, query)
 	if err != nil && !reachedTracker(ctx, err) {
-		a.budget.ReleaseQuery(ctx, a.instanceID, a.settings.Budget, reservedAt)
+		a.budget.release(ctx, a.instanceID, a.settings.Budget, budgetKindQuery, reservedAt)
 		return nil, fmt.Errorf("registry: search %q: %w", a.info.ID, err)
 	}
 	a.stats.RecordQuery(a.instanceID, a.clock().Sub(start))
@@ -351,12 +351,12 @@ func (a *indexerAdapter) Grab(ctx context.Context, link string) (*search.GrabRes
 	// stale — the grab-path half of #251's enforcement. Gated after the breaker: a
 	// tripped instance must not consume budget.
 	reservedAt := a.clock()
-	if !a.budget.ReserveGrab(ctx, a.instanceID, a.settings.Budget, reservedAt) {
+	if !a.budget.reserve(ctx, a.instanceID, a.settings.Budget, budgetKindGrab, reservedAt) {
 		return nil, fmt.Errorf("registry: grab %q: %w", a.info.ID, core.ErrBudgetExhausted)
 	}
 	result, err := a.inner.Grab(ctx, link)
 	if err != nil && !reachedTracker(ctx, err) {
-		a.budget.ReleaseGrab(ctx, a.instanceID, a.settings.Budget, reservedAt)
+		a.budget.release(ctx, a.instanceID, a.settings.Budget, budgetKindGrab, reservedAt)
 		return nil, fmt.Errorf("registry: grab %q: %w", a.info.ID, err)
 	}
 	// Counted below the reachedTracker guard, not at the top of the method: "attempts"
