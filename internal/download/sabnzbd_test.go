@@ -159,10 +159,10 @@ func TestSabnzbdAdd_ViaURL(t *testing.T) {
 	t.Parallel()
 	stub := &sabnzbdStub{}
 	srv := newSabnzbdStub(t, stub)
-	drv := newTestSabnzbdDriver(srv.URL, "goodkey", "")
+	drv := newTestSabnzbdDriver(srv.URL, "goodkey", "tv")
 
 	const nzbURL = "http://tracker.example/dl?token=sealed"
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: nzbURL}, AddOptions{Category: "tv"}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: nzbURL}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if got := stub.lastQuery.Get("mode"); got != "addurl" {
@@ -185,7 +185,7 @@ func TestSabnzbdAdd_CategoryDefault(t *testing.T) {
 	srv := newSabnzbdStub(t, stub)
 	drv := newTestSabnzbdDriver(srv.URL, "goodkey", "default-cat")
 
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: "http://x/n.nzb"}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: "http://x/n.nzb"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if got := stub.lastQuery.Get("cat"); got != "default-cat" {
@@ -199,7 +199,7 @@ func TestSabnzbdAdd_TorrentUnsupported(t *testing.T) {
 	srv := newSabnzbdStub(t, stub)
 	drv := newTestSabnzbdDriver(srv.URL, "goodkey", "")
 
-	err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, AddOptions{})
+	err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"})
 	if !errors.Is(err, ErrUnsupportedProtocol) {
 		t.Fatalf("Add(torrent) error = %v, want ErrUnsupportedProtocol", err)
 	}
@@ -217,7 +217,7 @@ func TestSabnzbdAdd_ViaBytes(t *testing.T) {
 	const nzb = `<?xml version="1.0"?><nzb><file/></nzb>`
 	err := drv.Add(context.Background(), Payload{
 		Protocol: ProtocolUsenet, Bytes: []byte(nzb), Name: "Example.Movie.2023.1080p",
-	}, AddOptions{})
+	})
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -242,7 +242,7 @@ func TestSabnzbdAdd_EmptyPayloadRejected(t *testing.T) {
 	srv := newSabnzbdStub(t, stub)
 	drv := newTestSabnzbdDriver(srv.URL, "goodkey", "")
 
-	err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet}, AddOptions{})
+	err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet})
 	if !errors.Is(err, ErrURLRequired) {
 		t.Fatalf("Add(empty) error = %v, want ErrURLRequired", err)
 	}
@@ -263,7 +263,7 @@ func TestSabnzbdAdd_TransportErrorRedactsSecrets(t *testing.T) {
 
 	const harbrrAPIKey = "HARBRRAPIKEY0123456789XYZ"
 	sealed := "http://harbrr.local/api/indexers/tt/dl?token=abc&apikey=" + harbrrAPIKey
-	err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: sealed}, AddOptions{})
+	err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: sealed})
 	if err == nil {
 		t.Fatal("expected an error after closing the stub server")
 	}
@@ -281,7 +281,7 @@ func TestSabnzbdAdd_ReportedErrorSurfaced(t *testing.T) {
 	srv := newSabnzbdStub(t, stub)
 	drv := newTestSabnzbdDriver(srv.URL, "wrongkey", "")
 
-	err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: "http://x/n.nzb"}, AddOptions{})
+	err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: "http://x/n.nzb"})
 	if err == nil {
 		t.Fatal("expected an error when SABnzbd reports API Key Incorrect")
 	}

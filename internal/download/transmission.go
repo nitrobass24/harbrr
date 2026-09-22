@@ -72,12 +72,12 @@ func (d *transmissionDriver) Test(ctx context.Context) error {
 // v16+) — no follow-up TorrentSet. TorrentAddPayload has no ratio/seed-time/
 // removal field at all, so no-hit-and-run is enforced by the vendor type
 // itself, not just by convention.
-func (d *transmissionDriver) Add(ctx context.Context, p Payload, opts AddOptions) error {
+func (d *transmissionDriver) Add(ctx context.Context, p Payload) error {
 	if p.Protocol != ProtocolTorrent {
 		return fmt.Errorf("download: transmission: %w: %s", ErrUnsupportedProtocol, p.Protocol)
 	}
 
-	payload := transmissionrpc.TorrentAddPayload{Labels: transmissionLabels(opts)}
+	payload := transmissionrpc.TorrentAddPayload{}
 	if len(p.Bytes) > 0 {
 		metainfo := base64.StdEncoding.EncodeToString(p.Bytes)
 		payload.MetaInfo = &metainfo
@@ -87,7 +87,7 @@ func (d *transmissionDriver) Add(ctx context.Context, p Payload, opts AddOptions
 	if d.settings.DownloadDir != "" {
 		payload.DownloadDir = &d.settings.DownloadDir
 	}
-	if paused := opts.Paused || d.settings.StartPaused; paused {
+	if paused := d.settings.StartPaused; paused {
 		payload.Paused = &paused
 	}
 
@@ -95,14 +95,4 @@ func (d *transmissionDriver) Add(ctx context.Context, p Payload, opts AddOptions
 		return fmt.Errorf("download: transmission: add torrent: %w", err)
 	}
 	return nil
-}
-
-// transmissionLabels builds the add payload's Labels list: the category first
-// (if any), followed by tags — Transmission has no separate category concept.
-func transmissionLabels(opts AddOptions) []string {
-	var labels []string
-	if opts.Category != "" {
-		labels = append(labels, opts.Category)
-	}
-	return append(labels, opts.Tags...)
 }

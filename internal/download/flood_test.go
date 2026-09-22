@@ -161,7 +161,7 @@ func TestFloodAdd_ViaURL(t *testing.T) {
 	drv := newTestFlood(srv.URL, "admin", "hunter2", domain.FloodSettings{})
 
 	const magnet = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=test"
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: magnet}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: magnet}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if stub.lastAddPath != "/api/torrents/add-urls" {
@@ -182,7 +182,7 @@ func TestFloodAdd_ViaBytes(t *testing.T) {
 	drv := newTestFlood(srv.URL, "admin", "hunter2", domain.FloodSettings{})
 
 	payload := []byte("d8:announce...e")
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, Bytes: payload, Name: "test.torrent"}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, Bytes: payload, Name: "test.torrent"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if stub.lastAddPath != "/api/torrents/add-files" {
@@ -201,22 +201,18 @@ func TestFloodAdd_OptionMapping(t *testing.T) {
 	t.Parallel()
 	stub := &floodStub{}
 	srv := newFloodStub(t, stub)
-	drv := newTestFlood(srv.URL, "admin", "hunter2", domain.FloodSettings{Destination: "/downloads", Tags: []string{"base"}})
+	drv := newTestFlood(srv.URL, "admin", "hunter2", domain.FloodSettings{Destination: "/downloads", Tags: []string{"base", "harbrr"}, StartPaused: true})
 
-	err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, AddOptions{
-		Category: "tv-sonarr",
-		Tags:     []string{"harbrr"},
-		Paused:   true,
-	})
+	err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"})
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if stub.lastAdd.Destination != "/downloads" {
 		t.Fatalf("destination = %q, want /downloads", stub.lastAdd.Destination)
 	}
-	wantTags := map[string]bool{"base": true, "harbrr": true, "tv-sonarr": true}
+	wantTags := map[string]bool{"base": true, "harbrr": true}
 	if len(stub.lastAdd.Tags) != len(wantTags) {
-		t.Fatalf("tags = %v, want %v (category folded in as a tag)", stub.lastAdd.Tags, wantTags)
+		t.Fatalf("tags = %v, want %v", stub.lastAdd.Tags, wantTags)
 	}
 	for _, tag := range stub.lastAdd.Tags {
 		if !wantTags[tag] {
@@ -224,7 +220,7 @@ func TestFloodAdd_OptionMapping(t *testing.T) {
 		}
 	}
 	if stub.lastAdd.Start {
-		t.Fatal("start = true, want false (opts.Paused=true)")
+		t.Fatal("start = true, want false (settings.StartPaused)")
 	}
 }
 
@@ -234,7 +230,7 @@ func TestFloodAdd_PausedEscalatesFromSettings(t *testing.T) {
 	srv := newFloodStub(t, stub)
 	drv := newTestFlood(srv.URL, "admin", "hunter2", domain.FloodSettings{StartPaused: true})
 
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if stub.lastAdd.Start {
@@ -248,7 +244,7 @@ func TestFloodAdd_UsenetUnsupported(t *testing.T) {
 	srv := newFloodStub(t, stub)
 	drv := newTestFlood(srv.URL, "admin", "hunter2", domain.FloodSettings{})
 
-	err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: "https://example.com/release.nzb"}, AddOptions{})
+	err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: "https://example.com/release.nzb"})
 	if !errors.Is(err, ErrUnsupportedProtocol) {
 		t.Fatalf("Add(usenet) error = %v, want ErrUnsupportedProtocol", err)
 	}

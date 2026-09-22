@@ -51,15 +51,12 @@ func (d *nzbgetDriver) Test(ctx context.Context) error {
 // link is only fetchable by harbrr — otherwise a URL NZBGet fetches on its own.
 // Priority/AddPaused/dupe fields are hardcoded upstream (0/false/SCORE); deliberately
 // never sets a share-limit or auto-removal option.
-func (d *nzbgetDriver) Add(ctx context.Context, p Payload, opts AddOptions) error {
+func (d *nzbgetDriver) Add(ctx context.Context, p Payload) error {
 	if p.Protocol != ProtocolUsenet {
 		return fmt.Errorf("download: nzbget: %w: %s", ErrUnsupportedProtocol, p.Protocol)
 	}
 
-	category := opts.Category
-	if category == "" {
-		category = d.defaultCategory
-	}
+	category := d.defaultCategory
 
 	if len(p.Bytes) > 0 {
 		return d.appendContent(ctx, p, category)

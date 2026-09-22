@@ -127,7 +127,7 @@ func TestRTorrentAdd_ViaURL(t *testing.T) {
 	drv := newTestRTorrent(srv.URL+"/RPC2", "admin", "adminadmin", domain.RTorrentSettings{})
 
 	url := "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: url}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: url}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if stub.lastMethod != "load.start" {
@@ -145,7 +145,7 @@ func TestRTorrentAdd_ViaBytes(t *testing.T) {
 	drv := newTestRTorrent(srv.URL+"/RPC2", "admin", "adminadmin", domain.RTorrentSettings{})
 
 	raw := []byte("d8:announce...e")
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, Bytes: raw}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, Bytes: raw}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if stub.lastMethod != "load.raw_start" {
@@ -161,9 +161,9 @@ func TestRTorrentAdd_Paused(t *testing.T) {
 	stub := &rtorrentStub{}
 	srv := newRTorrentStub(t, stub)
 
-	t.Run("via URL, opts.Paused", func(t *testing.T) {
-		drv := newTestRTorrent(srv.URL+"/RPC2", "admin", "adminadmin", domain.RTorrentSettings{})
-		if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, AddOptions{Paused: true}); err != nil {
+	t.Run("via URL, settings.StartPaused", func(t *testing.T) {
+		drv := newTestRTorrent(srv.URL+"/RPC2", "admin", "adminadmin", domain.RTorrentSettings{StartPaused: true})
+		if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}); err != nil {
 			t.Fatalf("Add: %v", err)
 		}
 		if stub.lastMethod != "load.normal" {
@@ -173,7 +173,7 @@ func TestRTorrentAdd_Paused(t *testing.T) {
 
 	t.Run("via bytes, settings.StartPaused", func(t *testing.T) {
 		drv := newTestRTorrent(srv.URL+"/RPC2", "admin", "adminadmin", domain.RTorrentSettings{StartPaused: true})
-		if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, Bytes: []byte("x")}, AddOptions{}); err != nil {
+		if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, Bytes: []byte("x")}); err != nil {
 			t.Fatalf("Add: %v", err)
 		}
 		if stub.lastMethod != "load.raw" {
@@ -186,9 +186,9 @@ func TestRTorrentAdd_LabelAndDirectory(t *testing.T) {
 	t.Parallel()
 	stub := &rtorrentStub{}
 	srv := newRTorrentStub(t, stub)
-	drv := newTestRTorrent(srv.URL+"/RPC2", "admin", "adminadmin", domain.RTorrentSettings{Directory: "/downloads/rtorrent"})
+	drv := newTestRTorrent(srv.URL+"/RPC2", "admin", "adminadmin", domain.RTorrentSettings{Label: "tv-sonarr", Directory: "/downloads/rtorrent"})
 
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, AddOptions{Category: "tv-sonarr"}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if len(stub.lastParams) != 4 {
@@ -208,7 +208,7 @@ func TestRTorrentAdd_LabelFallbackToSettings(t *testing.T) {
 	srv := newRTorrentStub(t, stub)
 	drv := newTestRTorrent(srv.URL+"/RPC2", "admin", "adminadmin", domain.RTorrentSettings{Label: "from-settings"})
 
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if got := rtorrentParamString(t, stub.lastParams, 2); got != `d.custom1.set="from-settings"` {
@@ -222,7 +222,7 @@ func TestRTorrentAdd_BasicAuthCredentials(t *testing.T) {
 	srv := newRTorrentStub(t, stub)
 	drv := newTestRTorrent(srv.URL+"/RPC2", "admin", "adminadmin", domain.RTorrentSettings{})
 
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if stub.gotUser != "admin" || stub.gotPass != "adminadmin" {
@@ -232,19 +232,17 @@ func TestRTorrentAdd_BasicAuthCredentials(t *testing.T) {
 
 // TestRTorrentAdd_RejectsQuoteInjection pins the guard against go-rtorrent's
 // unescaped field.set="<value>" formatting: a '"' in any of the three
-// candidate values (opts.Category, settings.Label, settings.Directory) must
-// be rejected before a FieldValue is ever built, whichever one carries it.
+// values (settings.Label, settings.Directory) must be rejected before a FieldValue
+// is ever built, whichever one carries it.
 func TestRTorrentAdd_RejectsQuoteInjection(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name     string
-		opts     AddOptions
 		settings domain.RTorrentSettings
 	}{
-		{"category", AddOptions{Category: `tv"; execute={rm,-rf,/}`}, domain.RTorrentSettings{}},
-		{"settings label", AddOptions{}, domain.RTorrentSettings{Label: `tv"; execute={rm,-rf,/}`}},
-		{"settings directory", AddOptions{}, domain.RTorrentSettings{Directory: `/downloads"; execute={rm,-rf,/}`}},
+		{"settings label", domain.RTorrentSettings{Label: `tv"; execute={rm,-rf,/}`}},
+		{"settings directory", domain.RTorrentSettings{Directory: `/downloads"; execute={rm,-rf,/}`}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -253,31 +251,11 @@ func TestRTorrentAdd_RejectsQuoteInjection(t *testing.T) {
 			// across parallel runs, even in the failure mode where a request escapes.
 			srv := newRTorrentStub(t, &rtorrentStub{})
 			drv := newTestRTorrent(srv.URL+"/RPC2", "admin", "adminadmin", tt.settings)
-			err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, tt.opts)
+			err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"})
 			if !errors.Is(err, errRTorrentFieldValue) {
 				t.Fatalf("Add error = %v, want errRTorrentFieldValue", err)
 			}
 		})
-	}
-}
-
-// TestRTorrentAdd_OverriddenQuotedLabelNotValidated proves fieldArgs validates only
-// the values it will emit: a stored settings label carrying a '"' is irrelevant when
-// a clean per-add category overrides it, so the add proceeds with the category.
-func TestRTorrentAdd_OverriddenQuotedLabelNotValidated(t *testing.T) {
-	t.Parallel()
-	stub := &rtorrentStub{}
-	srv := newRTorrentStub(t, stub)
-	drv := newTestRTorrent(srv.URL+"/RPC2", "admin", "adminadmin",
-		domain.RTorrentSettings{Label: `stale"quoted`})
-
-	err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"},
-		AddOptions{Category: "tv"})
-	if err != nil {
-		t.Fatalf("Add with clean overriding category: %v", err)
-	}
-	if got := rtorrentParamString(t, stub.lastParams, 2); got != `d.custom1.set="tv"` {
-		t.Fatalf("params[2] (label) = %q, want d.custom1.set=\"tv\" (the overridden stored label must never be sent)", got)
 	}
 }
 
@@ -328,7 +306,7 @@ func TestRTorrentAdd_UsenetUnsupported(t *testing.T) {
 	srv := newRTorrentStub(t, stub)
 	drv := newTestRTorrent(srv.URL+"/RPC2", "admin", "adminadmin", domain.RTorrentSettings{})
 
-	err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: "https://example.com/release.nzb"}, AddOptions{})
+	err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: "https://example.com/release.nzb"})
 	if !errors.Is(err, ErrUnsupportedProtocol) {
 		t.Fatalf("Add(usenet) error = %v, want ErrUnsupportedProtocol", err)
 	}

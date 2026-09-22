@@ -134,7 +134,7 @@ func TestQBittorrentAdd_ViaURL(t *testing.T) {
 		"magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=test",
 		"http://tracker.example/dl?token=sealed",
 	} {
-		if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: url}, AddOptions{}); err != nil {
+		if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: url}); err != nil {
 			t.Fatalf("Add(%s): %v", url, err)
 		}
 		if stub.addWasBytes {
@@ -157,7 +157,7 @@ func TestQBittorrentAdd_URLErrorRedactsApikey(t *testing.T) {
 
 	const apikey = "SECRETAPIKEY0123456789"
 	sealed := "http://harbrr.local/api/indexers/tt/dl?token=abc&apikey=" + apikey
-	err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: sealed}, AddOptions{})
+	err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: sealed})
 	if err == nil {
 		t.Fatal("expected an add error from the 409 stub")
 	}
@@ -184,7 +184,7 @@ func TestQBittorrentBaseURLUserinfoIsRedacted(t *testing.T) {
 	}{
 		{"Test", func() error { return drv.Test(context.Background()) }},
 		{"Add", func() error {
-			return drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "http://harbrr.local/dl"}, AddOptions{})
+			return drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "http://harbrr.local/dl"})
 		}},
 	}
 	for _, tt := range tests {
@@ -207,7 +207,7 @@ func TestQBittorrentAdd_ViaBytes(t *testing.T) {
 	srv := newQbitStub(t, stub)
 	drv := newTestClient(srv.URL, "admin", "adminadmin")
 
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, Bytes: []byte("d8:announce...e"), Name: "test.torrent"}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, Bytes: []byte("d8:announce...e"), Name: "test.torrent"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if !stub.addWasBytes {
@@ -215,78 +215,37 @@ func TestQBittorrentAdd_ViaBytes(t *testing.T) {
 	}
 }
 
-func TestQBittorrentAdd_OptionMapping(t *testing.T) {
+// TestQBittorrentAdd_NoHitAndRun is the standing assertion that harbrr never asks
+// qBittorrent to share-limit or auto-remove a torrent it adds: the emitted form
+// must never carry a ratio/seed-time limit field, whatever the settings say.
+// TestQBittorrentAdd_FoldsClientSettings: the per-client category/tags/start-paused
+// settings are the driver's own defaults, folded into every Add the way every other
+// driver folds its settings — so the search-result grab lands the torrent where the
+// operator configured it.
+func TestQBittorrentAdd_FoldsClientSettings(t *testing.T) {
 	t.Parallel()
 	stub := &qbitStub{}
 	srv := newQbitStub(t, stub)
-	drv := newTestClient(srv.URL, "admin", "adminadmin")
-
-	err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, AddOptions{
-		Category: "tv-sonarr",
-		Tags:     []string{"harbrr", "auto"},
-		Paused:   true,
-	})
+	drv, err := newQBittorrent(domain.DownloadClient{
+		Host: srv.URL, Username: "admin",
+		Settings: domain.DownloadClientSettings{QBittorrent: &domain.QBittorrentSettings{
+			Category: "harbrr", Tags: []string{"seeded", "auto"}, StartPaused: true,
+		}},
+	}, "adminadmin", nil)
 	if err != nil {
+		t.Fatalf("newQBittorrent: %v", err)
+	}
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	if got := first(stub.addForm["category"]); got != "tv-sonarr" {
-		t.Fatalf("category = %q, want tv-sonarr", got)
+	if got := first(stub.addForm["category"]); got != "harbrr" {
+		t.Errorf("category = %q, want harbrr", got)
 	}
-	if got := first(stub.addForm["tags"]); got != "harbrr,auto" {
-		t.Fatalf("tags = %q, want harbrr,auto", got)
+	if got := first(stub.addForm["tags"]); got != "seeded,auto" {
+		t.Errorf("tags = %q, want seeded,auto", got)
 	}
 	if got := first(stub.addForm["paused"]); got != "true" {
-		t.Fatalf("paused = %q, want true", got)
-	}
-}
-
-// TestQBittorrentAdd_NoHitAndRun is the standing assertion that harbrr never asks
-// qBittorrent to share-limit or auto-remove a torrent it adds: the emitted form
-// must never carry a ratio/seed-time limit field, whatever AddOptions says.
-// TestQBittorrentAdd_FoldsClientSettings: the per-client category/tags/start-paused
-// settings are the driver's own defaults, folded into every Add the way every other
-// driver folds its settings — so a caller that passes empty AddOptions (the search-result
-// grab) still lands the torrent where the operator configured it. An explicit
-// AddOptions.Category overrides; tags union.
-func TestQBittorrentAdd_FoldsClientSettings(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name         string
-		opts         AddOptions
-		wantCategory string
-		wantTags     string
-		wantPaused   string
-	}{
-		{"settings only", AddOptions{}, "harbrr", "seeded", "true"},
-		{"caller overrides category, tags union", AddOptions{Category: "tv-sonarr", Tags: []string{"auto"}}, "tv-sonarr", "seeded,auto", "true"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			stub := &qbitStub{}
-			srv := newQbitStub(t, stub)
-			drv, err := newQBittorrent(domain.DownloadClient{
-				Host: srv.URL, Username: "admin",
-				Settings: domain.DownloadClientSettings{QBittorrent: &domain.QBittorrentSettings{
-					Category: "harbrr", Tags: []string{"seeded"}, StartPaused: true,
-				}},
-			}, "adminadmin", nil)
-			if err != nil {
-				t.Fatalf("newQBittorrent: %v", err)
-			}
-			if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, tt.opts); err != nil {
-				t.Fatalf("Add: %v", err)
-			}
-			if got := first(stub.addForm["category"]); got != tt.wantCategory {
-				t.Errorf("category = %q, want %q", got, tt.wantCategory)
-			}
-			if got := first(stub.addForm["tags"]); got != tt.wantTags {
-				t.Errorf("tags = %q, want %q", got, tt.wantTags)
-			}
-			if got := first(stub.addForm["paused"]); got != tt.wantPaused {
-				t.Errorf("paused = %q, want %q", got, tt.wantPaused)
-			}
-		})
+		t.Errorf("paused = %q, want true", got)
 	}
 }
 
@@ -296,9 +255,7 @@ func TestQBittorrentAdd_NoHitAndRun(t *testing.T) {
 	srv := newQbitStub(t, stub)
 	drv := newTestClient(srv.URL, "admin", "adminadmin")
 
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, AddOptions{
-		Category: "tv-sonarr", Tags: []string{"harbrr"}, Paused: false,
-	}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	for _, forbidden := range []string{"ratioLimit", "seedingTimeLimit", "inactiveSeedingTimeLimit"} {
@@ -314,7 +271,7 @@ func TestQBittorrentAdd_UsenetUnsupported(t *testing.T) {
 	srv := newQbitStub(t, stub)
 	drv := newTestClient(srv.URL, "admin", "adminadmin")
 
-	err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: "https://example.com/release.nzb"}, AddOptions{})
+	err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: "https://example.com/release.nzb"})
 	if !errors.Is(err, ErrUnsupportedProtocol) {
 		t.Fatalf("Add(usenet) error = %v, want ErrUnsupportedProtocol", err)
 	}

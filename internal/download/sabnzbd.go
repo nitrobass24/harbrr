@@ -64,15 +64,12 @@ func (d *sabnzbdDriver) Test(ctx context.Context) error {
 // resolved them itself — a sealed harbrr download link is only fetchable by harbrr —
 // otherwise a URL SABnzbd fetches on its own. Deliberately never sets a share-limit or
 // auto-removal option (harbrr does not hit-and-run a client-managed download).
-func (d *sabnzbdDriver) Add(ctx context.Context, p Payload, opts AddOptions) error {
+func (d *sabnzbdDriver) Add(ctx context.Context, p Payload) error {
 	if p.Protocol != ProtocolUsenet {
 		return fmt.Errorf("download: sabnzbd: %w: %s", ErrUnsupportedProtocol, p.Protocol)
 	}
 
-	category := opts.Category
-	if category == "" {
-		category = d.defaultCategory
-	}
+	category := d.defaultCategory
 
 	if len(p.Bytes) > 0 {
 		return d.addFile(ctx, p, category)

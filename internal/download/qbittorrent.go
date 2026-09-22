@@ -75,7 +75,7 @@ func (d *qbittorrentDriver) Test(ctx context.Context) error {
 // upload) or a URL it fetches itself (magnet, a sealed harbrr /dl link, or a
 // plain http(s) .torrent link). Deliberately never sets a share-limit or
 // auto-removal option — harbrr does not hit-and-run a client-managed torrent.
-func (d *qbittorrentDriver) Add(ctx context.Context, p Payload, opts AddOptions) error {
+func (d *qbittorrentDriver) Add(ctx context.Context, p Payload) error {
 	if p.Protocol != ProtocolTorrent {
 		return fmt.Errorf("download: qbittorrent: %w: %s", ErrUnsupportedProtocol, p.Protocol)
 	}
@@ -83,14 +83,10 @@ func (d *qbittorrentDriver) Add(ctx context.Context, p Payload, opts AddOptions)
 		return fmt.Errorf("download: qbittorrent: login: %w", err)
 	}
 
-	category := d.category
-	if opts.Category != "" {
-		category = opts.Category
-	}
 	form := (&qbittorrent.TorrentAddOptions{
-		Paused:   d.paused || opts.Paused,
-		Category: category,
-		Tags:     strings.Join(mergeTags(d.tags, opts.Tags), ","),
+		Paused:   d.paused,
+		Category: d.category,
+		Tags:     strings.Join(d.tags, ","),
 	}).Prepare()
 
 	var (

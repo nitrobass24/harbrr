@@ -129,7 +129,7 @@ func TestTransmissionAdd_ViaURL(t *testing.T) {
 		"magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=test",
 		"http://tracker.example/dl?token=sealed",
 	} {
-		if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: url}, AddOptions{}); err != nil {
+		if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: url}); err != nil {
 			t.Fatalf("Add(%s): %v", url, err)
 		}
 		if got, ok := stub.addArgs["filename"].(string); !ok || got != url {
@@ -148,7 +148,7 @@ func TestTransmissionAdd_ViaBytes(t *testing.T) {
 	drv := newTestTransmission(srv.URL+"/transmission/rpc", "admin", "adminadmin", domain.TransmissionSettings{})
 
 	raw := []byte("d8:announce...e")
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, Bytes: raw, Name: "test.torrent"}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, Bytes: raw, Name: "test.torrent"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	got, ok := stub.addArgs["metainfo"].(string)
@@ -171,20 +171,15 @@ func TestTransmissionAdd_OptionMapping(t *testing.T) {
 	t.Parallel()
 	stub := &transmissionStub{}
 	srv := newTransmissionStub(t, stub)
-	drv := newTestTransmission(srv.URL+"/transmission/rpc", "admin", "adminadmin", domain.TransmissionSettings{DownloadDir: "/downloads/rpc"})
+	drv := newTestTransmission(srv.URL+"/transmission/rpc", "admin", "adminadmin", domain.TransmissionSettings{DownloadDir: "/downloads/rpc", StartPaused: true})
 
-	err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, AddOptions{
-		Category: "tv-sonarr",
-		Tags:     []string{"harbrr", "auto"},
-		Paused:   true,
-	})
+	err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"})
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 
-	labels, ok := stub.addArgs["labels"].([]any)
-	if !ok || len(labels) != 3 || labels[0] != "tv-sonarr" || labels[1] != "harbrr" || labels[2] != "auto" {
-		t.Fatalf("labels = %v, want [tv-sonarr harbrr auto]", stub.addArgs["labels"])
+	if _, ok := stub.addArgs["labels"]; ok {
+		t.Fatalf("labels = %v, want none (Transmission has no per-client category/tags)", stub.addArgs["labels"])
 	}
 	if paused, _ := stub.addArgs["paused"].(bool); !paused {
 		t.Fatalf("paused = %v, want true", stub.addArgs["paused"])
@@ -203,9 +198,7 @@ func TestTransmissionAdd_NoHitAndRun(t *testing.T) {
 	srv := newTransmissionStub(t, stub)
 	drv := newTestTransmission(srv.URL+"/transmission/rpc", "admin", "adminadmin", domain.TransmissionSettings{})
 
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, AddOptions{
-		Category: "tv-sonarr", Tags: []string{"harbrr"},
-	}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	for _, forbidden := range []string{"seedRatioLimit", "seedRatioMode", "seedIdleLimit", "seedIdleMode"} {
@@ -221,7 +214,7 @@ func TestTransmissionAdd_UsenetUnsupported(t *testing.T) {
 	srv := newTransmissionStub(t, stub)
 	drv := newTestTransmission(srv.URL+"/transmission/rpc", "admin", "adminadmin", domain.TransmissionSettings{})
 
-	err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: "https://example.com/release.nzb"}, AddOptions{})
+	err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: "https://example.com/release.nzb"})
 	if !errors.Is(err, ErrUnsupportedProtocol) {
 		t.Fatalf("Add(usenet) error = %v, want ErrUnsupportedProtocol", err)
 	}

@@ -191,7 +191,7 @@ func TestDSAdd_ViaURL(t *testing.T) {
 	drv := newTestDS(srv.URL, "admin", "hunter2", domain.DownloadStationSettings{Directory: "downloads"})
 
 	const nzbURL = "https://example.com/release.nzb"
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: nzbURL}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolUsenet, URL: nzbURL}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if got := stub.gotCreateQuery.Get("type"); got != "url" {
@@ -215,7 +215,7 @@ func TestDSAdd_ViaBytes(t *testing.T) {
 	drv := newTestDS(srv.URL, "admin", "hunter2", domain.DownloadStationSettings{})
 
 	payload := []byte("d8:announce...e")
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, Bytes: payload, Name: "test.torrent"}, AddOptions{}); err != nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, Bytes: payload, Name: "test.torrent"}); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if got := first(stub.gotCreateForm["type"]); got != "file" {
@@ -242,23 +242,9 @@ func TestDSAdd_TorrentAndUsenetBothSupported(t *testing.T) {
 		{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"},
 		{Protocol: ProtocolUsenet, URL: "https://example.com/release.nzb"},
 	} {
-		if err := drv.Add(context.Background(), p, AddOptions{}); err != nil {
+		if err := drv.Add(context.Background(), p); err != nil {
 			t.Fatalf("Add(%s): %v", p.Protocol, err)
 		}
-	}
-}
-
-func TestDSAdd_CategoryOverridesDirectory(t *testing.T) {
-	t.Parallel()
-	stub := &dsStub{createSuccess: true}
-	srv := newDSStub(t, stub)
-	drv := newTestDS(srv.URL, "admin", "hunter2", domain.DownloadStationSettings{Directory: "default-dir"})
-
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, AddOptions{Category: "override-dir"}); err != nil {
-		t.Fatalf("Add: %v", err)
-	}
-	if got := stub.gotCreateQuery.Get("destination"); got != "override-dir" {
-		t.Fatalf("destination = %q, want override-dir (opts.Category overrides settings default)", got)
 	}
 }
 
@@ -268,7 +254,7 @@ func TestDSAdd_CreateFailureSurfaced(t *testing.T) {
 	srv := newDSStub(t, stub)
 	drv := newTestDS(srv.URL, "admin", "hunter2", domain.DownloadStationSettings{})
 
-	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}, AddOptions{}); err == nil {
+	if err := drv.Add(context.Background(), Payload{Protocol: ProtocolTorrent, URL: "magnet:?xt=urn:btih:x"}); err == nil {
 		t.Fatal("expected an error when create responds success:false")
 	}
 }

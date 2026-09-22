@@ -213,8 +213,8 @@ func (s *Service) TestConnection(ctx context.Context, id int64) error {
 // Grab hands an already-resolved release to a configured client. It resolves nothing
 // itself — the caller (the management API) has already turned the search result's link
 // into a Payload, so no passkey-bearing link is ever handled here. A disabled client is
-// refused rather than silently used, and the payload goes to the driver with empty
-// AddOptions: each driver folds its own per-client category/tags/paused defaults.
+// refused rather than silently used; each driver applies its own per-client
+// category/tags/paused settings.
 func (s *Service) Grab(ctx context.Context, id int64, p Payload) error {
 	c, err := s.Get(ctx, id)
 	if err != nil {
@@ -227,7 +227,7 @@ func (s *Service) Grab(ctx context.Context, id int64, p Payload) error {
 	if err != nil {
 		return err
 	}
-	if err := driver.Add(ctx, p, AddOptions{}); err != nil {
+	if err := driver.Add(ctx, p); err != nil {
 		return fmt.Errorf("download: grab: %w", err)
 	}
 	return nil
