@@ -2545,7 +2545,7 @@ components:
           description: >
             machine-readable code clients can branch on — one of: bad_request,
             invalid, unauthorized, invalid_credentials, invalid_api_key, forbidden,
-            not_found, conflict, already_setup, request_too_large, not_implemented,
+            not_found, conflict, already_setup, request_too_large,
             unavailable, upstream_unreachable, internal. An OIDC ID-token
             verification failure also uses invalid_credentials.
       required: [error, code]
