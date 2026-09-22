@@ -1,7 +1,6 @@
 package nzbindex
 
 import (
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -43,8 +42,8 @@ var titleRe = regexp.MustCompile(`"([^:/]*?)(?:\.(?:rar|nfo|mkv|par2|001|nzb|url
 // parses to a *normalizer.Release. A malformed body is an ErrParseError.
 func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	var resp apiResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("nzbindex: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
+	if err := native.DecodeJSON("nzbindex", "search response", body, &resp); err != nil {
+		return nil, err
 	}
 	if resp.Error {
 		msg := apphttp.ScrubValues(strings.TrimSpace(resp.ErrorMessage), []string{d.apikey})

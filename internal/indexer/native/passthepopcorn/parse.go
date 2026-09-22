@@ -1,14 +1,11 @@
 package passthepopcorn
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
 
-	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
@@ -78,8 +75,8 @@ type ptpTorrent struct {
 // sorts by PublishDate descending for a deterministic feed.
 func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	var resp ptpResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("passthepopcorn: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
+	if err := native.DecodeJSON("passthepopcorn", "search response", body, &resp); err != nil {
+		return nil, err
 	}
 	if resp.TotalResults.Str() == "" || resp.TotalResults.Int64() == 0 || resp.Movies == nil {
 		return nil, nil

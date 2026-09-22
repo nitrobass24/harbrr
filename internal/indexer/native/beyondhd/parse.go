@@ -1,12 +1,10 @@
 package beyondhd
 
 import (
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
 
-	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -102,8 +100,8 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 		return nil, fmt.Errorf("beyondhd: %w", login.ErrLoginFailed)
 	}
 	var resp bhdResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("beyondhd: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
+	if err := native.DecodeJSON("beyondhd", "search response", body, &resp); err != nil {
+		return nil, err
 	}
 	if resp.StatusCode == statusFailure {
 		// An invalid key was already answered above (containsInvalidKey reads the raw

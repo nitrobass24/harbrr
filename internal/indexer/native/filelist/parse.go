@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
@@ -64,8 +63,8 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 		return nil, fmt.Errorf("filelist: api error: %s: %w", d.Scrub(env), search.ErrParseError)
 	}
 	var rows []filelistTorrent
-	if err := json.Unmarshal(body, &rows); err != nil {
-		return nil, fmt.Errorf("filelist: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
+	if err := native.DecodeJSON("filelist", "search response", body, &rows); err != nil {
+		return nil, err
 	}
 
 	freeOnly := native.CheckboxOn(d.Cfg["freeleech_only"])

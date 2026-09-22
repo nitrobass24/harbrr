@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -80,8 +79,8 @@ type btnTorrent struct {
 // TorrentID for a deterministic feed (and stable tests).
 func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	var resp btnResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("broadcastthenet: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
+	if err := native.DecodeJSON("broadcastthenet", "search response", body, &resp); err != nil {
+		return nil, err
 	}
 	if resp.Error != nil {
 		if resp.Error.Code == invalidAPIKeyCode {
@@ -123,8 +122,8 @@ func decodeTorrents(result *btnResult) (map[string]btnTorrent, error) {
 			result.Results.Int64(), search.ErrParseError)
 	}
 	var torrents map[string]btnTorrent
-	if err := json.Unmarshal(raw, &torrents); err != nil {
-		return nil, fmt.Errorf("broadcastthenet: decode torrents: %s: %w", apphttp.DecodeErrorDetail(err, raw), search.ErrParseError)
+	if err := native.DecodeJSON("broadcastthenet", "torrents", raw, &torrents); err != nil {
+		return nil, err
 	}
 	return torrents, nil
 }

@@ -8,9 +8,7 @@ import (
 	stdhttp "net/http"
 	"strings"
 
-	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
@@ -100,9 +98,8 @@ func (d *driver) authenticate(ctx context.Context, runtimeSecrets ...string) (st
 	}
 
 	var payload loginResponse
-	if err := json.Unmarshal(resp.Body, &payload); err != nil {
-		parseErr := fmt.Errorf("speedapp: decode login response: %s: %w", apphttp.DecodeErrorDetail(err, resp.Body), search.ErrParseError)
-		return "", d.ScrubErr(parseErr, runtimeSecrets...)
+	if err := native.DecodeJSON("speedapp", "login response", resp.Body, &payload); err != nil {
+		return "", d.ScrubErr(err, runtimeSecrets...)
 	}
 	token := strings.TrimSpace(payload.Token)
 	if token != "" {

@@ -1,7 +1,6 @@
 package nebulance
 
 import (
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -57,14 +56,14 @@ type apiRow struct {
 // unrecognized responses retain [search.ErrParseError].
 func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	var response apiResponse
-	if err := json.Unmarshal(body, &response); err != nil {
+	if err := native.DecodeJSON("nebulance", "search response", body, &response); err != nil {
 		if isBareAuthError(body) {
 			return nil, fmt.Errorf("nebulance: invalid API key: %w", login.ErrLoginFailed)
 		}
 		if native.MentionsAny(string(body), "api is down") {
 			return nil, fmt.Errorf("nebulance: API is unavailable: %w", search.ErrParseError)
 		}
-		return nil, fmt.Errorf("nebulance: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
+		return nil, err
 	}
 	if response.Error != nil {
 		return nil, d.apiError(response.Error.Message)
