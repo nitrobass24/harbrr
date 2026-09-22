@@ -1,10 +1,6 @@
 package regexadapter
 
-import (
-	"time"
-
-	"github.com/autobrr/go-cache/ttlcache"
-)
+import "sync"
 
 // Compile is called once per ROW per FIELD on the search path (search/fields.go
 // applies a field's filters inside the per-row loop), so a definition with N
@@ -19,18 +15,16 @@ import (
 // *Regexp after compileRegexp2 returns it, so entries are shared across
 // concurrent searches as-is.
 //
-// TTL rather than an unbounded map: a filter's pattern argument is a template
-// (search/fields.go renderFilterArgs), so a definition MAY interpolate row- or
-// query-derived text into the pattern itself and make the key space unbounded.
-// No vendored definition does today (0 of 1890 filter arg-blocks), but a dropin
-// or a future vendor refresh can, and an eviction policy costs nothing here.
-// The 15-minute sliding window matches go-cache's own regexcache: a pattern in
-// active use never expires, and a definition that stops being searched lets its
-// patterns go.
-var compileCache = ttlcache.New[compileKey, *Regexp](
-	ttlcache.SetDefaultTTL(15*time.Minute),
-	ttlcache.SetTimerResolution(5*time.Minute),
-)
+// The key space is bounded by the definitions on disk: a filter's pattern
+// argument is a template (search/fields.go renderFilterArgs), but no definition
+// interpolates row- or query-derived text into a pattern (0 of 1890 vendored
+// filter arg-blocks), so nothing evicts and a plain sync.Map suffices. Two
+// concurrent first compiles of the same key may both compile; last write wins
+// and either entry is equally valid.
+//
+// ponytail: unbounded map; add an eviction policy if a dropin ever templates
+// row-derived text into a pattern and makes the key space unbounded.
+var compileCache sync.Map // compileKey -> *Regexp
 
 // compileKey identifies a compiled pattern. It keys on the ROUTING DECISION
 // rather than on RouteOptions, because that is all the routing inputs

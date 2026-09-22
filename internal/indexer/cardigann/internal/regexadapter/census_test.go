@@ -83,12 +83,10 @@ func compileCensusPattern(t *testing.T, def *loader.Definition, pat string, s *c
 }
 
 // regexp2Reason classifies why a pattern routed to regexp2, for the breakdown.
-// Precedence matches Compile's: opt-in, then non-Latin language, then .NET
-// constructs, else the RE2-compile-failure fallback.
+// Precedence matches Compile's: non-Latin language, then .NET constructs, else
+// the RE2-compile-failure fallback.
 func regexp2Reason(pat string, opts RouteOptions) string {
 	switch {
-	case opts.OptIn:
-		return "opt-in"
 	case isNonLatinScript(opts.Language):
 		return "non-Latin-language"
 	case hasDotNetConstructs(pat):

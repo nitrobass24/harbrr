@@ -186,7 +186,6 @@ func TestRouting_Triggers(t *testing.T) {
 	}{
 		{"plain latin -> RE2", `(\d+)-(\w+)`, RouteOptions{}, EngineRE2},
 		{"latin language -> RE2", `\d+`, RouteOptions{Language: "en-US"}, EngineRE2},
-		{"opt-in -> regexp2", `\d+`, RouteOptions{OptIn: true}, EngineRegexp2},
 		{"non-latin zh -> regexp2", `\d+`, RouteOptions{Language: "zh-CN"}, EngineRegexp2},
 		{"non-latin ru -> regexp2", `\d+`, RouteOptions{Language: "ru-RU"}, EngineRegexp2},
 		{"non-latin el -> regexp2", `\d+`, RouteOptions{Language: "el-GR"}, EngineRegexp2},
@@ -326,9 +325,10 @@ func TestNormalizePattern(t *testing.T) {
 func TestReDoS_Timeout(t *testing.T) {
 	t.Parallel()
 	// Classic catastrophic backtracking: (a+)+$ against a long non-matching
-	// input. Force the regexp2 path via OptIn (RE2 would run this in linear time
-	// and never exhibit the pathology — the timeout guard exists for regexp2).
-	re, err := Compile(`(a+)+$`, RouteOptions{OptIn: true})
+	// input. The leading lookahead forces the regexp2 route (RE2 would run this
+	// in linear time and never exhibit the pathology — the timeout guard exists
+	// for regexp2).
+	re, err := Compile(`(?=a)(a+)+$`, RouteOptions{})
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
@@ -356,7 +356,7 @@ func TestReDoS_Timeout(t *testing.T) {
 // matches a cheap first token ("X") so the timeout fires on a *later* match.
 func TestReDoS_TimeoutOnLaterMatchInReplace(t *testing.T) {
 	t.Parallel()
-	re, err := Compile(`X|(a+)+$`, RouteOptions{OptIn: true})
+	re, err := Compile(`X|(?=a)(a+)+$`, RouteOptions{})
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
@@ -511,8 +511,10 @@ func newRE2(pattern string) (*Regexp, error) {
 	return re, nil
 }
 
+// newRegexp2 forces the regexp2 route for an arbitrary pattern via the
+// non-Latin-language trigger, leaving the pattern under test untouched.
 func newRegexp2(pattern string) (*Regexp, error) {
-	return Compile(pattern, RouteOptions{OptIn: true})
+	return Compile(pattern, RouteOptions{Language: "ru-RU"})
 }
 
 func assertEngine(t *testing.T, re *Regexp, want Engine) {
