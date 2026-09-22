@@ -110,7 +110,7 @@ func dedupeByGUID(releases []*normalizer.Release) []*normalizer.Release {
 // is the real match count pre-slice and the page is sliced locally to [offset, offset+limit).
 func localPageResult(releases []*normalizer.Release, pg paging) SearchResult {
 	return SearchResult{
-		Releases: pg.apply(releases),
+		Releases: window(pg, releases),
 		Total:    len(releases),
 		Offset:   pg.offset,
 		Limit:    pg.limit,

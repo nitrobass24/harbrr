@@ -150,7 +150,7 @@ func SearchAggregate(ctx context.Context, members []MemberOutcome, q url.Values)
 	fetched := fanOut(ctx, members, memberQuery(q))
 	merged := mergeByPublishDate(members, fetched)
 	return AggregateResult{
-		Releases: pg.applyAggregate(merged),
+		Releases: window(pg, merged),
 		Members:  ledger(members, fetched),
 		Total:    len(merged),
 		Offset:   pg.offset,
@@ -270,14 +270,6 @@ func publishedAt(r *normalizer.Release) time.Time {
 		return time.Time{}
 	}
 	return t
-}
-
-// applyAggregate is paging.apply for the merged set.
-func (p paging) applyAggregate(releases []AggregateRelease) []AggregateRelease {
-	if p.offset >= len(releases) {
-		return nil
-	}
-	return releases[p.offset:min(p.offset+p.limit, len(releases))]
 }
 
 // UnionCapabilities merges member capabilities into the caps an aggregate feed
