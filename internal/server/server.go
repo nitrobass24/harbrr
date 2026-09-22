@@ -64,7 +64,7 @@ type Server struct {
 // so internal patterns stay absolute.
 func New(deps Deps, cfg Config) *Server {
 	root := chi.NewRouter()
-	root.Use(chimw.RequestID, chimw.Recoverer, requestLogger(deps.Logger))
+	root.Use(chimw.Recoverer, requestLogger(deps.Logger))
 
 	root.Handle("/api/indexers/{slug}/results/*", deps.Torznab)
 	root.Handle("/api/indexers/{slug}/dl", deps.Torznab)
