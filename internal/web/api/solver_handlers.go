@@ -23,16 +23,7 @@ type solverResponse struct {
 
 // listSolvers returns all solvers (URLs redacted).
 func (rt *router) listSolvers(w http.ResponseWriter, r *http.Request) {
-	list, err := rt.Solver.List(r.Context())
-	if err != nil {
-		rt.writeServiceError(w, "list solvers", err)
-		return
-	}
-	out := make([]solverResponse, 0, len(list))
-	for _, s := range list {
-		out = append(out, toSolverResponse(s))
-	}
-	writeJSON(w, http.StatusOK, out)
+	listResource(rt, w, r, "list solvers", rt.Solver.List, toSolverResponse)
 }
 
 // createSolver adds a solver with its endpoint URL encrypted.
@@ -58,16 +49,7 @@ func (rt *router) createSolver(w http.ResponseWriter, r *http.Request) {
 
 // getSolver returns one solver (URL redacted).
 func (rt *router) getSolver(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "solver")
-	if !ok {
-		return
-	}
-	s, err := rt.Solver.Get(r.Context(), id)
-	if err != nil {
-		rt.writeServiceError(w, "get solver", err)
-		return
-	}
-	writeJSON(w, http.StatusOK, toSolverResponse(s))
+	getResource(rt, w, r, "solver", "get solver", rt.Solver.Get, toSolverResponse)
 }
 
 // updateSolver patches a solver (a new url rotates the endpoint).

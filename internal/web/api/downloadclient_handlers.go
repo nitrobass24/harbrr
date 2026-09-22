@@ -35,16 +35,7 @@ type downloadClientResponse struct {
 
 // listDownloadClients returns all download clients (secrets redacted).
 func (rt *router) listDownloadClients(w http.ResponseWriter, r *http.Request) {
-	list, err := rt.Download.List(r.Context())
-	if err != nil {
-		rt.writeServiceError(w, "list download clients", err)
-		return
-	}
-	out := make([]downloadClientResponse, 0, len(list))
-	for _, c := range list {
-		out = append(out, toDownloadClientResponse(c))
-	}
-	writeJSON(w, http.StatusOK, out)
+	listResource(rt, w, r, "list download clients", rt.Download.List, toDownloadClientResponse)
 }
 
 // createDownloadClient adds a download client with its secret encrypted.
@@ -74,16 +65,7 @@ func (rt *router) createDownloadClient(w http.ResponseWriter, r *http.Request) {
 
 // getDownloadClient returns one download client (secret redacted).
 func (rt *router) getDownloadClient(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "download client")
-	if !ok {
-		return
-	}
-	c, err := rt.Download.Get(r.Context(), id)
-	if err != nil {
-		rt.writeServiceError(w, "get download client", err)
-		return
-	}
-	writeJSON(w, http.StatusOK, toDownloadClientResponse(c))
+	getResource(rt, w, r, "download client", "get download client", rt.Download.Get, toDownloadClientResponse)
 }
 
 // updateDownloadClient patches a download client (an omitted secret keeps the
@@ -112,15 +94,7 @@ func (rt *router) updateDownloadClient(w http.ResponseWriter, r *http.Request) {
 
 // deleteDownloadClient removes a download client.
 func (rt *router) deleteDownloadClient(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "download client")
-	if !ok {
-		return
-	}
-	if err := rt.Download.Delete(r.Context(), id); err != nil {
-		rt.writeServiceError(w, "delete download client", err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	rt.deleteResource(w, r, "download client", "delete download client", rt.Download.Delete)
 }
 
 // enableDownloadClient / disableDownloadClient toggle a client.
