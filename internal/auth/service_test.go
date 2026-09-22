@@ -14,16 +14,6 @@ import (
 	"github.com/autobrr/harbrr/internal/domain"
 )
 
-type fastPasswordHasher struct{}
-
-func (fastPasswordHasher) HashPassword(password string) (string, error) {
-	return fastPasswordHash(password), nil
-}
-
-func (fastPasswordHasher) VerifyPassword(password, encoded string) (bool, error) {
-	return encoded == fastPasswordHash(password), nil
-}
-
 func fastPasswordHash(password string) string {
 	return fmt.Sprintf("test-sha256:%x", sha256.Sum256([]byte(password)))
 }
@@ -37,7 +27,12 @@ func newService(t *testing.T) *auth.Service {
 	// concrete storage type, matching the other services (notify, proxy,
 	// appsync, announce) that already depend on the Querier interface.
 	var q dbinterface.Querier = db
-	return auth.NewServiceWithPasswordHasher(q, fastPasswordHasher{})
+	s := auth.NewService(q)
+	s.HashPassword = func(password string) (string, error) { return fastPasswordHash(password), nil }
+	s.VerifyPassword = func(password, encoded string) (bool, error) {
+		return encoded == fastPasswordHash(password), nil
+	}
+	return s
 }
 
 func TestSetupAndLogin(t *testing.T) {

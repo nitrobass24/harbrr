@@ -40,16 +40,6 @@ import (
 // testKey is a synthetic 32-byte AES key (tests only).
 const testKey = "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
 
-type fastPasswordHasher struct{}
-
-func (fastPasswordHasher) HashPassword(password string) (string, error) {
-	return fastPasswordHash(password), nil
-}
-
-func (fastPasswordHasher) VerifyPassword(password, encoded string) (bool, error) {
-	return encoded == fastPasswordHash(password), nil
-}
-
 func fastPasswordHash(password string) string {
 	return fmt.Sprintf("test-sha256:%x", sha256.Sum256([]byte(password)))
 }
@@ -164,7 +154,11 @@ func newEnvFull(t *testing.T, cfg api.Config, buildCache func(db *database.DB) *
 	sm.Cookie.Persist = false
 	sm.Lifetime = time.Hour
 
-	authSvc := auth.NewServiceWithPasswordHasher(db, fastPasswordHasher{})
+	authSvc := auth.NewService(db)
+	authSvc.HashPassword = func(password string) (string, error) { return fastPasswordHash(password), nil }
+	authSvc.VerifyPassword = func(password, encoded string) (bool, error) {
+		return encoded == fastPasswordHash(password), nil
+	}
 	reg := registry.New(db, ldr, keyring, catalog.All(), registryOpts...)
 	source := &fakeAppSource{}
 	appsSvc := apps.NewService(db, keyring, http.DefaultClient)
