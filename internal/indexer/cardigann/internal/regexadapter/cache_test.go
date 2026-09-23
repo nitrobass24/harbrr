@@ -1,6 +1,7 @@
 package regexadapter
 
 import (
+	"strconv"
 	"sync"
 	"testing"
 )
@@ -107,5 +108,34 @@ func TestCompileCacheSkipsFailures(t *testing.T) {
 				t.Fatal("expected an error on the repeat compile too")
 			}
 		})
+	}
+}
+
+// TestCompileCacheCapClears pins the leak guard: once the memo holds
+// compileCacheCap entries the next store clears it, so an unbounded key space
+// (a dropin templating query text into a pattern) cannot grow it for the life
+// of the process. Drives storeCompiled directly so the test does not compile
+// thousands of real patterns.
+func TestCompileCacheCapClears(t *testing.T) {
+	compileCache.Clear()
+	compileCacheLen.Store(0)
+	t.Cleanup(func() { compileCache.Clear(); compileCacheLen.Store(0) })
+
+	r := &Regexp{}
+	for i := range compileCacheCap {
+		storeCompiled(compileKey{pattern: strconv.Itoa(i)}, r)
+	}
+	if got := compileCacheLen.Load(); got != compileCacheCap {
+		t.Fatalf("len after filling to cap = %d, want %d", got, compileCacheCap)
+	}
+	storeCompiled(compileKey{pattern: "one-past-cap"}, r)
+	if got := compileCacheLen.Load(); got != 1 {
+		t.Errorf("len after overflow = %d, want 1 (cache cleared, new entry stored)", got)
+	}
+	if _, ok := compileCache.Load(compileKey{pattern: "0"}); ok {
+		t.Errorf("entry from before the clear survived")
+	}
+	if _, ok := compileCache.Load(compileKey{pattern: "one-past-cap"}); !ok {
+		t.Errorf("entry stored on overflow is missing")
 	}
 }

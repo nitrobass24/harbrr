@@ -1,6 +1,9 @@
 package regexadapter
 
-import "sync"
+import (
+	"sync"
+	"sync/atomic"
+)
 
 // Compile is called once per ROW per FIELD on the search path (search/fields.go
 // applies a field's filters inside the per-row loop), so a definition with N
@@ -22,9 +25,29 @@ import "sync"
 // concurrent first compiles of the same key may both compile; last write wins
 // and either entry is equally valid.
 //
-// ponytail: unbounded map; add an eviction policy if a dropin ever templates
-// row-derived text into a pattern and makes the key space unbounded.
-var compileCache sync.Map // compileKey -> *Regexp
+// compileCacheCap bounds the map anyway: a dropin that templates row- or
+// query-derived text into a pattern would otherwise grow it by one entry per
+// distinct search for the life of the process. Clearing everything past the cap
+// is deliberately crude (the whole corpus recompiles once, ~6µs a pattern); it
+// is a leak guard, not an eviction policy.
+const compileCacheCap = 4096
+
+var (
+	compileCache    sync.Map // compileKey -> *Regexp
+	compileCacheLen atomic.Int64
+)
+
+// storeCompiled memoizes r under key, clearing the whole cache first when it
+// has passed compileCacheCap entries.
+func storeCompiled(key compileKey, r *Regexp) {
+	if compileCacheLen.Load() >= compileCacheCap {
+		compileCache.Clear()
+		compileCacheLen.Store(0)
+	}
+	if _, loaded := compileCache.LoadOrStore(key, r); !loaded {
+		compileCacheLen.Add(1)
+	}
+}
 
 // compileKey identifies a compiled pattern. It keys on the ROUTING DECISION
 // rather than on RouteOptions, because that is all the routing inputs

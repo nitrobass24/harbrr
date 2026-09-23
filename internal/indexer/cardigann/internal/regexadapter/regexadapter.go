@@ -97,7 +97,7 @@ func Compile(pattern string, opts RouteOptions) (*Regexp, error) {
 		if err != nil {
 			return nil, err
 		}
-		compileCache.Store(key, r)
+		storeCompiled(key, r)
 		return r, nil
 	}
 
@@ -120,11 +120,11 @@ func Compile(pattern string, opts RouteOptions) (*Regexp, error) {
 			if err2 != nil {
 				return nil, err2
 			}
-			compileCache.Store(key, r)
+			storeCompiled(key, r)
 			return r, nil
 		}
 		r := &Regexp{engine: EngineRE2, re: re}
-		compileCache.Store(key, r)
+		storeCompiled(key, r)
 		return r, nil
 	}
 
@@ -139,7 +139,7 @@ func Compile(pattern string, opts RouteOptions) (*Regexp, error) {
 		// keying on an error too. Left uncached deliberately.
 		return nil, fmt.Errorf("pattern %q compiles under neither engine: RE2: %w; regexp2: %w", pattern, err, re2Err)
 	}
-	compileCache.Store(key, r)
+	storeCompiled(key, r)
 	return r, nil
 }
 

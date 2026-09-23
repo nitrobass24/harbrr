@@ -7,8 +7,10 @@ The one call site this ADR adopted `ttlcache` for now uses a plain `sync.Map`, a
 definition interpolates row- or query-derived text into a filter pattern (0 of 1890 vendored
 filter arg-blocks), so the key space is bounded by the defs on disk and there is nothing for a
 TTL to evict — exactly the swap the Consequences section below anticipated, at exactly the cost
-it named (the eviction policy, and nothing else). Everything after this line is the historical
-record of the original decision.
+it named (the eviction policy, and nothing else). The unbounded-key-space case the "Why a TTL"
+section guards against is covered by a hard entry cap that clears the map instead (a leak
+guard, not an eviction policy). Everything after this line is the historical record of the
+original decision.
 
 `github.com/autobrr/go-cache` (#563) ships three packages — `ttlcache`, `timecache`, and
 `regexcache`. harbrr adopts **`ttlcache`, in exactly one place**: memoizing
