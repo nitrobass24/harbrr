@@ -267,7 +267,7 @@ func TestTripBreakerSkipsFollowerInheritedCancel(t *testing.T) {
 // instead of being suppressed.
 //
 // With U8R-F5 the live-ctx follower now also re-runs its OWN live search when the flight
-// returns an inherited context error. With autobrr/harbrr#342's retryMissFlight, that
+// returns an inherited context error. With autobrr/harbrr#342's retry flight, that
 // recovery is itself ONE re-coalesced retry (not an immediate un-coalesced fallback), so
 // when even the retry inherits the same (synthetic, always-cancelling) error, the FIRST
 // search calls inner three times (the coalesced flight + the retry + the bounded

@@ -271,8 +271,8 @@ func New(db dbinterface.Querier, ldr *loader.Loader, keyring secretsKeyring, fam
 	res.circuitMu = &sync.Mutex{}
 	// Manager and StatsReporter are built last, from the resolver's finalized handles: the
 	// same clock and the same *IndexerStats pointer. Manager reaches the resolver only
-	// through the two narrow cleanup seams (serveEvicter / instanceForgetter), both
-	// satisfied by res; it never holds a *Resolver.
+	// through the narrow cleanup seam (serveCleaner), satisfied by res; it never holds
+	// a *Resolver.
 	r.Manager = &Manager{
 		db:        res.db,
 		instances: res.instances,
@@ -280,8 +280,7 @@ func New(db dbinterface.Querier, ldr *loader.Loader, keyring secretsKeyring, fam
 		clock:     res.clock,
 		loader:    res.loader,
 		native:    res.native,
-		evicter:   res,
-		forgetter: res,
+		cleanup:   res,
 	}
 	r.StatsReporter = &StatsReporter{
 		stats:       res.stats,
@@ -476,7 +475,7 @@ func (r *Resolver) member(ctx context.Context, inst domain.IndexerInstance) core
 // means that if two goroutines race to build the same uncached slug, the first to
 // cache wins and the other reuses it rather than installing a duplicate engine.
 //
-// build reads the instance's settings (proxy/solver refs, credentials) at build
+// buildAdapter reads the instance's settings (proxy/solver refs, credentials) at build
 // time, so an invalidate landing during the build makes the just-built engine
 // stale. Because the slug is not cached while building, that invalidate's
 // delete(cache) is a no-op and cannot stop the install on its own. resolve
@@ -493,9 +492,16 @@ func (r *Resolver) resolve(ctx context.Context, slug string) (core.Indexer, erro
 	genSlug, epoch := r.gen[slug], r.epoch
 	r.mu.Unlock()
 
-	idx, err := r.build(ctx, slug)
+	idx, err := r.buildAdapter(ctx, slug)
 	if err != nil {
 		return nil, err
+	}
+	// The adapter owns the cache-aside read and the freeleech serve-time view as an
+	// inline top-to-bottom sequence (see indexerAdapter.Search) — no decorator stack.
+	// Test deliberately uses buildAdapter directly, leaving cache nil so a credential
+	// probe never warms the cache.
+	if r.searchCache != nil {
+		idx.cache = r.searchCache
 	}
 
 	r.mu.Lock()
@@ -512,22 +518,6 @@ func (r *Resolver) resolve(ctx context.Context, slug string) (core.Indexer, erro
 	}
 	r.cache[slug] = idx
 	return idx, nil
-}
-
-// build resolves the served indexer for a slug: the flattened adapter, wired to the
-// search cache when caching is configured. The adapter owns the cache-aside read and the
-// freeleech serve-time view as an inline top-to-bottom sequence (see indexerAdapter.
-// Search) — no decorator stack. resolve caches and serves this; Test deliberately uses
-// buildAdapter, which leaves cache nil so a credential probe never warms the cache.
-func (r *Resolver) build(ctx context.Context, slug string) (core.Indexer, error) {
-	a, err := r.buildAdapter(ctx, slug)
-	if err != nil {
-		return nil, err
-	}
-	if r.searchCache != nil {
-		a.cache = r.searchCache
-	}
-	return a, nil
 }
 
 // buildAdapter builds the adapter for a slug at the base URL it is configured to use.

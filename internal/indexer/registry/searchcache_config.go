@@ -1,11 +1,12 @@
 package registry
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strconv"
 	"time"
 
@@ -328,7 +329,7 @@ func changedDefs(prev, next map[string]string) []defChange {
 			out = append(out, defChange{id: id, before: before})
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].id < out[j].id })
+	slices.SortFunc(out, func(a, b defChange) int { return cmp.Compare(a.id, b.id) })
 	return out
 }
 

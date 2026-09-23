@@ -67,10 +67,8 @@ func (t *immediateTimer) After(d time.Duration) <-chan time.Time {
 	return ch
 }
 
-// blockingTimer never fires, so a backoff sleep only ends via ctx cancellation.
-type blockingTimer struct{}
-
-func (blockingTimer) After(time.Duration) <-chan time.Time { return make(chan time.Time) }
+// blockingAfter never fires, so a backoff sleep only ends via ctx cancellation.
+func blockingAfter(time.Duration) <-chan time.Time { return make(chan time.Time) }
 
 // unlimited is a limiter lookup that never paces, so retry/backoff tests are not
 // slowed by the real per-host interval (pacing is tested separately).
@@ -125,7 +123,7 @@ func TestPacedDoer_SuccessNoRetry(t *testing.T) {
 	d := newPacedDoer(base, time.Second, zerolog.Nop())
 	d.limiter = unlimited
 	timer := &immediateTimer{}
-	d.timer = timer
+	d.after = timer.After
 
 	resp, err := d.Do(getReq(context.Background(), t))
 	if err != nil {
@@ -301,7 +299,7 @@ func TestPacedDoer_RetriesThenSucceeds(t *testing.T) {
 	d := newPacedDoer(base, time.Second, zerolog.Nop())
 	d.limiter = unlimited
 	timer := &immediateTimer{}
-	d.timer = timer
+	d.after = timer.After
 
 	resp, err := d.Do(getReq(context.Background(), t))
 	if err != nil {
@@ -320,7 +318,7 @@ func TestPacedDoer_ExhaustsToRateLimited(t *testing.T) {
 	base := &scriptDoer{steps: []scriptStep{{status: 503}}} // always 503
 	d := newPacedDoer(base, time.Second, zerolog.Nop())
 	d.limiter = unlimited
-	d.timer = &immediateTimer{}
+	d.after = (&immediateTimer{}).After
 
 	_, err := d.Do(getReq(context.Background(), t))
 	if !errors.Is(err, search.ErrRateLimited) {
@@ -340,7 +338,7 @@ func TestPacedDoer_OtherStatusPassThrough(t *testing.T) {
 	base := &scriptDoer{steps: []scriptStep{{status: 500}}}
 	d := newPacedDoer(base, time.Second, zerolog.Nop())
 	d.limiter = unlimited
-	d.timer = &immediateTimer{}
+	d.after = (&immediateTimer{}).After
 
 	resp, err := d.Do(getReq(context.Background(), t))
 	if err != nil {
@@ -381,7 +379,7 @@ func TestPacedDoer_CancelDuringBackoff(t *testing.T) {
 	base := &cancelOn429{cancel: cancel}
 	d := newPacedDoer(base, time.Second, zerolog.Nop())
 	d.limiter = unlimited
-	d.timer = blockingTimer{}
+	d.after = blockingAfter
 
 	_, err := d.Do(getReq(ctx, t))
 	if !errors.Is(err, context.Canceled) {
@@ -403,7 +401,7 @@ func TestPacedDoer_BudgetBoundsCumulativeWait(t *testing.T) {
 	base := &scriptDoer{steps: []scriptStep{{status: 503, retryAfter: "3600"}}}
 	d := newPacedDoer(base, time.Second, zerolog.Nop())
 	d.limiter = unlimited
-	d.timer = blockingTimer{} // backoff never fires; only the budget can end the sleep
+	d.after = blockingAfter // backoff never fires; only the budget can end the sleep
 	d.budget = 40 * time.Millisecond
 
 	start := time.Now()
@@ -493,7 +491,7 @@ func TestPacedDoer_SlowResponseDoesNotConsumeBudget(t *testing.T) {
 	base := &slowThenOKDoer{sleep: 30 * time.Millisecond}
 	d := newPacedDoer(base, time.Second, zerolog.Nop())
 	d.limiter = unlimited
-	d.timer = &immediateTimer{}
+	d.after = (&immediateTimer{}).After
 	d.budget = 15 * time.Millisecond // shorter than the slow response, but caps only waits/sleeps
 
 	resp, err := d.Do(getReq(context.Background(), t))
@@ -513,7 +511,7 @@ func TestPacedDoer_InboundDeadlineWinsOverBudget(t *testing.T) {
 	base := &scriptDoer{steps: []scriptStep{{status: 503, retryAfter: "3600"}}}
 	d := newPacedDoer(base, time.Second, zerolog.Nop())
 	d.limiter = unlimited
-	d.timer = blockingTimer{}
+	d.after = blockingAfter
 	d.budget = time.Hour // far larger than the inbound deadline below
 
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
@@ -554,7 +552,7 @@ func TestPacedDoer_ResetsBodyOnRetry(t *testing.T) {
 	base := &scriptDoer{steps: []scriptStep{{status: 429}, {status: 200}}}
 	d := newPacedDoer(base, time.Second, zerolog.Nop())
 	d.limiter = unlimited
-	d.timer = &immediateTimer{}
+	d.after = (&immediateTimer{}).After
 
 	req, err := stdhttp.NewRequestWithContext(context.Background(), stdhttp.MethodPost,
 		"https://t.invalid/login", strings.NewReader("user=alice&pass=secret"))

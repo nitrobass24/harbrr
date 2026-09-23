@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -35,27 +35,24 @@ type Manager struct {
 	clock     func() time.Time
 	loader    *loader.Loader
 	native    map[string]native.Family
-	evicter   serveEvicter
-	forgetter instanceForgetter
+	cleanup   serveCleaner
 }
 
-// serveEvicter drops what the SERVE path is holding for an indexer whose row just
+// serveCleaner drops what the SERVE path is holding for an indexer whose row just
 // changed: the resolver's built engine (wrong settings now) and its cached search
 // results (answered under those settings). Every committed mutation evicts.
 //
-// Both seams are consumer-side and UNEXPORTED, satisfied structurally by *Resolver, so
+// forgetInstance is the Delete-only third step: everything keyed by an instance id
+// that would otherwise OUTLIVE the deleted row — the search-cache entries and epoch,
+// the cache counters, the query/grab stats, the request budget, and the diagnostics
+// ring. For an update the instance still exists and its counters are still its own.
+//
+// The seam is consumer-side and UNEXPORTED, satisfied structurally by *Resolver, so
 // the Manager depends on eviction/cleanup alone — never on the resolve/build engine —
-// and neither reaches the public API (only InvalidateAll is exported).
-type serveEvicter interface {
+// and it never reaches the public API (only InvalidateAll is exported).
+type serveCleaner interface {
 	invalidate(slug string)
 	invalidateSearchCache(ctx context.Context, id int64)
-}
-
-// instanceForgetter drops everything keyed by an instance id that would otherwise
-// OUTLIVE the deleted row — the search-cache entries and epoch, the cache counters,
-// the query/grab stats, the request budget, and the diagnostics ring. Delete only:
-// for an update the instance still exists and its counters are still its own.
-type instanceForgetter interface {
 	forgetInstance(ctx context.Context, id int64)
 }
 
@@ -172,7 +169,7 @@ func normalizeCategoryIDs(ids []int) ([]int, error) {
 		seen[id] = true
 		out = append(out, id)
 	}
-	sort.Ints(out)
+	slices.Sort(out)
 	return out, nil
 }
 
@@ -182,6 +179,16 @@ func patch[T any](p *T, cur T) T {
 		return cur
 	}
 	return *p
+}
+
+// patchErr is patch for a field whose present value must be validated/normalized
+// first: a nil pointer keeps cur untouched, a present one (including an empty slice,
+// which clears a narrowing) runs through normalize.
+func patchErr[T any](p *T, cur T, normalize func(T) (T, error)) (T, error) {
+	if p == nil {
+		return cur, nil
+	}
+	return normalize(*p)
 }
 
 // AddParams is the input to Add. Slug defaults to DefinitionID when empty; Name
@@ -360,7 +367,7 @@ func (r *Manager) Add(ctx context.Context, p AddParams) (domain.IndexerInstance,
 		}
 		return domain.IndexerInstance{}, err
 	}
-	r.evicter.invalidate(slug)
+	r.cleanup.invalidate(slug)
 	return inst, nil
 }
 
@@ -489,8 +496,8 @@ func (r *Manager) Update(ctx context.Context, slug string, p UpdateParams) error
 		}
 		return err
 	}
-	r.evicter.invalidate(slug)
-	r.evicter.invalidateSearchCache(ctx, instID)
+	r.cleanup.invalidate(slug)
+	r.cleanup.invalidateSearchCache(ctx, instID)
 	return nil
 }
 
@@ -556,8 +563,8 @@ func (r *Manager) SetEnabled(ctx context.Context, slug string, enabled bool) err
 	if err := r.instances.SetEnabled(ctx, r.db, slug, enabled, r.clock()); err != nil {
 		return fmt.Errorf("registry: set enabled %q: %w", slug, err)
 	}
-	r.evicter.invalidate(slug)
-	r.evicter.invalidateSearchCache(ctx, inst.ID)
+	r.cleanup.invalidate(slug)
+	r.cleanup.invalidateSearchCache(ctx, inst.ID)
 	return nil
 }
 
@@ -576,8 +583,8 @@ func (r *Manager) Delete(ctx context.Context, slug string) error {
 	if err := r.instances.Delete(ctx, r.db, slug); err != nil {
 		return fmt.Errorf("registry: delete %q: %w", slug, err)
 	}
-	r.evicter.invalidate(slug)
-	r.forgetter.forgetInstance(ctx, inst.ID)
+	r.cleanup.invalidate(slug)
+	r.cleanup.forgetInstance(ctx, inst.ID)
 	return nil
 }
 
@@ -791,7 +798,7 @@ func (r *StatsReporter) AllStatuses(ctx context.Context) ([]HealthStatus, error)
 	if err != nil {
 		return nil, fmt.Errorf("registry: all statuses: %w", err)
 	}
-	sort.Slice(list, func(i, j int) bool { return list[i].Slug < list[j].Slug })
+	slices.SortFunc(list, func(a, b domain.IndexerInstance) int { return cmp.Compare(a.Slug, b.Slug) })
 	out := make([]HealthStatus, 0, len(list))
 	for _, inst := range list {
 		snap, err := r.statusOf(ctx, inst.ID, 1)
@@ -1234,15 +1241,15 @@ func validateRequiredSettings(fields map[string]loader.SettingsField, settings m
 // fields, validating priority/min-seeders/sync-categories where present. Split out of
 // updateInTx so that function stays within the length limit.
 func resolveMeta(inst domain.IndexerInstance, p UpdateParams) (database.InstanceMeta, error) {
-	priority, err := resolvePriority(p.Priority, inst.Priority)
+	priority, err := patchErr(p.Priority, inst.Priority, normalizePriority)
 	if err != nil {
 		return database.InstanceMeta{}, err
 	}
-	minSeeders, err := resolveMinSeeders(p.MinSeeders, inst.MinSeeders)
+	minSeeders, err := patchErr(p.MinSeeders, inst.MinSeeders, minSeedersPatch)
 	if err != nil {
 		return database.InstanceMeta{}, err
 	}
-	syncCats, err := resolveSyncCategories(p.SyncCategories, inst.SyncCategories)
+	syncCats, err := patchErr(p.SyncCategories, inst.SyncCategories, normalizeCategoryIDs)
 	if err != nil {
 		return database.InstanceMeta{}, err
 	}
@@ -1264,16 +1271,6 @@ func resolveMeta(inst domain.IndexerInstance, p UpdateParams) (database.Instance
 	}, nil
 }
 
-// resolveSyncCategories applies an optional sync-categories patch: a present update
-// (including an empty slice, which clears the narrowing) is validated; a nil one keeps
-// the instance's current value.
-func resolveSyncCategories(update *[]int, current []int) ([]int, error) {
-	if update == nil {
-		return current, nil
-	}
-	return normalizeCategoryIDs(*update)
-}
-
 // resolveRef applies a tri-state reference update: a present update wins (its
 // value, nil to clear); an absent one keeps the instance's current reference.
 func resolveRef(update domain.RefUpdate, current *int64) *int64 {
@@ -1283,24 +1280,7 @@ func resolveRef(update domain.RefUpdate, current *int64) *int64 {
 	return current
 }
 
-// resolvePriority applies an optional priority patch: a present update is
-// validated/defaulted (normalizePriority); a nil one keeps the instance's current
-// value.
-func resolvePriority(update *int, current int) (int, error) {
-	if update == nil {
-		return current, nil
-	}
-	return normalizePriority(*update)
-}
-
-// resolveMinSeeders applies an optional min-seeders patch: a present update is
-// validated; a nil one keeps the instance's current value.
-func resolveMinSeeders(update *int, current int) (int, error) {
-	if update == nil {
-		return current, nil
-	}
-	if err := validateMinSeeders(*update); err != nil {
-		return 0, err
-	}
-	return *update, nil
+// minSeedersPatch is validateMinSeeders in the (T) (T, error) shape patchErr takes.
+func minSeedersPatch(minSeeders int) (int, error) {
+	return minSeeders, validateMinSeeders(minSeeders)
 }

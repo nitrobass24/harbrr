@@ -415,7 +415,7 @@ func (c *SearchCache) effectiveExpiry(entry database.SearchCacheEntry, settings 
 // error if the leader's client disconnected or its request deadline elapsed
 // mid-fetch. When our OWN context is still live, that cancellation is the LEADER's,
 // not ours: we are a healthy request and must not return an errored feed just because
-// the request we coalesced onto went away. retryMissFlight handles that recovery (see
+// the request we coalesced onto went away. runMiss handles that recovery (see
 // its doc for why it re-enters the flight rather than searching independently). The
 // ctx.Err() == nil guard is load-bearing: a follower whose OWN ctx is cancelled must
 // still return the cancellation (never mask a real client-gone with a fresh search).
@@ -452,12 +452,34 @@ func (c *SearchCache) serveMiss(ctx context.Context, op cacheOp) ([]*normalizer.
 
 // runMiss is serveMiss's flight body: coalesce onto the singleflight, recover from
 // an inherited dead-leader cancellation, resolve the flight value.
+//
+// The recovery is ONE more flight at the same key. Singleflight forgets a key once its
+// flight completes, so that second Do starts a genuinely fresh flight: every follower
+// that reaches this branch around the same time re-coalesces onto ONE retry leader,
+// instead of each independently running its own live search against the tracker (a
+// follower stampede). If the retry ALSO inherits a dead leader's context error — the
+// retry leader died too — it falls back to a bounded, un-coalesced live search so a
+// healthy follower is still guaranteed an answer.
 func (c *SearchCache) runMiss(ctx context.Context, op cacheOp) ([]*normalizer.Release, error) {
 	flightKey := cacheFlightKey(op.key, op.builtEpoch)
+	return c.missFlightOnce(ctx, op, flightKey, func() ([]*normalizer.Release, error) {
+		return c.missFlightOnce(ctx, op, flightKey, func() ([]*normalizer.Release, error) {
+			return c.liveAndStoreRecording(ctx, op)
+		})
+	})
+}
+
+// missFlightOnce runs one miss flight at flightKey and resolves its value. When the
+// attempt inherits a dead flight leader's context error (the leader's own client
+// disconnected or its request deadline elapsed) while OUR ctx is still live, it hands
+// off to onDeadLeader instead of failing.
+func (c *SearchCache) missFlightOnce(
+	ctx context.Context, op cacheOp, flightKey string, onDeadLeader func() ([]*normalizer.Release, error),
+) ([]*normalizer.Release, error) {
 	v, err, _ := c.sf.Do(flightKey, c.missFlight(ctx, op))
 	if err != nil {
 		if ctx.Err() == nil && isContextError(err) {
-			return c.retryMissFlight(ctx, op, flightKey)
+			return onDeadLeader()
 		}
 		return nil, err //nolint:wrapcheck // already wrapped by liveAndStore/adapter; no key/payload to add.
 	}
@@ -494,26 +516,6 @@ func (c *SearchCache) missFlight(ctx context.Context, op cacheOp) func() (any, e
 		}
 		return missResult{releases: releases, info: info}, nil
 	}
-}
-
-// retryMissFlight re-runs the miss flight ONCE more at flightKey after the first
-// attempt inherited a dead flight leader's context error (the leader's own client
-// disconnected or its request deadline elapsed) while OUR ctx is still live.
-// Singleflight forgets a key once its flight completes, so this second Do starts a
-// genuinely fresh flight: every follower that reaches this branch around the same
-// time re-coalesces onto ONE retry leader, instead of each independently running its
-// own live search against the tracker (a follower stampede). If the retry ALSO
-// inherits a dead leader's context error — the retry leader died too — fall back to a
-// bounded, un-coalesced live search so a healthy follower is still guaranteed an answer.
-func (c *SearchCache) retryMissFlight(ctx context.Context, op cacheOp, flightKey string) ([]*normalizer.Release, error) {
-	v, err, _ := c.sf.Do(flightKey, c.missFlight(ctx, op))
-	if err != nil {
-		if ctx.Err() == nil && isContextError(err) {
-			return c.liveAndStoreRecording(ctx, op)
-		}
-		return nil, err //nolint:wrapcheck // already wrapped by liveAndStore/adapter; no key/payload to add.
-	}
-	return c.resolveMissFlightResult(ctx, v), nil
 }
 
 // resolveMissFlightResult unwraps a completed flight's value — missFlight is the only

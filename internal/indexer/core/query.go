@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	tzn "github.com/autobrr/harbrr/internal/torznab"
 )
@@ -106,12 +105,12 @@ func parsePaging(q url.Values) paging {
 	return paging{limit: limit, offset: offset}
 }
 
-// apply slices releases to the [offset, offset+limit) window with bounds guards
-// so an offset past the end yields an empty (not panicking) page.
-func (p paging) apply(releases []*normalizer.Release) []*normalizer.Release {
+// window slices releases to the [offset, offset+limit) page with bounds guards so an
+// offset past the end yields an empty (not panicking) page. Generic because the single-
+// indexer path pages *normalizer.Release and the aggregate path pages AggregateRelease.
+func window[T any](p paging, releases []T) []T {
 	if p.offset >= len(releases) {
 		return nil
 	}
-	end := min(p.offset+p.limit, len(releases))
-	return releases[p.offset:end]
+	return releases[p.offset:min(p.offset+p.limit, len(releases))]
 }

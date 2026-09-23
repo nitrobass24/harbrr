@@ -1,10 +1,11 @@
 package registry
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -134,25 +135,21 @@ func canonicalCategories(cats []string) []string {
 		seen[c] = struct{}{}
 		out = append(out, c)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		ni, erri := strconv.Atoi(out[i])
-		nj, errj := strconv.Atoi(out[j])
+	slices.SortFunc(out, func(a, b string) int {
+		na, erra := strconv.Atoi(a)
+		nb, errb := strconv.Atoi(b)
 		switch {
-		case erri == nil && errj == nil:
+		case erra == nil && errb == nil:
 			// Tie-break on the original string when two ids are numerically equal
-			// (e.g. "1" and "01") — sort.Slice is not stable, so without this the
+			// (e.g. "1" and "01") — SortFunc is not stable, so without this the
 			// canonical order, and thus the cache key, would vary between runs.
-			if ni == nj {
-				return out[i] < out[j]
-			}
-			return ni < nj
-		case erri == nil:
-			// numeric sorts before non-numeric (custom) ids.
-			return true
-		case errj == nil:
-			return false
+			return cmp.Or(cmp.Compare(na, nb), cmp.Compare(a, b))
+		case erra == nil:
+			return -1 // numeric sorts before non-numeric (custom) ids.
+		case errb == nil:
+			return 1
 		default:
-			return out[i] < out[j]
+			return cmp.Compare(a, b)
 		}
 	})
 	return out
