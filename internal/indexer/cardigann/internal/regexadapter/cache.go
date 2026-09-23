@@ -38,7 +38,11 @@ var (
 )
 
 // storeCompiled memoizes r under key, clearing the whole cache first when it
-// has passed compileCacheCap entries.
+// has passed compileCacheCap entries. The check and the store are deliberately
+// not serialized: concurrent first compiles can overshoot the cap by their own
+// count and skew compileCacheLen by as much until the next clear resets it.
+// A leak guard tolerates that; a mutex here would serialize every cache miss
+// on the search path to make an approximate number exact.
 func storeCompiled(key compileKey, r *Regexp) {
 	if compileCacheLen.Load() >= compileCacheCap {
 		compileCache.Clear()
