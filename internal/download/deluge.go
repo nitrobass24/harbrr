@@ -115,10 +115,7 @@ func newDeluge(c domain.DownloadClient, secret string, _ *http.Client) (Driver, 
 		return nil, fmt.Errorf("download: deluge: parse port: %w", err)
 	}
 
-	var settings domain.DelugeSettings
-	if c.Settings.Deluge != nil {
-		settings = *c.Settings.Deluge
-	}
+	settings := deref(c.Settings.Deluge)
 
 	rpcSettings := deluge.Settings{Hostname: host, Port: uint(port), Login: c.Username, Password: secret}
 	var vendor delugeVendorClient

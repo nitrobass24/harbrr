@@ -45,10 +45,7 @@ type blackholeDriver struct {
 
 // newBlackhole builds the blackhole driver from a configured client row.
 func newBlackhole(c domain.DownloadClient, _ string, client *http.Client) (Driver, error) {
-	var settings domain.BlackholeSettings
-	if c.Settings.Blackhole != nil {
-		settings = *c.Settings.Blackhole
-	}
+	settings := deref(c.Settings.Blackhole)
 	return &blackholeDriver{settings: settings, client: client}, nil
 }
 

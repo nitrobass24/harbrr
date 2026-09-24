@@ -34,10 +34,7 @@ type downloadStationDriver struct {
 // newDownloadStation builds the driver from a configured client row and its
 // decrypted secret (the account password).
 func newDownloadStation(c domain.DownloadClient, secret string, client *http.Client) (Driver, error) {
-	var settings domain.DownloadStationSettings
-	if c.Settings.DownloadStation != nil {
-		settings = *c.Settings.DownloadStation
-	}
+	settings := deref(c.Settings.DownloadStation)
 	return &downloadStationDriver{
 		host:      strings.TrimRight(c.Host, "/"),
 		username:  c.Username,

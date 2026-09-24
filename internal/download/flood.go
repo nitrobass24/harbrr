@@ -32,10 +32,7 @@ type floodDriver struct {
 // newFlood builds the Flood driver from a configured client row and its
 // decrypted secret (the account password).
 func newFlood(c domain.DownloadClient, secret string, client *http.Client) (Driver, error) {
-	var settings domain.FloodSettings
-	if c.Settings.Flood != nil {
-		settings = *c.Settings.Flood
-	}
+	settings := deref(c.Settings.Flood)
 	return &floodDriver{
 		username:    c.Username,
 		password:    secret,

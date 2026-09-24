@@ -162,12 +162,7 @@ type InstanceRow struct {
 // (see loadAppConnections) so the operator's intent survives an old bundle. A
 // current-shape bundle always has IndexScope == "" and SelectedInstanceIDs == nil.
 type AppConnRow struct {
-	ID                  int64     `json:"id"`
-	Name                string    `json:"name"`
-	Kind                string    `json:"kind"`
-	BaseURL             string    `json:"baseUrl"`
-	APIKey              string    `json:"apiKey"`
-	HarbrrURL           string    `json:"harbrrUrl"`
+	connIdentity
 	HarbrrAPIKeyID      *int64    `json:"harbrrApiKeyId,omitempty"`
 	HarbrrAPIKey        string    `json:"harbrrApiKey"`
 	Enabled             bool      `json:"enabled"`
@@ -180,14 +175,25 @@ type AppConnRow struct {
 	UpdatedAt           time.Time `json:"updatedAt"`
 }
 
+// connIdentity is the App-bearing half of a bundled connection row: the fields restore
+// hands to Resolve, plus the source id it keys the resolved App by. Both connection rows
+// embed it so one resolver serves both; encoding/json flattens an embedded struct in
+// place, so the bundle's JSON shape is unchanged.
+type connIdentity struct {
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	Kind      string `json:"kind"`
+	BaseURL   string `json:"baseUrl"`
+	APIKey    string `json:"apiKey"`
+	HarbrrURL string `json:"harbrrUrl"`
+}
+
+// identity satisfies resolveConnApps' constraint; both row types promote it.
+func (c connIdentity) identity() connIdentity { return c }
+
 // AnnounceConnRow mirrors AppConnRow's secret pair for cross-seed announce targets.
 type AnnounceConnRow struct {
-	ID             int64     `json:"id"`
-	Name           string    `json:"name"`
-	Kind           string    `json:"kind"`
-	BaseURL        string    `json:"baseUrl"`
-	APIKey         string    `json:"apiKey"`
-	HarbrrURL      string    `json:"harbrrUrl"`
+	connIdentity
 	HarbrrAPIKeyID *int64    `json:"harbrrApiKeyId,omitempty"`
 	HarbrrAPIKey   string    `json:"harbrrApiKey"`
 	Enabled        bool      `json:"enabled"`

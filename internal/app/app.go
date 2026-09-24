@@ -331,7 +331,7 @@ func buildSearchCache(ctx context.Context, db *database.DB, cfg *config.Config, 
 // constructor.
 func (a *App) initSyncServices(httpClient *http.Client) {
 	a.appsync = appsync.NewService(a.db, registrySource{reg: a.registry}, a.apps, a.auth, a.keyring, httpClient, a.log)
-	a.announce = announce.NewService(a.db, a.apps, a.auth, a.keyring, announce.DefaultTargetFactory(httpClient, nil, nil), a.log)
+	a.announce = announce.NewService(a.db, a.apps, a.auth, a.keyring, announce.DefaultTargetFactory(httpClient), a.log)
 	a.searchCache.SetAnnounceSink(newAnnounceSink(a.announce, a.db, a.keyring, a.cfg.Server.BaseURL, a.cfg.Server.ExternalOrigin(), a.log))
 }
 

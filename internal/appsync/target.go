@@ -12,7 +12,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/url"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -78,9 +78,9 @@ func (d DesiredIndexer) CategoryIDs() []int {
 // alone fingerprint categories.
 func (d DesiredIndexer) hash() string {
 	cats := d.CategoryIDs()
-	sort.Ints(cats)
+	slices.Sort(cats)
 	caps := append([]string(nil), d.Capabilities...)
-	sort.Strings(caps)
+	slices.Sort(caps)
 	h := sha256.New()
 	fmt.Fprintf(h, "%s\x00%s\x00%v\x00%v\x00%d\x00%t", d.Name, d.FeedURL, cats, caps, d.Priority, d.Enabled)
 	// Protocol joins the fingerprint only when it diverges from the torrent default,

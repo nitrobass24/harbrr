@@ -14,16 +14,14 @@ import (
 const maxTorrentBytes = 8 << 20 // 8 MiB
 
 // DefaultTargetFactory builds the production per-kind announce driver. client (required)
-// is shared by the HTTP calls; fetch fetches the .torrent for qui's apply step (nil falls
-// back to an HTTP GET of the release's /dl URL); tags are applied to qui-injected torrents.
-func DefaultTargetFactory(client *http.Client, fetch TorrentFetcher, tags []string) TargetFactory {
-	if fetch == nil {
-		fetch = HTTPTorrentFetcher(client)
-	}
+// is shared by the HTTP calls, including the HTTP GET of the release's /dl URL that
+// fetches the .torrent for qui's apply step. Injected torrents carry no tags.
+func DefaultTargetFactory(client *http.Client) TargetFactory {
+	fetch := HTTPTorrentFetcher(client)
 	return func(conn domain.AnnounceConnection, toolKey string) (Target, error) {
 		switch conn.Kind {
 		case domain.AnnounceKindQui:
-			return NewQui(conn.BaseURL, toolKey, client, fetch, tags), nil
+			return NewQui(conn.BaseURL, toolKey, client, fetch, nil), nil
 		case domain.AnnounceKindCrossSeedV6:
 			return NewCrossSeedV6(conn.BaseURL, toolKey, client), nil
 		default:

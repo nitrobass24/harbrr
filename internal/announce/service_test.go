@@ -406,7 +406,7 @@ func TestServiceTestConnection(t *testing.T) {
 			ctx := context.Background()
 			srv := httptest.NewServer(tt.handler)
 			defer srv.Close()
-			svc, _, _ := newService(t, announce.DefaultTargetFactory(srv.Client(), nil, nil))
+			svc, _, _ := newService(t, announce.DefaultTargetFactory(srv.Client()))
 			conn, err := svc.CreateConnection(ctx, announce.CreateConnectionParams{
 				Name: tt.name, Kind: tt.kind, BaseURL: srv.URL, APIKey: "k", HarbrrURL: srv.URL,
 			})

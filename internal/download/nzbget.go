@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/autobrr/harbrr/internal/domain"
 	"github.com/autobrr/harbrr/internal/download/nzbget"
@@ -22,10 +21,7 @@ type nzbgetDriver struct {
 // decrypted secret (the account password). Host column = base URL
 // (e.g. http://host:6789); username + secret are HTTP Basic credentials.
 func newNZBGet(c domain.DownloadClient, secret string, client *http.Client) (Driver, error) {
-	var settings domain.NZBGetSettings
-	if c.Settings.NZBGet != nil {
-		settings = *c.Settings.NZBGet
-	}
+	settings := deref(c.Settings.NZBGet)
 	return &nzbgetDriver{
 		client: nzbget.New(nzbget.Options{
 			Host:       c.Host,
@@ -56,24 +52,19 @@ func (d *nzbgetDriver) Add(ctx context.Context, p Payload) error {
 		return fmt.Errorf("download: nzbget: %w: %s", ErrUnsupportedProtocol, p.Protocol)
 	}
 
-	category := d.defaultCategory
-
 	if len(p.Bytes) > 0 {
-		return d.appendContent(ctx, p, category)
+		return d.appendContent(ctx, p)
 	}
 	if p.URL == "" {
 		return fmt.Errorf("download: nzbget: %w", ErrURLRequired)
 	}
 
-	if err := d.client.AddFromURL(ctx, nzbget.AddNzbRequest{URL: p.URL, Category: category}); err != nil {
+	if err := d.client.AddFromURL(ctx, nzbget.AddNzbRequest{URL: p.URL, Category: d.defaultCategory}); err != nil {
 		// The nzb URL carries a harbrr API key (a sealed /dl link) and rides in the
 		// RPC request body (not the request URL), but a transport failure still
 		// surfaces as a *url.Error whose .URL is the jsonrpc endpoint — ScrubURLError
-		// drops it; the ReplaceAll is defense-in-depth for any literal-URL error
-		// text, mirroring qbittorrent.go's Add treatment.
-		err = apphttp.ScrubURLError(err)
-		scrubbed := strings.ReplaceAll(err.Error(), p.URL, apphttp.RedactURL(p.URL))
-		return fmt.Errorf("download: nzbget: add nzb from %s: %s", apphttp.RedactURL(p.URL), scrubbed)
+		// drops it before addURLError scrubs any literal URL out of the text.
+		return addURLError("download: nzbget: add nzb from", p.URL, apphttp.ScrubURLError(err))
 	}
 	return nil
 }
@@ -82,11 +73,11 @@ func (d *nzbgetDriver) Add(ctx context.Context, p Payload) error {
 // passkey-bearing link rides in this request, so only the *url.Error's own endpoint
 // (which carries NZBGet's Basic credentials in neither URL nor body) is scrubbed, for
 // the same defense-in-depth reason as the URL path.
-func (d *nzbgetDriver) appendContent(ctx context.Context, p Payload, category string) error {
+func (d *nzbgetDriver) appendContent(ctx context.Context, p Payload) error {
 	err := d.client.AddFromContent(ctx, nzbget.AddNzbContentRequest{
 		Filename: releaseFilename(p.Name, ".nzb", maxUploadNameBytes),
 		Content:  p.Bytes,
-		Category: category,
+		Category: d.defaultCategory,
 	})
 	if err != nil {
 		return fmt.Errorf("download: nzbget: upload nzb: %w", apphttp.ScrubURLError(err))

@@ -10,7 +10,6 @@ import (
 	"github.com/autobrr/go-qbittorrent"
 
 	"github.com/autobrr/harbrr/internal/domain"
-	apphttp "github.com/autobrr/harbrr/internal/http"
 )
 
 // errAddReportedFailure is returned when qBittorrent's add response reports every
@@ -33,10 +32,7 @@ type qbittorrentDriver struct {
 // localhost-bypass case). The per-client category/tags/start-paused settings are held
 // here and folded in by Add, the way every other driver folds its own defaults.
 func newQBittorrent(c domain.DownloadClient, secret string, _ *http.Client) (Driver, error) {
-	var settings domain.QBittorrentSettings
-	if c.Settings.QBittorrent != nil {
-		settings = *c.Settings.QBittorrent
-	}
+	settings := deref(c.Settings.QBittorrent)
 	return &qbittorrentDriver{
 		client: qbittorrent.NewClient(qbittorrent.Config{
 			Host:          c.Host,
@@ -102,10 +98,8 @@ func (d *qbittorrentDriver) Add(ctx context.Context, p Payload) error {
 		resp, err = d.client.AddTorrentFromUrlCtx(ctx, p.URL, form)
 		if err != nil {
 			// go-qbittorrent embeds the submitted URL in its add errors, and a
-			// sealed harbrr /dl link carries the apikey — scrub every occurrence
-			// before surfacing so it can't reach a log.
-			scrubbed := strings.ReplaceAll(err.Error(), p.URL, apphttp.RedactURL(p.URL))
-			return fmt.Errorf("download: qbittorrent: add torrent from %s: %s", apphttp.RedactURL(p.URL), scrubbed)
+			// sealed harbrr /dl link carries the apikey.
+			return addURLError("download: qbittorrent: add torrent from", p.URL, err)
 		}
 	}
 	if resp.FailureCount > 0 && resp.SuccessCount == 0 {
