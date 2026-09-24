@@ -420,7 +420,7 @@ func (b *Base) ScrubErr(err error, extra ...string) error {
 // apphttp.DecodeErrorDetail's shape/size summary (a decoder error alone is useless
 // when the body is an HTML login wall). what names the document being decoded, e.g.
 // "search response".
-func DecodeJSON(family, what string, body []byte, out any) error {
+func DecodeJSON[T any](family, what string, body []byte, out *T) error {
 	if err := json.Unmarshal(body, out); err != nil {
 		return fmt.Errorf("%s: decode %s: %s: %w", family, what, apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
 	}
