@@ -1,7 +1,6 @@
 package animebytes
 
 import (
-	"encoding/json"
 	"fmt"
 	"html"
 	"regexp"
@@ -10,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -122,8 +120,8 @@ type file struct {
 // PublishDate descending (Prowlarr's terminal OrderByDescending).
 func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	var resp response
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("animebytes: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
+	if err := native.DecodeJSON("animebytes", "search response", body, &resp); err != nil {
+		return nil, err
 	}
 	if strings.TrimSpace(resp.Error) != "" {
 		return nil, d.classifyError(resp.Error)

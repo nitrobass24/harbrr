@@ -2,6 +2,7 @@ package native
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -412,4 +413,16 @@ func (b *Base) ScrubErr(err error, extra ...string) error {
 		return err
 	}
 	return &scrubbedError{msg: msg, err: err}
+}
+
+// DecodeJSON unmarshals body into out, wrapping a failure as the parse error every
+// driver reports: "<family>: decode <what>: <detail>: parse error", where detail is
+// apphttp.DecodeErrorDetail's shape/size summary (a decoder error alone is useless
+// when the body is an HTML login wall). what names the document being decoded, e.g.
+// "search response".
+func DecodeJSON[T any](family, what string, body []byte, out *T) error {
+	if err := json.Unmarshal(body, out); err != nil {
+		return fmt.Errorf("%s: decode %s: %s: %w", family, what, apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
+	}
+	return nil
 }

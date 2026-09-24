@@ -1,7 +1,6 @@
 package avistaz
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"slices"
@@ -9,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -60,8 +58,8 @@ type avistazIDInfo struct {
 // date, or an unrecognized category type is a parse error (Prowlarr throws).
 func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	var resp avistazResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("avistaz: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
+	if err := native.DecodeJSON("avistaz", "search response", body, &resp); err != nil {
+		return nil, err
 	}
 	if resp.Data == nil {
 		return nil, fmt.Errorf("avistaz: search response carried no data array: %w", search.ErrParseError)

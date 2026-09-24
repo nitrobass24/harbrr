@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
@@ -78,8 +77,8 @@ const errNothingReturned = "Nothing returned, out of"
 // array, a malformed size, or an unparseable date is a parse error (Prowlarr throws).
 func (d *driver) parseReleases(body []byte, vip func() bool) ([]*normalizer.Release, error) {
 	var resp mamResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("myanonamouse: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
+	if err := native.DecodeJSON("myanonamouse", "search response", body, &resp); err != nil {
+		return nil, err
 	}
 	if strings.HasPrefix(resp.Error, errNothingReturned) {
 		return nil, nil

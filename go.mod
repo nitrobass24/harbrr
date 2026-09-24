@@ -8,7 +8,7 @@ require (
 	github.com/andybalholm/cascadia v1.3.5
 	github.com/autobrr/go-cache v1.0.0-rc1
 	github.com/autobrr/go-deluge v1.4.0
-	github.com/autobrr/go-qbittorrent v1.18.0
+	github.com/autobrr/go-qbittorrent v1.19.0
 	github.com/autobrr/go-rtorrent v1.12.0
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/dlclark/regexp2 v1.12.0
@@ -29,7 +29,7 @@ require (
 	golang.org/x/term v0.46.0
 	golang.org/x/text v0.42.0
 	golang.org/x/time v0.16.0
-	modernc.org/sqlite v1.58.0
+	modernc.org/sqlite v1.59.0
 )
 
 require (
@@ -48,7 +48,7 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	golang.org/x/exp v0.0.0-20251113190631-e25ba8c21ef6 // indirect
 	golang.org/x/sys v0.48.0 // indirect
-	modernc.org/libc v1.75.6 // indirect
+	modernc.org/libc v1.75.7 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )

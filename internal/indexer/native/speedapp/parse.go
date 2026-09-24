@@ -1,13 +1,11 @@
 package speedapp
 
 import (
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
 
-	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
@@ -42,8 +40,8 @@ type apiRow struct {
 
 func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	var rows *[]apiRow
-	if err := json.Unmarshal(body, &rows); err != nil {
-		return nil, fmt.Errorf("speedapp: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
+	if err := native.DecodeJSON("speedapp", "search response", body, &rows); err != nil {
+		return nil, err
 	}
 	if rows == nil {
 		return nil, fmt.Errorf("speedapp: unrecognized search response: %w", search.ErrParseError)

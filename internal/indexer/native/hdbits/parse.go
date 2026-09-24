@@ -2,14 +2,12 @@ package hdbits
 
 import (
 	"cmp"
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"slices"
 	"strconv"
 	"strings"
 
-	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -92,8 +90,8 @@ type tvdbInfo struct {
 // deterministic feed.
 func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	var resp hdbitsResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("hdbits: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
+	if err := native.DecodeJSON("hdbits", "search response", body, &resp); err != nil {
+		return nil, err
 	}
 	if resp.Status != statusSuccess {
 		return nil, d.statusError(resp.Status, resp.Message)
