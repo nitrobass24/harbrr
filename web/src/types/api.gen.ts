@@ -1533,7 +1533,7 @@ export interface components {
         Error: {
             /** @description human-readable message */
             error: string;
-            /** @description machine-readable code clients can branch on — one of: bad_request, invalid, unauthorized, invalid_credentials, invalid_api_key, forbidden, not_found, conflict, already_setup, request_too_large, not_implemented, unavailable, upstream_unreachable, internal. An OIDC ID-token verification failure also uses invalid_credentials. */
+            /** @description machine-readable code clients can branch on — one of: bad_request, invalid, unauthorized, invalid_credentials, invalid_api_key, forbidden, not_found, conflict, already_setup, request_too_large, unavailable, upstream_unreachable, internal. An OIDC ID-token verification failure also uses invalid_credentials. */
             code: string;
         };
         /** @description Optional reserved keys the engine understands when present in an indexer's free-form settings map (alongside the definition's own settings). All are optional; documented here because they are not part of any single definition's schema. proxy_url and cookie are secrets (stored encrypted, never echoed — they read back as the <redacted> sentinel). */

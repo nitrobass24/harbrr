@@ -60,8 +60,6 @@ func codeForStatus(status int) string {
 		return "conflict"
 	case http.StatusRequestEntityTooLarge:
 		return "request_too_large"
-	case http.StatusNotImplemented:
-		return "not_implemented"
 	case http.StatusServiceUnavailable:
 		return "unavailable"
 	default:

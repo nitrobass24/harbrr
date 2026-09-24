@@ -69,16 +69,7 @@ type syncAllResultResponse struct {
 
 // listConnections returns all app-sync connections.
 func (rt *router) listConnections(w http.ResponseWriter, r *http.Request) {
-	list, err := rt.AppSync.ListConnections(r.Context())
-	if err != nil {
-		rt.writeServiceError(w, "list connections", err)
-		return
-	}
-	out := make([]appConnectionResponse, 0, len(list))
-	for _, c := range list {
-		out = append(out, toConnectionResponse(c))
-	}
-	writeJSON(w, http.StatusOK, out)
+	listResource(rt, w, r, "list connections", rt.AppSync.ListConnections, toConnectionResponse)
 }
 
 // createConnection adds an app-sync connection and mints its dedicated harbrr key.
@@ -112,16 +103,7 @@ func (rt *router) createConnection(w http.ResponseWriter, r *http.Request) {
 
 // getConnection returns one connection (app key redacted).
 func (rt *router) getConnection(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "connection")
-	if !ok {
-		return
-	}
-	conn, err := rt.AppSync.GetConnection(r.Context(), id)
-	if err != nil {
-		rt.writeServiceError(w, "get connection", err)
-		return
-	}
-	writeJSON(w, http.StatusOK, toConnectionResponse(conn))
+	getResource(rt, w, r, "connection", "get connection", rt.AppSync.GetConnection, toConnectionResponse)
 }
 
 // updateConnection patches a connection (a new apiKey rotates the app credential).
@@ -152,15 +134,7 @@ func (rt *router) updateConnection(w http.ResponseWriter, r *http.Request) {
 
 // deleteConnection removes a connection and revokes its minted key.
 func (rt *router) deleteConnection(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "connection")
-	if !ok {
-		return
-	}
-	if err := rt.AppSync.DeleteConnection(r.Context(), id); err != nil {
-		rt.writeServiceError(w, "delete connection", err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	rt.deleteResource(w, r, "connection", "delete connection", rt.AppSync.DeleteConnection)
 }
 
 // enableConnection / disableConnection toggle a connection.

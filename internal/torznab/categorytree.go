@@ -1,7 +1,8 @@
 package torznab
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 	"strconv"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
@@ -71,10 +72,10 @@ func buildCategoryTree(advertised []mapper.Category) []capsCategory {
 // top-level by the standard-id / "zzz"+name key.
 func sortCategoryTree(top []*capsCategory) {
 	for _, n := range top {
-		sort.Slice(n.Subcats, func(i, j int) bool { return n.Subcats[i].ID < n.Subcats[j].ID })
+		slices.SortFunc(n.Subcats, func(a, b capsSubcat) int { return cmp.Compare(a.ID, b.ID) })
 	}
-	sort.SliceStable(top, func(i, j int) bool {
-		return topLevelSortKey(top[i]) < topLevelSortKey(top[j])
+	slices.SortStableFunc(top, func(a, b *capsCategory) int {
+		return cmp.Compare(topLevelSortKey(a), topLevelSortKey(b))
 	})
 }
 

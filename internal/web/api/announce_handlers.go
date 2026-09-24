@@ -27,16 +27,7 @@ type announceConnectionResponse struct {
 
 // listAnnounceConnections returns all configured announce targets (tool keys redacted).
 func (rt *router) listAnnounceConnections(w http.ResponseWriter, r *http.Request) {
-	conns, err := rt.Announce.ListConnections(r.Context())
-	if err != nil {
-		rt.writeServiceError(w, "list announce connections", err)
-		return
-	}
-	out := make([]announceConnectionResponse, 0, len(conns))
-	for _, c := range conns {
-		out = append(out, toAnnounceResponse(c))
-	}
-	writeJSON(w, http.StatusOK, out)
+	listResource(rt, w, r, "list announce connections", rt.Announce.ListConnections, toAnnounceResponse)
 }
 
 // createAnnounceConnection adds an announce target and mints its dedicated harbrr key.
@@ -64,16 +55,7 @@ func (rt *router) createAnnounceConnection(w http.ResponseWriter, r *http.Reques
 
 // getAnnounceConnection returns one announce connection (tool key redacted).
 func (rt *router) getAnnounceConnection(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "connection")
-	if !ok {
-		return
-	}
-	conn, err := rt.Announce.GetConnection(r.Context(), id)
-	if err != nil {
-		rt.writeServiceError(w, "get announce connection", err)
-		return
-	}
-	writeJSON(w, http.StatusOK, toAnnounceResponse(conn))
+	getResource(rt, w, r, "connection", "get announce connection", rt.Announce.GetConnection, toAnnounceResponse)
 }
 
 // updateAnnounceConnection patches an announce target. apiKey follows the pointer-omit
@@ -114,15 +96,7 @@ func (rt *router) testAnnounceConnection(w http.ResponseWriter, r *http.Request)
 
 // deleteAnnounceConnection removes a connection and revokes its minted key.
 func (rt *router) deleteAnnounceConnection(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "connection")
-	if !ok {
-		return
-	}
-	if err := rt.Announce.DeleteConnection(r.Context(), id); err != nil {
-		rt.writeServiceError(w, "delete announce connection", err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	rt.deleteResource(w, r, "connection", "delete announce connection", rt.Announce.DeleteConnection)
 }
 
 func (rt *router) enableAnnounceConnection(w http.ResponseWriter, r *http.Request) {

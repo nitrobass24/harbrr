@@ -19,6 +19,14 @@ const (
 	frontendLogMaxContextBytes = 4096
 )
 
+// frontendLogLevels is both the allowlist POST /api/logs/frontend validates against
+// and the mapping onto zerolog's levels.
+var frontendLogLevels = map[string]zerolog.Level{
+	"error": zerolog.ErrorLevel,
+	"warn":  zerolog.WarnLevel,
+	"info":  zerolog.InfoLevel,
+}
+
 // frontendLogBody is the request shape for POST /api/logs/frontend: a toast the web UI
 // showed the operator, relayed so it lands in the one log a single-user self-hosted
 // install actually has (see web/src/lib/notify.ts).
@@ -31,9 +39,7 @@ type frontendLogBody struct {
 // validate rejects an unrecognized level, an empty/oversize message, or an oversize
 // context. Every failure wraps domain.ErrInvalid, so writeServiceError maps it to 400.
 func (b frontendLogBody) validate() error {
-	switch b.Level {
-	case "error", "warn", "info":
-	default:
+	if _, ok := frontendLogLevels[b.Level]; !ok {
 		return fmt.Errorf("%w: level must be one of: error, warn, info", domain.ErrInvalid)
 	}
 	if b.Message == "" {
@@ -46,19 +52,6 @@ func (b frontendLogBody) validate() error {
 		return fmt.Errorf("%w: context exceeds %d bytes", domain.ErrInvalid, frontendLogMaxContextBytes)
 	}
 	return nil
-}
-
-// zerologLevel maps the validated three-value enum to a zerolog level. validate has
-// already rejected anything else, so the default only ever covers "info".
-func zerologLevel(level string) zerolog.Level {
-	switch level {
-	case "error":
-		return zerolog.ErrorLevel
-	case "warn":
-		return zerolog.WarnLevel
-	default:
-		return zerolog.InfoLevel
-	}
 }
 
 // postFrontendLog relays a web-UI toast into the daemon's own zerolog stream: harbrr is
@@ -76,7 +69,7 @@ func (rt *router) postFrontendLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ev := rt.Logger.WithLevel(zerologLevel(req.Level)).Str("component", "webui")
+	ev := rt.Logger.WithLevel(frontendLogLevels[req.Level]).Str("component", "webui")
 	if req.Context != "" {
 		ev = ev.Str("context", req.Context)
 	}

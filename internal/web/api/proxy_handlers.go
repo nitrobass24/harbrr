@@ -24,16 +24,7 @@ type proxyResponse struct {
 
 // listProxies returns all proxies (passwords omitted).
 func (rt *router) listProxies(w http.ResponseWriter, r *http.Request) {
-	list, err := rt.Proxy.List(r.Context())
-	if err != nil {
-		rt.writeServiceError(w, "list proxies", err)
-		return
-	}
-	out := make([]proxyResponse, 0, len(list))
-	for _, p := range list {
-		out = append(out, toProxyResponse(p))
-	}
-	writeJSON(w, http.StatusOK, out)
+	listResource(rt, w, r, "list proxies", rt.Proxy.List, toProxyResponse)
 }
 
 // createProxy adds a proxy with its password encrypted.
@@ -61,16 +52,7 @@ func (rt *router) createProxy(w http.ResponseWriter, r *http.Request) {
 
 // getProxy returns one proxy (password omitted).
 func (rt *router) getProxy(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "proxy")
-	if !ok {
-		return
-	}
-	p, err := rt.Proxy.Get(r.Context(), id)
-	if err != nil {
-		rt.writeServiceError(w, "get proxy", err)
-		return
-	}
-	writeJSON(w, http.StatusOK, toProxyResponse(p))
+	getResource(rt, w, r, "proxy", "get proxy", rt.Proxy.Get, toProxyResponse)
 }
 
 // updateProxy patches a proxy (an omitted password keeps the stored one).
