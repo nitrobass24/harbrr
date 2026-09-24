@@ -64,11 +64,11 @@ func (d *driver) fetchTorrent(ctx context.Context, link string) ([]byte, string,
 		// bare values and SessionSecrets drops the preference pairs too short to
 		// hand to a substring scrub.
 		resp, err := d.DoDownload(d.requestContext(ctx), req, d.site.classify,
-			native.SessionSecrets(cookieScrubExtras(session.cookie)...)...)
+			native.SessionSecrets(cookieScrubExtras(session.Cookie)...)...)
 		if err != nil {
 			// Tag the auth failure with the request-used generation so Recover
 			// renews the right session rather than coalescing against a stale one.
-			return fetchResult{}, withGeneration(err, session.generation)
+			return fetchResult{}, withGeneration(err, session.Generation)
 		}
 		return fetchResult{body: resp.Body, contentType: resp.Header.Get("Content-Type")}, nil
 	})

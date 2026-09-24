@@ -225,9 +225,7 @@ func TestSearchErrorScrubsRequestSessionAcrossRenewal(t *testing.T) {
 		if got := req.Header.Get("Cookie"); got != requestCookie {
 			t.Errorf("Cookie = %q, want request snapshot %q", got, requestCookie)
 		}
-		d.sessionMu.Lock()
-		d.session = sessionState{cookie: currentCookie, generation: 3}
-		d.sessionMu.Unlock()
+		d.Publish(native.SessionState{Cookie: currentCookie, Generation: 3})
 		return mkResp(stdhttp.StatusOK, body), nil
 	})
 
@@ -241,7 +239,7 @@ func TestSearchErrorScrubsRequestSessionAcrossRenewal(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	d = driverValue.(*driver)
-	d.session = sessionState{cookie: requestCookie, generation: 2}
+	d.Publish(native.SessionState{Cookie: requestCookie, Generation: 2})
 
 	_, err = d.Search(context.Background(), search.Query{Limit: 50})
 	if err == nil {

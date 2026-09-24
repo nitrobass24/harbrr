@@ -349,7 +349,7 @@ func TestScrubCredentialsCookies(t *testing.T) {
 	requestCookie := "session=" + requestValue
 	currentCookie := "session=" + currentValue
 	d := parseDriver(t, "alpharatio", map[string]string{"cookie": configuredCookie})
-	d.session = sessionState{cookie: currentCookie, generation: 3}
+	d.Publish(native.SessionState{Cookie: currentCookie, Generation: 3})
 
 	cases := []struct {
 		name  string

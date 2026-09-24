@@ -46,7 +46,7 @@ func TestManagedLoginRequestAndPersistence(t *testing.T) {
 	if persistedName != "cookie" || !strings.Contains(persistedValue, "session=synthetic-session") {
 		t.Errorf("persisted = %q %q", persistedName, persistedValue)
 	}
-	if session := driver.sessionSnapshot(); session.generation != 1 || session.cookie != persistedValue {
+	if session := driver.Snapshot(); session.Generation != 1 || session.Cookie != persistedValue {
 		t.Errorf("session = %+v, want published persisted cookie", session)
 	}
 }
@@ -92,21 +92,21 @@ func TestReplaceJarCookiesPathPrefixed(t *testing.T) {
 	cfg["cookie"] = testOldCookie
 	driver := newTestDriver(t, "https://xspeeds.example/root/", cfg, nil, nil)
 	//nolint:gosec // G124: synthetic jar state must exercise a root-scoped non-Secure cookie.
-	driver.jar.SetCookies(driver.cookieURL, []*stdhttp.Cookie{{
+	driver.Jar.SetCookies(driver.CookieURL, []*stdhttp.Cookie{{
 		Name:  "session",
 		Value: "synthetic-xspeeds-root-cookie",
 		Path:  "/",
 	}})
-	if got := len(driver.jar.Cookies(driver.cookieURL)); got != 2 {
+	if got := len(driver.Jar.Cookies(driver.CookieURL)); got != 2 {
 		t.Fatalf("visible cookies before clear = %d, want root and path-prefixed entries", got)
 	}
 
-	driver.replaceJarCookies("")
-	if got := serializeCookies(driver.jar.Cookies(driver.cookieURL)); got != "" {
+	driver.ReplaceJarCookies("")
+	if got := driver.JarCookieHeader(); got != "" {
 		t.Fatalf("jar after clear = %q, want empty", got)
 	}
-	driver.replaceJarCookies("session=synthetic-xspeeds-new-cookie")
-	if got := serializeCookies(driver.jar.Cookies(driver.cookieURL)); got != "session=synthetic-xspeeds-new-cookie" {
+	driver.ReplaceJarCookies("session=synthetic-xspeeds-new-cookie")
+	if got := driver.JarCookieHeader(); got != "session=synthetic-xspeeds-new-cookie" {
 		t.Errorf("jar after replacement = %q", got)
 	}
 }
@@ -262,10 +262,10 @@ func TestConcurrentStaleSessionRenewal(t *testing.T) {
 
 func TestCanceledLoginGateWait(t *testing.T) {
 	driver := newTestDriver(t, "https://xspeeds.example/", testConfig(), nil, nil)
-	if err := driver.loginGate.Acquire(t.Context(), 1); err != nil {
+	if err := driver.LoginGate.Acquire(t.Context(), 1); err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
-	defer driver.loginGate.Release(1)
+	defer driver.LoginGate.Release(1)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	_, err := driver.Search(ctx, search.Query{})
@@ -301,7 +301,7 @@ func TestPersistenceFailureRollsBack(t *testing.T) {
 		}
 		return nil
 	})
-	before := driver.sessionSnapshot()
+	before := driver.Snapshot()
 	_, err := driver.Search(t.Context(), search.Query{})
 	if err == nil || errors.Is(err, login.ErrLoginFailed) {
 		t.Fatalf("Search error = %v, want non-login persistence failure", err)
@@ -311,10 +311,10 @@ func TestPersistenceFailureRollsBack(t *testing.T) {
 			t.Errorf("error leaked %q: %v", secret, err)
 		}
 	}
-	if after := driver.sessionSnapshot(); after != before {
+	if after := driver.Snapshot(); after != before {
 		t.Errorf("session after failure = %+v, want %+v", after, before)
 	}
-	if got := serializeCookies(driver.jar.Cookies(driver.cookieURL)); got != testOldCookie {
+	if got := driver.JarCookieHeader(); got != testOldCookie {
 		t.Errorf("jar after rollback = %q, want %q", got, testOldCookie)
 	}
 	if browseCount.Load() != 1 {
@@ -386,7 +386,7 @@ func concurrentHandler(t *testing.T, logins, browses *atomic.Int64, stale, login
 
 func runConcurrentSearches(t *testing.T, driver *driver, count int) []error {
 	t.Helper()
-	if err := driver.loginGate.Acquire(t.Context(), 1); err != nil {
+	if err := driver.LoginGate.Acquire(t.Context(), 1); err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
 	entered := make(chan struct{}, count)
@@ -401,7 +401,7 @@ func runConcurrentSearches(t *testing.T, driver *driver, count int) []error {
 	for range count {
 		<-entered
 	}
-	driver.loginGate.Release(1)
+	driver.LoginGate.Release(1)
 	wait.Wait()
 	return errs
 }

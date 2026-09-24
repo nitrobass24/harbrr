@@ -8,12 +8,13 @@ import (
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // Grab fetches a same-origin torrent server-side with the current session and one renewal.
 func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, error) {
-	return runOperation(ctx, d, "download", func(ctx context.Context, session sessionState) (*search.GrabResult, error) {
-		resolved, err := resolveSameOriginURL(d.cookieURL, link)
+	return runOperation(ctx, d, "download", func(ctx context.Context, session native.SessionState) (*search.GrabResult, error) {
+		resolved, err := resolveSameOriginURL(d.CookieURL, link)
 		if err != nil {
 			return nil, errors.New("xspeeds: invalid download URL")
 		}
@@ -21,7 +22,7 @@ func (d *driver) Grab(ctx context.Context, link string) (*search.GrabResult, err
 		if err != nil {
 			return nil, err
 		}
-		response, err := d.DoDownload(noRedirects(ctx), request, classifySession, d.captureSecrets(session.cookie)...)
+		response, err := d.DoDownload(noRedirects(ctx), request, classifySession, d.captureSecrets(session.Cookie)...)
 		if err != nil {
 			return nil, err
 		}

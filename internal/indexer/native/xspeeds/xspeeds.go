@@ -4,38 +4,17 @@ package xspeeds
 import (
 	"context"
 	"errors"
-	stdhttp "net/http"
 	"net/url"
 	"strings"
-	"sync"
 
-	"golang.org/x/sync/semaphore"
-
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 type driver struct {
 	native.Base
+	*native.CookieSession
 
-	persist   func(context.Context, string, string) error
-	jar       stdhttp.CookieJar
-	cookieURL *url.URL
-	loginGate *semaphore.Weighted
-
-	stateMu   sync.RWMutex
-	session   sessionState
-	lastLogin loginResult
-}
-
-type sessionState struct {
-	cookie     string
-	generation uint64
-}
-
-type loginResult struct {
-	failedGeneration uint64
-	err              error
+	persist func(context.Context, string, string) error
 }
 
 var _ native.Driver = (*driver)(nil)
@@ -48,7 +27,7 @@ func New(p native.Params) (native.Driver, error) {
 	if err != nil {
 		return nil, err
 	}
-	jar := cookieJar(p.Doer)
+	jar := native.CookieJarOf(p.Doer)
 	if jar == nil {
 		return nil, errors.New("xspeeds: HTTP doer must expose a non-nil cookie jar")
 	}
@@ -58,32 +37,23 @@ func New(p native.Params) (native.Driver, error) {
 	}
 
 	stored := strings.TrimSpace(p.Cfg["cookie"])
-	var session sessionState
+	var session native.SessionState
 	if stored != "" {
-		jar.SetCookies(cookieURL, parseCookieHeader(stored))
-		if seeded := serializeCookies(jar.Cookies(cookieURL)); seeded != "" {
-			session = sessionState{cookie: seeded, generation: 1}
+		jar.SetCookies(cookieURL, native.ParseCookieHeader(stored))
+		if seeded := native.SerializeCookies(jar.Cookies(cookieURL)); seeded != "" {
+			session = native.SessionState{Cookie: seeded, Generation: 1}
 		}
 	}
 
+	cookies := native.NewCookieSession("xspeeds", jar, cookieURL, session)
+	// XSpeeds clears a jar entry with a Path-less deletion as well as a "/"-rooted one,
+	// reaching cookies the tracker scoped to a sub-path.
+	cookies.PathlessJarDeletions = true
 	return &driver{
-		Base:      base,
-		persist:   p.PersistSetting,
-		jar:       jar,
-		cookieURL: cookieURL,
-		loginGate: semaphore.NewWeighted(1),
-		session:   session,
+		Base:          base,
+		CookieSession: cookies,
+		persist:       p.PersistSetting,
 	}, nil
-}
-
-func cookieJar(doer search.Doer) stdhttp.CookieJar {
-	if client, ok := doer.(*stdhttp.Client); ok {
-		return client.Jar
-	}
-	if owner, ok := doer.(search.JarOwner); ok {
-		return owner.CookieJar()
-	}
-	return nil
 }
 
 // NeedsResolver is false because published release URLs contain no credentials.
@@ -95,15 +65,4 @@ func (*driver) DownloadNeedsAuth() bool { return true }
 // Test verifies credentials through an empty authenticated browse.
 func (d *driver) Test(ctx context.Context) error {
 	return native.TestViaSearch(ctx, d)
-}
-
-func (d *driver) snapshot() (sessionState, loginResult) {
-	d.stateMu.RLock()
-	defer d.stateMu.RUnlock()
-	return d.session, d.lastLogin
-}
-
-func (d *driver) sessionSnapshot() sessionState {
-	session, _ := d.snapshot()
-	return session
 }

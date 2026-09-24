@@ -41,11 +41,11 @@ func (d *driver) searchPage(ctx context.Context, rawURL string) ([]*normalizer.R
 		// 0→1 included), and its cookie is the one to scrub from any error.
 		resp, err := d.Do(d.requestContext(ctx), req, d.site.classify)
 		if err != nil {
-			return nil, withGeneration(err, session.generation)
+			return nil, withGeneration(err, session.Generation)
 		}
-		releases, err := d.parseBrowse(resp.Body, session.cookie)
+		releases, err := d.parseBrowse(resp.Body, session.Cookie)
 		if err != nil {
-			return nil, withGeneration(err, session.generation)
+			return nil, withGeneration(err, session.Generation)
 		}
 		return releases, nil
 	})

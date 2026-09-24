@@ -8,15 +8,12 @@ import (
 	"io"
 	stdhttp "net/http"
 	"net/url"
-	"sort"
 	"strings"
-	"time"
 
 	"github.com/PuerkitoBio/goquery"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
@@ -52,13 +49,12 @@ type formLoginAuth struct{}
 // only when the doer has no cookie jar of its own — the session as an explicit Cookie
 // header (a jar-owning doer attaches it from the jar instead).
 func (formLoginAuth) Prepare(ctx context.Context, d *driver, req *stdhttp.Request) error {
-	if err := d.ensureSession(ctx); err != nil {
+	if _, err := d.Ensure(ctx, d.login); err != nil {
 		return err
 	}
-	session := d.sessionSnapshot()
 	req.Header.Set("User-Agent", alphaRatioUserAgent)
-	if d.jar == nil {
-		req.Header.Set("Cookie", session.cookie)
+	if d.Jar == nil {
+		req.Header.Set("Cookie", d.Snapshot().Cookie)
 	}
 	return nil
 }
@@ -71,7 +67,7 @@ func (formLoginAuth) Recover(ctx context.Context, d *driver, cause error) (bool,
 	if !errors.Is(cause, login.ErrLoginFailed) {
 		return false, cause
 	}
-	if err := d.renewSession(ctx, generationFrom(cause)); err != nil {
+	if err := d.Renew(ctx, generationFrom(cause), d.login); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -83,7 +79,7 @@ func (formLoginAuth) Recover(ctx context.Context, d *driver, cause error) (bool,
 // serialized and bare-value forms.
 func (formLoginAuth) Scrub(d *driver) []string {
 	return append([]string{d.Cfg["username"]},
-		cookieScrubExtras(d.Cfg[d.site.sessionCookieSetting], d.sessionSnapshot().cookie)...)
+		cookieScrubExtras(d.Cfg[d.site.sessionCookieSetting], d.Snapshot().Cookie)...)
 }
 
 // requestContext disables redirect following for cookie-authenticated operations. An
@@ -96,59 +92,23 @@ func (d *driver) requestContext(ctx context.Context) context.Context {
 	return ctx
 }
 
-func (d *driver) sessionSnapshot() sessionState {
-	d.sessionMu.RLock()
-	defer d.sessionMu.RUnlock()
-	return d.session
-}
-
-// ensureSession returns an existing session or creates one while holding the
-// single-login gate. Waiting for another login observes ctx cancellation, and the
-// session is rechecked after acquisition so concurrent callers share its result.
-func (d *driver) ensureSession(ctx context.Context) error {
-	if d.sessionSnapshot().cookie != "" {
-		return nil
-	}
-	if err := d.loginGate.Acquire(ctx, 1); err != nil {
-		return fmt.Errorf("gazelle: wait for automatic login: %w", err)
-	}
-	defer d.loginGate.Release(1)
-	if d.sessionSnapshot().cookie != "" {
-		return nil
-	}
-	return d.loginLocked(ctx)
-}
-
-// renewSession replaces the failed session while holding the single-login gate.
-// Waiting observes ctx cancellation; after acquisition, a newer non-empty generation
-// suppresses duplicate renewal so the caller can retry with that session.
-func (d *driver) renewSession(ctx context.Context, failedGeneration uint64) error {
-	if err := d.loginGate.Acquire(ctx, 1); err != nil {
-		return fmt.Errorf("gazelle: wait for automatic session renewal: %w", err)
-	}
-	defer d.loginGate.Release(1)
-	current := d.sessionSnapshot()
-	if current.cookie != "" && current.generation != failedGeneration {
-		return nil
-	}
-	return d.loginLocked(ctx)
-}
-
-// loginLocked creates a clean session with the configured credentials, verifies a
-// same-site post-login logout link, then persists the replacement cookie before
-// publishing it to concurrent requests. Callers must hold loginGate.
-func (d *driver) loginLocked(ctx context.Context) error {
+// login creates a clean session with the configured credentials, verifies a same-site
+// post-login logout link, then persists the replacement cookie before publishing it to
+// concurrent requests. It is the CookieSession's native.LoginFunc, so it always runs
+// with the single-login gate held; the failed generation is not needed here, because
+// the published generation is derived from the session this login actually replaced.
+func (d *driver) login(ctx context.Context, _ uint64) error {
 	form, err := d.alphaRatioLoginForm()
 	if err != nil {
 		return err
 	}
 
-	previous := d.sessionSnapshot()
-	d.replaceJarCookies("")
+	previous := d.Snapshot()
+	d.ReplaceJarCookies("")
 	restore := true
 	defer func() {
 		if restore {
-			d.replaceJarCookies(previous.cookie)
+			d.ReplaceJarCookies(previous.Cookie)
 		}
 	}()
 
@@ -162,9 +122,7 @@ func (d *driver) loginLocked(ctx context.Context) error {
 		}
 	}
 
-	d.sessionMu.Lock()
-	d.session = sessionState{cookie: cookie, generation: previous.generation + 1}
-	d.sessionMu.Unlock()
+	d.Publish(native.SessionState{Cookie: cookie, Generation: previous.Generation + 1})
 	restore = false
 	return nil
 }
@@ -214,8 +172,8 @@ func (d *driver) requestAlphaRatioLogin(ctx context.Context, form url.Values) (s
 		return "", alphaRatioLoginError("post-login page did not confirm authentication", nil)
 	}
 
-	if d.jar != nil && len(resp.Cookies()) > 0 {
-		d.jar.SetCookies(d.cookieURL, resp.Cookies())
+	if d.Jar != nil && len(resp.Cookies()) > 0 {
+		d.Jar.SetCookies(d.CookieURL, resp.Cookies())
 	}
 	cookie := d.cookieHeader(resp.Cookies())
 	if cookie == "" {
@@ -242,7 +200,7 @@ func (d *driver) alphaRatioAuthenticatedPage(body []byte) bool {
 		if err != nil {
 			return true
 		}
-		sameHost := parsed.Host == "" || strings.EqualFold(parsed.Host, d.cookieURL.Host)
+		sameHost := parsed.Host == "" || strings.EqualFold(parsed.Host, d.CookieURL.Host)
 		authenticated = sameHost && (parsed.Path == "/logout.php" || parsed.Path == "logout.php")
 		return !authenticated
 	})
@@ -250,34 +208,10 @@ func (d *driver) alphaRatioAuthenticatedPage(body []byte) bool {
 }
 
 func (d *driver) cookieHeader(responseCookies []*stdhttp.Cookie) string {
-	if d.jar != nil {
-		return serializeCookies(d.jar.Cookies(d.cookieURL))
+	if d.Jar != nil {
+		return d.JarCookieHeader()
 	}
-	return serializeCookies(responseCookies)
-}
-
-func (d *driver) replaceJarCookies(raw string) {
-	if d.jar == nil {
-		return
-	}
-	current := d.jar.Cookies(d.cookieURL)
-	expired := make([]*stdhttp.Cookie, 0, len(current))
-	for _, cookie := range current {
-		//nolint:gosec // G124: deletion cookies are written only into the private jar; response security attributes are irrelevant.
-		expired = append(expired, &stdhttp.Cookie{
-			Name:    cookie.Name,
-			Value:   "",
-			Path:    "/",
-			MaxAge:  -1,
-			Expires: time.Unix(1, 0),
-		})
-	}
-	if len(expired) > 0 {
-		d.jar.SetCookies(d.cookieURL, expired)
-	}
-	if cookies := parseCookieHeader(raw); len(cookies) > 0 {
-		d.jar.SetCookies(d.cookieURL, cookies)
-	}
+	return native.SerializeCookies(responseCookies)
 }
 
 // cookieScrubExtras expands each non-empty serialized cookie into itself plus its
@@ -291,7 +225,7 @@ func cookieScrubExtras(cookies ...string) []string {
 			continue
 		}
 		extra = append(extra, raw)
-		for _, cookie := range parseCookieHeader(raw) {
+		for _, cookie := range native.ParseCookieHeader(raw) {
 			if value := strings.TrimSpace(cookie.Value); value != "" {
 				extra = append(extra, value)
 			}
@@ -306,37 +240,4 @@ func alphaRatioLoginError(reason string, cause error) error {
 		return err
 	}
 	return errors.Join(err, cause)
-}
-
-func doerCookieJar(doer search.Doer) stdhttp.CookieJar {
-	if client, ok := doer.(*stdhttp.Client); ok {
-		return client.Jar
-	}
-	if owner, ok := doer.(search.JarOwner); ok {
-		return owner.CookieJar()
-	}
-	return nil
-}
-
-func parseCookieHeader(raw string) []*stdhttp.Cookie {
-	if strings.TrimSpace(raw) == "" {
-		return nil
-	}
-	req := &stdhttp.Request{Header: stdhttp.Header{"Cookie": []string{raw}}}
-	return req.Cookies()
-}
-
-func serializeCookies(cookies []*stdhttp.Cookie) string {
-	usable := make([]*stdhttp.Cookie, 0, len(cookies))
-	for _, cookie := range cookies {
-		if cookie != nil && strings.TrimSpace(cookie.Name) != "" && cookie.Value != "" {
-			usable = append(usable, cookie)
-		}
-	}
-	sort.Slice(usable, func(i, j int) bool { return usable[i].Name < usable[j].Name })
-	req := &stdhttp.Request{Header: stdhttp.Header{}}
-	for _, cookie := range usable {
-		req.AddCookie(cookie)
-	}
-	return req.Header.Get("Cookie")
 }

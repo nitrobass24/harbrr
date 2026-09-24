@@ -70,7 +70,7 @@ func (d *driver) nodeURL(node *goquery.Selection) (string, bool) {
 	if !exists || strings.TrimSpace(href) == "" {
 		return "", false
 	}
-	resolved, err := resolveURL(d.cookieURL, href)
+	resolved, err := resolveURL(d.CookieURL, href)
 	if err != nil {
 		return "", false
 	}
@@ -92,7 +92,7 @@ func (d *driver) downloadURL(node *goquery.Selection) (string, bool) {
 	if id == "" {
 		return "", false
 	}
-	target := *d.cookieURL
+	target := *d.CookieURL
 	target.Path = strings.TrimRight(target.Path, "/") + "/download.php"
 	target.RawPath = ""
 	target.RawQuery = url.Values{"id": {id}}.Encode()
