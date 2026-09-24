@@ -114,7 +114,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 	for i := range resp.Results {
 		releases = append(releases, d.toRelease(&resp.Results[i]))
 	}
-	native.SortByPublishDateDescLinkTiebreak(releases)
+	native.SortByPublishDateDesc(releases)
 	native.TraceReleases(d.Log, d.Def.ID, releases)
 	return releases, nil
 }
@@ -146,7 +146,7 @@ func (d *driver) toRelease(row *bhdTorrent) *normalizer.Release {
 		Seeders:              seeders,
 		Leechers:             leechers,
 		Peers:                seeders + leechers,
-		PublishDate:          d.publishDate(row.CreatedAt),
+		PublishDate:          d.PublishDateOrEmpty(row.CreatedAt),
 		DownloadVolumeFactor: downloadVolumeFactor(row),
 		UploadVolumeFactor:   1,
 		MinimumRatio:         1,
@@ -167,7 +167,7 @@ func (d *driver) toRelease(row *bhdTorrent) *normalizer.Release {
 // synthesises a 1:1 custom id which native.FirstStandardCat discards so the release
 // carries exactly one category (matching Prowlarr).
 func (d *driver) categories(category string) []int {
-	return native.FirstStandardCat(d.Caps.CategoryMap.MapTrackerCatDescToNewznab(category))
+	return d.CatByDesc(category)
 }
 
 // downloadVolumeFactor reproduces Prowlarr's GetDownloadVolumeFactor: a freeleech or
@@ -186,17 +186,6 @@ func downloadVolumeFactor(row *bhdTorrent) float64 {
 	default:
 		return 1
 	}
-}
-
-// publishDate parses created_at to UTC RFC3339 (Prowlarr parses it AssumeUniversal) via
-// the shared native.PublishDate; the observed wire form is "2006-01-02 15:04:05". An
-// unparseable/empty value yields "" rather than failing the whole page.
-func (d *driver) publishDate(created string) string {
-	out, err := native.PublishDate(created, d.Clock)
-	if err != nil {
-		return ""
-	}
-	return out
 }
 
 // tmdbID parses BeyondHD's tmdb_id (the string form "movie/<id>") into the bare numeric id

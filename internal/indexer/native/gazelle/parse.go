@@ -172,7 +172,7 @@ func (d *driver) musicRelease(g *group, t *torrent) *normalizer.Release {
 		Seeders:              t.Seeders.Int64(),
 		Leechers:             t.Leechers.Int64(),
 		Peers:                t.Seeders.Int64() + t.Leechers.Int64(),
-		PublishDate:          d.publishDate(t.Time),
+		PublishDate:          d.PublishDateOrEmpty(t.Time),
 		DownloadVolumeFactor: volumeFactor(free),
 		UploadVolumeFactor:   d.uploadVolumeFactor(t.IsNeutralLeech, t.IsFreeload),
 	}
@@ -200,7 +200,7 @@ func (d *driver) nonMusicRelease(g *group) *normalizer.Release {
 		Seeders:              g.Seeders.Int64(),
 		Leechers:             g.Leechers.Int64(),
 		Peers:                g.Seeders.Int64() + g.Leechers.Int64(),
-		PublishDate:          d.publishDate(g.GroupTime),
+		PublishDate:          d.PublishDateOrEmpty(g.GroupTime),
 		DownloadVolumeFactor: volumeFactor(free),
 		UploadVolumeFactor:   d.uploadVolumeFactor(g.IsNeutralLeech, g.IsFreeload),
 	}
@@ -354,23 +354,12 @@ func imdbTag(tags []string) string {
 // id. A null Category or one containing "Select Category" defaults to Audio ("1").
 func (d *driver) categories(category *string) []int {
 	if category == nil || strings.Contains(*category, "Select Category") {
-		return native.FirstStandardCat(d.Caps.CategoryMap.MapTrackerCatToNewznab(defaultCatID))
+		return d.CatByID(defaultCatID)
 	}
-	if mapped := native.FirstStandardCat(d.Caps.CategoryMap.MapTrackerCatDescToNewznab(*category)); mapped != nil {
+	if mapped := d.CatByDesc(*category); mapped != nil {
 		return mapped
 	}
-	return native.FirstStandardCat(d.Caps.CategoryMap.MapTrackerCatToNewznab(defaultCatID))
-}
-
-// publishDate renders a Gazelle time value as UTC RFC3339. It tolerates a music
-// torrent's datetime ("2012-04-14 15:57:00"), a non-music unix-seconds string, and a
-// fuzzy value ("now") via the date parser. An unparseable value yields the empty string.
-func (d *driver) publishDate(value string) string {
-	out, err := native.PublishDate(value, d.Clock)
-	if err != nil {
-		return ""
-	}
-	return out
+	return d.CatByID(defaultCatID)
 }
 
 // scrubCredentials removes configured credentials and every session value that can

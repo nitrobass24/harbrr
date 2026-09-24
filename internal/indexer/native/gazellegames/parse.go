@@ -139,7 +139,7 @@ func (d *driver) parseSearch(body []byte) ([]*normalizer.Release, error) {
 		}
 		rels = append(rels, groupRels...)
 	}
-	native.SortByPublishDateDescLinkTiebreak(rels)
+	native.SortByPublishDateDesc(rels)
 	native.TraceReleases(d.Log, d.Def.ID, rels)
 	return rels, nil
 }
@@ -235,7 +235,7 @@ func (d *driver) toRelease(groupID, torrentID int64, g *gazelleGamesGroup, t *ga
 		Seeders:              t.Seeders.Int64(),
 		Leechers:             t.Leechers.Int64(),
 		Peers:                t.Seeders.Int64() + t.Leechers.Int64(),
-		PublishDate:          d.publishDate(t.Time),
+		PublishDate:          d.PublishDateOrEmpty(t.Time),
 		DownloadVolumeFactor: downloadVolumeFactor(t, free),
 		UploadVolumeFactor:   uploadVolumeFactor(t),
 		MinimumSeedTime:      minimumSeedTimeSeconds,
@@ -377,17 +377,6 @@ func (d *driver) detailsURL(groupID, torrentID int64) string {
 	params.Set("id", strconv.FormatInt(groupID, 10))
 	params.Set("torrentid", strconv.FormatInt(torrentID, 10))
 	return d.BaseURL + torrentsPath + "?" + params.Encode()
-}
-
-// publishDate renders a GGn time value as UTC RFC3339. It tolerates the "yyyy-MM-dd
-// HH:mm:ss" datetime GGn emits and a fuzzy value via the date parser. An unparseable value
-// yields the empty string.
-func (d *driver) publishDate(value string) string {
-	out, err := native.PublishDate(value, d.Clock)
-	if err != nil {
-		return ""
-	}
-	return out
 }
 
 // canonical keeps only the canonical newznab category ids, dropping the mapper's

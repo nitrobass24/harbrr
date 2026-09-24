@@ -41,12 +41,6 @@ func (d *driver) get(ctx context.Context, rawurl, accept string, download bool) 
 	if accept != "" {
 		req.Header.Set("Accept", accept)
 	}
-	var resp *native.Response
-	classify := native.ClassifyRateLimit403
-	if download {
-		resp, err = d.DoDownload(ctx, req, classify)
-	} else {
-		resp, err = d.Do(ctx, req, classify)
-	}
+	resp, err := d.Fetch(ctx, req, download, native.ClassifyRateLimit403)
 	return resp, d.ScrubErr(err)
 }

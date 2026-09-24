@@ -124,7 +124,7 @@ func (d *driver) toRelease(m *ptpMovie, t *ptpTorrent) *normalizer.Release {
 		Seeders:              seeders,
 		Leechers:             leechers,
 		Peers:                seeders + leechers,
-		PublishDate:          d.publishDate(t.UploadTime),
+		PublishDate:          d.PublishDateOrEmpty(t.UploadTime),
 		IMDBID:               native.CanonicalIMDBID(m.ImdbID.Str()),
 		Year:                 m.Year.Int64(),
 		Genre:                strings.Join(m.Tags, ", "),
@@ -165,10 +165,10 @@ func (d *driver) categories(categoryID string) []int {
 	if id == "" {
 		id = defaultCatID
 	}
-	if mapped := native.FirstStandardCat(d.Caps.CategoryMap.MapTrackerCatToNewznab(id)); mapped != nil {
+	if mapped := d.CatByID(id); mapped != nil {
 		return mapped
 	}
-	return native.FirstStandardCat(d.Caps.CategoryMap.MapTrackerCatToNewznab(defaultCatID))
+	return d.CatByID(defaultCatID)
 }
 
 // downloadVolumeFactor maps PTP's FreeleechType to the download volume factor, matching
@@ -200,16 +200,6 @@ func freeleechUpper(freeleechType *string) string {
 		return ""
 	}
 	return strings.ToUpper(strings.TrimSpace(*freeleechType))
-}
-
-// publishDate renders PTP's UploadTime ("YYYY-MM-DD HH:MM:SS") as UTC RFC3339. Prowlarr
-// parses it as UTC (UploadTime + " +0000"); an empty or unparseable value yields "".
-func (d *driver) publishDate(uploadTime string) string {
-	out, err := native.PublishDate(uploadTime, d.Clock)
-	if err != nil {
-		return ""
-	}
-	return out
 }
 
 // posterURL returns the movie Cover only when it is an absolute http(s) URL, mirroring

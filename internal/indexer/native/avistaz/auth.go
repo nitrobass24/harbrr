@@ -154,9 +154,5 @@ func (d *driver) sendBearer(ctx context.Context, rawurl, token, accept string, d
 	if accept != "" {
 		req.Header.Set("Accept", accept)
 	}
-	classify := native.ClassifyAuth403.AlsoAuth(stdhttp.StatusPreconditionFailed)
-	if download {
-		return d.DoDownload(ctx, req, classify)
-	}
-	return d.Do(ctx, req, classify)
+	return d.Fetch(ctx, req, download, native.ClassifyAuth403.AlsoAuth(stdhttp.StatusPreconditionFailed))
 }

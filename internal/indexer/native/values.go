@@ -57,6 +57,17 @@ func PublishDate(raw string, clock func() time.Time) (string, error) {
 	return t.UTC().Format(time.RFC3339), nil
 }
 
+// PublishDateOrEmpty is PublishDate for the families that treat an unparseable timestamp
+// as an absent one (hdbits, gazelle, gazellegames, beyondhd, passthepopcorn): a bad date
+// blanks the release's PublishDate rather than failing the whole page.
+func (b *Base) PublishDateOrEmpty(raw string) string {
+	out, err := PublishDate(raw, b.Clock)
+	if err != nil {
+		return ""
+	}
+	return out
+}
+
 // CheckboxOn reports whether a stored checkbox setting is checked — the same truthy
 // set the cardigann engine's checkbox canonicalisation accepts (harbrr stores a checked
 // box as Jackett's "True" sentinel; "true"/"1"/"on"/"yes" are accepted case-insensitively

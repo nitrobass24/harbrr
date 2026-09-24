@@ -132,7 +132,7 @@ func (d *driver) toRelease(row *apiRow) (*normalizer.Release, error) {
 }
 
 func (d *driver) categories(title string) []int {
-	if cats := native.FirstStandardCat(d.Caps.CategoryMap.MapTrackerCatToNewznab(qualityCategory(title))); cats != nil {
+	if cats := d.CatByID(qualityCategory(title)); cats != nil {
 		return cats
 	}
 	return []int{5000}

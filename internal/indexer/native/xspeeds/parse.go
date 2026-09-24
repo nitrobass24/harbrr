@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -161,21 +160,15 @@ func cleanDescription(description string) string {
 	return strings.TrimSpace(description)
 }
 
+// parseInteger reads the digits out of a cell ("1,234", "12 seeders") and parses them;
+// a cell with no digits, or digits too large for an int64, yields 0.
 func parseInteger(raw string) int64 {
-	var digits strings.Builder
-	for _, char := range raw {
-		if char >= '0' && char <= '9' {
-			digits.WriteRune(char)
+	return native.ParseInt64(strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
 		}
-	}
-	if digits.Len() == 0 {
-		return 0
-	}
-	value, err := strconv.ParseInt(digits.String(), 10, 64)
-	if err != nil {
-		return 0
-	}
-	return value
+		return -1
+	}, raw))
 }
 
 // parseDate reads XSpeeds' "added" timestamp. It does NOT go through

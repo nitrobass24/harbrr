@@ -143,13 +143,9 @@ func (d *driver) doBearerGET(ctx context.Context, rawURL, accept string, downloa
 	if accept != "" {
 		req.Header.Set("Accept", accept)
 	}
-	if download {
-		// SessionSecrets is the shared length guard: Base.Scrub feeds whatever it is
-		// given to a literal ReplaceAll, so a degenerate short token would shred the
-		// capture body rather than redact it.
-		resp, err := d.DoDownload(ctx, req, authClassify, native.SessionSecrets(token.value)...)
-		return resp, d.ScrubErr(err, token.value)
-	}
-	resp, err := d.Do(ctx, req, authClassify)
+	// SessionSecrets is the shared length guard: Base.Scrub feeds whatever it is given
+	// to a literal ReplaceAll, so a degenerate short token would shred the refusal
+	// capture body rather than redact it. It is ignored off the download path.
+	resp, err := d.Fetch(ctx, req, download, authClassify, native.SessionSecrets(token.value)...)
 	return resp, d.ScrubErr(err, token.value)
 }
