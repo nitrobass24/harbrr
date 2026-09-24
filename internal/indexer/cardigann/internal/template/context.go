@@ -130,11 +130,11 @@ type Today struct {
 	Day   string
 }
 
-// NewContext returns a Context with the True/False sentinels set and every map
+// newContext returns a Context with the True/False sentinels set and every map
 // initialized, so callers and templates can index them without nil-map panics.
-// Most callers want NewSeeded instead; NewContext is the bare building block
-// tests reach for when they want to hand-mutate individual fields.
-func NewContext() *Context {
+// It is the bare building block behind NewSeeded, which is what every caller
+// outside this package uses.
+func newContext() *Context {
 	return &Context{
 		Config: map[string]string{},
 		Query:  map[string]string{},
@@ -198,7 +198,7 @@ type Params struct {
 // returned Context across evaluations. Eval mutates it in place (whitespace
 // normalization), so a cached or reused Context corrupts a later evaluation.
 func NewSeeded(p Params) *Context {
-	ctx := NewContext()
+	ctx := newContext()
 	maps.Copy(ctx.Config, p.Config)
 	if _, ok := ctx.Config["sitelink"]; !ok {
 		ctx.Config["sitelink"] = p.BaseURL

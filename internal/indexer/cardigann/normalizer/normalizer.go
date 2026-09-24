@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
@@ -215,7 +215,7 @@ func (n *Normalizer) applyCategories(r *Release, f map[string]string) {
 	}
 	add(n.Categories.MapTrackerCatToNewznab(f["category"]))
 	add(n.Categories.MapTrackerCatDescToNewznab(f["categorydesc"]))
-	sort.Ints(r.Categories)
+	slices.Sort(r.Categories)
 }
 
 // applyIDs fills the external-id fields via first-digit-run extraction. IMDBID

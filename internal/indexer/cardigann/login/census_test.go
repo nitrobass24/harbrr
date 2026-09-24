@@ -2,7 +2,6 @@ package login
 
 import (
 	"fmt"
-	"maps"
 	"sort"
 	"strings"
 	"testing"
@@ -90,9 +89,7 @@ type censusCounts struct {
 }
 
 func planContext() *template.Context {
-	ctx := template.NewContext()
-	maps.Copy(ctx.Config, syntheticConfig())
-	return ctx
+	return template.NewSeeded(template.Params{Config: syntheticConfig()})
 }
 
 // planLogin checks one def's login block: method recognized, every template
