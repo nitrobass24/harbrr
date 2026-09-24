@@ -116,8 +116,8 @@ type gazelleGamesTorrent struct {
 // OrderByDescending(PublishDate)).
 func (d *driver) parseSearch(body []byte) ([]*normalizer.Release, error) {
 	var resp gazelleGamesResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("gazellegames: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
+	if err := native.DecodeJSON("gazellegames", "search response", body, &resp); err != nil {
+		return nil, err
 	}
 	if resp.Status.Str() != statusSuccess {
 		return nil, d.classifyStatusError(resp.Status.Str(), resp.Error)
@@ -127,8 +127,8 @@ func (d *driver) parseSearch(body []byte) ([]*normalizer.Release, error) {
 		return nil, nil // a non-object response (Prowlarr's "not a JObject" guard): no groups
 	}
 	groups := map[int64]gazelleGamesGroup{}
-	if err := json.Unmarshal(resp.Response, &groups); err != nil {
-		return nil, fmt.Errorf("gazellegames: decode group map: %s: %w", apphttp.DecodeErrorDetail(err, resp.Response), search.ErrParseError)
+	if err := native.DecodeJSON("gazellegames", "group map", resp.Response, &groups); err != nil {
+		return nil, err
 	}
 
 	var rels []*normalizer.Release

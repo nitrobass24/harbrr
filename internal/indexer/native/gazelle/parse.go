@@ -1,13 +1,11 @@
 package gazelle
 
 import (
-	"encoding/json"
 	"fmt"
 	"html"
 	"strconv"
 	"strings"
 
-	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
@@ -109,8 +107,8 @@ type torrent struct {
 // both the configured and current sessions when a concurrent renewal completes.
 func (d *driver) parseBrowse(body []byte, requestCookie string) ([]*normalizer.Release, error) {
 	var resp browseResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("gazelle: decode browse response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
+	if err := native.DecodeJSON("gazelle", "browse response", body, &resp); err != nil {
+		return nil, err
 	}
 	if resp.Status != statusSuccess {
 		return nil, d.classifyStatusError(resp.Status, resp.Error, requestCookie)

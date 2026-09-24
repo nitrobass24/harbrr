@@ -2,12 +2,10 @@ package torrentday
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"time"
 
-	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
 	"github.com/autobrr/harbrr/internal/indexer/native"
@@ -63,8 +61,8 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 		return nil, fmt.Errorf("torrentday: search response is not a JSON array: %w", search.ErrParseError)
 	}
 	var rows []torrentDayRow
-	if err := json.Unmarshal(body, &rows); err != nil {
-		return nil, fmt.Errorf("torrentday: decode search response: %s: %w", apphttp.DecodeErrorDetail(err, body), search.ErrParseError)
+	if err := native.DecodeJSON("torrentday", "search response", body, &rows); err != nil {
+		return nil, err
 	}
 
 	freeOnly := native.CheckboxOn(d.Cfg["freeleech_only"])
