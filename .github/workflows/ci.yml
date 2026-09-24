@@ -830,7 +830,7 @@ jobs:
         if: ${{ matrix.arch == 'amd64' }}
         env:
           IMAGEID: ${{ steps.build.outputs.imageid }}
-        run: docker run --rm --entrypoint harbrr "$IMAGEID" version
+        run: docker run --rm --entrypoint harbrr "$IMAGEID" --version
       - name: export digest
         if: ${{ env.PUSH == 'true' }}
         env:

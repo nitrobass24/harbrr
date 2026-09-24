@@ -8,7 +8,7 @@ import (
 )
 
 // newRootCmd builds the harbrr command tree: a root carrying the persistent
-// configuration flags, plus the serve and version subcommands.
+// configuration flags (and --version), plus the subcommands.
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "harbrr",
@@ -29,6 +29,6 @@ func newRootCmd() *cobra.Command {
 	pf.String("data-dir", d.DataDir, "data directory")
 	pf.String("db-path", d.Database.Path, "SQLite database path (default: <data-dir>/harbrr.db)")
 
-	root.AddCommand(newServeCmd(), newVersionCmd(), newRotateKeyCmd(), newSmokeCmd())
+	root.AddCommand(newServeCmd(), newRotateKeyCmd(), newSmokeCmd())
 	return root
 }

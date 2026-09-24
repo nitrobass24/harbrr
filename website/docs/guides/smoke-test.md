@@ -40,43 +40,44 @@ Native:
 harbrr smoke
 ```
 
-In Docker (the command ships in the image):
+In Docker (the command ships in the image), the env file has to be inside the container, so
+copy it in and point `--env-file` at it:
 
 ```bash
-docker exec -it <harbrr-container> harbrr smoke
+docker cp smoke.env <harbrr-container>:/config/smoke.env
+docker exec <harbrr-container> harbrr smoke --env-file /config/smoke.env
 ```
-
-> Use `-it` on first run so the interactive prompts work. For a non-interactive/scheduled run,
-> pre-populate the env file (below) and drop `-it`.
 
 The run prints a summary and writes `smoke-report.md` in the working directory. It exits
 **non-zero** if anything failed, so it scripts cleanly in CI-of-your-own or a cron.
 
 ---
 
-## First run — one-time setup
+## Configuration
 
-The first run (or `--reconfigure`) prompts you **one at a time** for each app's URL and API key:
-harbrr, Prowlarr, Sonarr, Radarr, qui. URLs echo; **API keys are read without echoing** to your
-terminal. Sonarr/Radarr/qui are optional — leave a URL blank to skip that app's checks.
-
-Your answers are saved to a gitignored `smoke.env` (mode `0600`) as `export SMOKE_*="…"`, so
-subsequent runs are non-interactive. Re-run the setup any time with:
+The command is non-interactive: it reads its config from `./smoke.env` (point elsewhere with
+`--env-file`) or from the real environment, which takes precedence over the file. When a required
+variable is missing it prints this template and exits non-zero — create the file by hand at mode
+`0600` (`smoke.env` is gitignored; the keys are secret):
 
 ```bash
-harbrr smoke --reconfigure
+# harbrr smoke config — keys are secret; do not commit. Write at mode 0600.
+export SMOKE_HARBRR_URL=http://harbrr:7478
+export SMOKE_HARBRR_APIKEY=
+export SMOKE_PROWLARR_URL=http://prowlarr:9696
+export SMOKE_PROWLARR_APIKEY=
+#export SMOKE_SONARR_URL=
+#export SMOKE_SONARR_APIKEY=
+#export SMOKE_RADARR_URL=
+#export SMOKE_RADARR_APIKEY=
+#export SMOKE_QUI_URL=
+#export SMOKE_QUI_APIKEY=
 ```
 
-You can also set the values as environment variables instead of the file (the real environment
-takes precedence over `smoke.env`):
+harbrr and Prowlarr are required; Sonarr/Radarr/qui are optional — leave an app's lines commented
+out to skip its checks. Optional knobs:
 
 ```text
-SMOKE_HARBRR_URL, SMOKE_HARBRR_APIKEY
-SMOKE_PROWLARR_URL, SMOKE_PROWLARR_APIKEY
-SMOKE_SONARR_URL, SMOKE_SONARR_APIKEY      # optional
-SMOKE_RADARR_URL, SMOKE_RADARR_APIKEY      # optional
-SMOKE_QUI_URL, SMOKE_QUI_APIKEY            # optional
-
 SMOKE_QUERY, SMOKE_QUERY_FALLBACK          # optional — force one query for every tracker
 SMOKE_GRAB=1                               # optional — add the per-tracker grab check
 SMOKE_STRICT_FIELDS=1                      # optional — also compare seeders and publishDate
@@ -98,7 +99,6 @@ feed secret ever lands in it. It's safe to attach to a public GitHub issue as-is
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--reconfigure` | | Re-prompt for every app URL/key and rewrite the env file |
 | `--env-file` | `./smoke.env` | Path to the `export SMOKE_*=…` env file |
 | `--report` | `./smoke-report.md` | Where to write the markdown report |
 | `--query` | *(category-derived)* | Force one search query for every tracker (overrides `SMOKE_QUERY`) |

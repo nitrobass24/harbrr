@@ -29,9 +29,9 @@ func execute(t *testing.T, args ...string) (string, error) {
 
 func TestVersionCommand(t *testing.T) {
 	t.Parallel()
-	out, err := execute(t, "version")
+	out, err := execute(t, "--version")
 	if err != nil {
-		t.Fatalf("version: %v", err)
+		t.Fatalf("--version: %v", err)
 	}
 	if !strings.Contains(out, version.String()) {
 		t.Errorf("version output %q missing %q", out, version.String())
