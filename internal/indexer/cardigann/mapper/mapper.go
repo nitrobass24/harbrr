@@ -172,8 +172,8 @@ func (b *builder) build() (*Capabilities, error) {
 	}
 	return &Capabilities{
 		Modes:             modesToMap(b.def.Caps.Modes),
-		AllowRawSearch:    boolValue(b.def.Caps.AllowRawSearch),
-		AllowTVSearchIMDB: boolValue(b.def.Caps.AllowTVSearchIMDB),
+		AllowRawSearch:    loader.Bool(b.def.Caps.AllowRawSearch),
+		AllowTVSearchIMDB: loader.Bool(b.def.Caps.AllowTVSearchIMDB),
 		Categories:        b.sortedAdvertised(),
 		CategoryMap:       b.catMap,
 		DefaultCategories: b.defaultCats,
@@ -221,7 +221,7 @@ func (b *builder) mapCategoryMappings() error {
 		}
 		// Jackett: `if (Categorymapping.Default) DefaultCategories.Add(id)` — after
 		// AddCategoryMapping, in categorymapping order, no dedup.
-		if boolValue(cm.Default) {
+		if loader.Bool(cm.Default) {
 			b.defaultCats = append(b.defaultCats, cm.ID.String())
 		}
 	}
@@ -290,10 +290,6 @@ func addMode(out map[string][]string, name string, params []string) {
 		return
 	}
 	out[name] = slices.Clone(params)
-}
-
-func boolValue(p *bool) bool {
-	return p != nil && *p
 }
 
 // isBlank reports whether s is empty or all whitespace, mirroring Jackett's

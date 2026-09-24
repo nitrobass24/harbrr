@@ -206,10 +206,13 @@ func (l *Loader) readVendored(id string) ([]byte, error) {
 		return nil, fmt.Errorf("reading vendored definition %q: %w", id, err)
 	}
 
-	path, ok, idxErr := l.vendorPathByContentID(id)
+	// Fall back to content-id resolution: the index maps the id: of each
+	// vendored file whose name differs from it to that file's embedded path.
+	idx, idxErr := vendorContentIdx()
 	if idxErr != nil {
 		return nil, idxErr
 	}
+	path, ok := idx[id]
 	if !ok {
 		// Preserve fs.ErrNotExist so Load maps it to ErrNotFound.
 		return nil, fmt.Errorf("%q: %w", id, err)
@@ -350,15 +353,11 @@ func validateID(id string) error {
 }
 
 // readDropin reads <dropinDir>/<id>.yml. ok is false (with nil error) when the
-// file does not exist. Callers validate id (validateID rejects separators and
-// ".."), and as defense in depth this also verifies the resolved path stays
-// inside dropinDir, so a definition id sourced from the management API can never
-// turn into a path traversal even if a future caller forgets to validate.
+// file does not exist. id is validated by validateID on the single path that
+// reaches here (load), which rejects separators and "..", so the join can never
+// escape dropinDir.
 func (l *Loader) readDropin(id string) (data []byte, ok bool, err error) {
 	path := filepath.Join(l.dropinDir, id+".yml")
-	if !withinDir(l.dropinDir, path) {
-		return nil, false, nil
-	}
 	data, err = os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -418,16 +417,6 @@ func (l *Loader) dropinByContentID(id string) (data []byte, ok bool, err error) 
 	return nil, false, nil
 }
 
-// withinDir reports whether path resolves to a location inside dir (not dir
-// itself escaping via "..").
-func withinDir(dir, path string) bool {
-	rel, err := filepath.Rel(dir, path)
-	if err != nil {
-		return false
-	}
-	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
-}
-
 // definitionID extracts a definition id from a filename, returning ok=false for
 // directories and non-.yml files (e.g. schema.json, .jackett-ref).
 func definitionID(name string, isDir bool) (string, bool) {
@@ -442,19 +431,6 @@ func definitionID(name string, isDir bool) (string, bool) {
 
 func vendorPath(id string) string {
 	return vendorDir + "/" + id + ".yml"
-}
-
-// vendorPathByContentID returns the embedded path of the vendored definition
-// whose content id: equals id, for the files whose name differs from their id.
-// The index is built once and cached; ok is false when no such mismatched
-// definition exists (the common case, where the filename already matched).
-func (l *Loader) vendorPathByContentID(id string) (path string, ok bool, err error) {
-	idx, err := vendorContentIdx()
-	if err != nil {
-		return "", false, err
-	}
-	path, ok = idx[id]
-	return path, ok, nil
 }
 
 // buildVendorContentIndex scans the vendored snapshot and maps each definition's

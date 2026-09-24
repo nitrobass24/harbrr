@@ -122,7 +122,7 @@ func (d *Document) jsonRows(block loader.RowsBlock) ([]Row, error) {
 	if !ok {
 		// Jackett: a missing rows array is "0 rows" only when
 		// MissingAttributeEqualsNoResults is set; otherwise it is an error.
-		if boolVal(block.MissingAttributeEqualsNoResults) {
+		if loader.Bool(block.MissingAttributeEqualsNoResults) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("rows selector %q: %w", block.Selector, ErrSelectorNoMatch)
@@ -153,7 +153,7 @@ func (d *Document) jsonCountIsZero(count *loader.SelectorBlock) bool {
 // is skipped — Jackett skips it under MissingAttributeEqualsNoResults and would
 // otherwise dereference null; harbrr degrades cleanly in both cases.
 func (d *Document) buildJSONRows(arr []any, block loader.RowsBlock) []Row {
-	multiple := boolVal(block.Multiple)
+	multiple := loader.Bool(block.Multiple)
 	// Document property order for the object shape, recovered from the raw body (#681).
 	var orders [][]string
 	if multiple {
@@ -212,6 +212,3 @@ func rowChildren(value any, multiple bool, order []string) []any {
 		return nil
 	}
 }
-
-// boolVal dereferences an optional bool flag, defaulting to false.
-func boolVal(p *bool) bool { return p != nil && *p }
