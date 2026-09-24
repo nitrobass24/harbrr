@@ -184,13 +184,14 @@ func (s *Service) SetEnabled(ctx context.Context, id int64, enabled bool) error 
 	return nil
 }
 
-// Delete removes a client by id (a bare repo delete — download mints nothing to
-// revoke, mirroring notify's DeleteNotification).
+// Delete removes a client by id. A bare repo delete, as proxy and solver do: download
+// mints nothing to revoke, so Lifecycle.Delete's read would only discard the row it
+// fetched (the repo delete reports a missing id itself).
 func (s *Service) Delete(ctx context.Context, id int64) error {
-	return s.life.Delete(ctx, id, connresource.DeleteSpec[domain.DownloadClient]{
-		Get:    s.repo.GetDownloadClient,
-		Delete: s.repo.DeleteDownloadClient,
-	})
+	if err := s.repo.DeleteDownloadClient(ctx, s.db, id); err != nil {
+		return fmt.Errorf("download: delete: %w", err)
+	}
+	return nil
 }
 
 // TestConnection builds a client's driver (resolving identity + credential from its
@@ -319,27 +320,24 @@ func validateHostPort(host string) error {
 // InstanceID — qui is keyed by int instance id, so an unset/zero id can never be
 // a valid target), and validates the kind-specific settings that need it.
 func validateSettings(kind string, settings domain.DownloadClientSettings) error {
-	// One row per settings shape: a populated field whose kind doesn't own it is a
-	// mismatch. Adding a kind is one row here, not another guard clause.
-	mismatches := []struct {
-		name string
-		set  bool
-		kind string
-	}{
-		{"qbittorrent", settings.QBittorrent != nil, domain.DownloadClientKindQBittorrent},
-		{"blackhole", settings.Blackhole != nil, domain.DownloadClientKindBlackhole},
-		{"sabnzbd", settings.Sabnzbd != nil, domain.DownloadClientKindSabnzbd},
-		{"nzbget", settings.NZBGet != nil, domain.DownloadClientKindNZBGet},
-		{"qui", settings.Qui != nil, domain.DownloadClientKindQui},
-		{"flood", settings.Flood != nil, domain.DownloadClientKindFlood},
-		{"download-station", settings.DownloadStation != nil, domain.DownloadClientKindDownloadStation},
-		{"transmission", settings.Transmission != nil, domain.DownloadClientKindTransmission},
-		{"deluge", settings.Deluge != nil, domain.DownloadClientKindDeluge},
-		{"rtorrent", settings.RTorrent != nil, domain.DownloadClientKindRTorrent},
+	// One entry per settings shape, keyed by the kind that owns it: a populated field
+	// whose kind doesn't own it is a mismatch. Adding a kind is one entry here, not
+	// another guard clause.
+	populated := map[string]bool{
+		domain.DownloadClientKindQBittorrent:     settings.QBittorrent != nil,
+		domain.DownloadClientKindBlackhole:       settings.Blackhole != nil,
+		domain.DownloadClientKindSabnzbd:         settings.Sabnzbd != nil,
+		domain.DownloadClientKindNZBGet:          settings.NZBGet != nil,
+		domain.DownloadClientKindQui:             settings.Qui != nil,
+		domain.DownloadClientKindFlood:           settings.Flood != nil,
+		domain.DownloadClientKindDownloadStation: settings.DownloadStation != nil,
+		domain.DownloadClientKindTransmission:    settings.Transmission != nil,
+		domain.DownloadClientKindDeluge:          settings.Deluge != nil,
+		domain.DownloadClientKindRTorrent:        settings.RTorrent != nil,
 	}
-	for _, m := range mismatches {
-		if m.set && kind != m.kind {
-			return fmt.Errorf("%w: %s settings given for kind %q", domain.ErrInvalid, m.name, kind)
+	for owner, set := range populated {
+		if set && kind != owner {
+			return fmt.Errorf("%w: %s settings given for kind %q", domain.ErrInvalid, owner, kind)
 		}
 	}
 	switch kind {

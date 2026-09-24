@@ -49,10 +49,7 @@ type rtorrentDriver struct {
 // else about the shared client's configuration survives; otherwise harbrr's
 // shared client is reused as-is, same as Transmission.
 func newRTorrent(c domain.DownloadClient, secret string, client *http.Client) (Driver, error) {
-	var settings domain.RTorrentSettings
-	if c.Settings.RTorrent != nil {
-		settings = *c.Settings.RTorrent
-	}
+	settings := deref(c.Settings.RTorrent)
 
 	httpClient := client
 	if settings.TLSSkipVerify {

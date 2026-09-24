@@ -8,7 +8,10 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/spf13/pathologize"
+
 	"github.com/autobrr/harbrr/internal/domain"
+	apphttp "github.com/autobrr/harbrr/internal/http"
 )
 
 // Protocol distinguishes a payload's release type: a client that only speaks one
@@ -111,30 +114,44 @@ func newDriver(c domain.DownloadClient, secret string, client *http.Client) (Dri
 
 // releaseFilename derives a payload's filename from the release title: the upload name
 // for the clients that take bytes (sabnzbd, nzbget) and the on-disk name blackhole
-// writes into a watch folder. The title is untrusted tracker data, so path separators
-// (POSIX and Windows), the other characters no mainstream filesystem accepts, and
-// control characters are all dropped, and an empty result falls back to a fixed name —
-// a name can never escape the directory it is joined with.
+// writes into a watch folder. The title is untrusted tracker data, so it goes through
+// pathologize.Clean — the sanitizer the /dl token stem already uses — which drops path
+// separators (POSIX and Windows), the other characters no mainstream filesystem
+// accepts and control characters, defuses Windows reserved names, and substitutes a
+// fixed name when nothing usable remains: a name can never escape the directory it is
+// joined with.
 //
-// maxBytes bounds the derived name in encoded bytes, truncating on a rune boundary
-// (the extension is on top). It is a parameter because the two uses have different stakes: an upload name is a job label the remote
-// client shows, while a blackhole name is a real path in a shared directory, where
-// truncating two releases to the same prefix silently overwrites one with the other.
+// maxBytes bounds the derived name in encoded bytes, truncating on a rune boundary and
+// re-cleaning every cut — cutting can expose a trailing dot Clean had trimmed (the
+// extension is on top). It is a parameter because the two uses have different stakes:
+// an upload name is a job label the remote client shows, while a blackhole name is a
+// real path in a shared directory, where truncating two releases to the same prefix
+// silently overwrites one with the other.
 func releaseFilename(name, ext string, maxBytes int) string {
-	cleaned := strings.TrimSpace(strings.Map(func(r rune) rune {
-		if r < ' ' || strings.ContainsRune(`/\:*?"<>|`, r) {
-			return -1
-		}
-		return r
-	}, name))
-	if cleaned == "" {
-		cleaned = "release"
-	}
+	cleaned := pathologize.Clean(name)
 	for len(cleaned) > maxBytes {
 		_, size := utf8.DecodeLastRuneInString(cleaned)
-		cleaned = cleaned[:len(cleaned)-size]
+		cleaned = pathologize.Clean(cleaned[:len(cleaned)-size])
 	}
 	return cleaned + ext
+}
+
+// deref reads a driver's optional settings block: the value p points at, or the zero
+// settings when the row carries none.
+func deref[T any](p *T) T {
+	if p == nil {
+		var zero T
+		return zero
+	}
+	return *p
+}
+
+// addURLError wraps an add-by-URL failure. The link can be a sealed harbrr /dl link
+// carrying an apikey and a client library embeds the URL it was handed in its own
+// error text, so every literal occurrence is replaced with the redacted form.
+func addURLError(what, rawURL string, err error) error {
+	redacted := apphttp.RedactURL(rawURL)
+	return fmt.Errorf("%s %s: %s", what, redacted, strings.ReplaceAll(err.Error(), rawURL, redacted))
 }
 
 // maxUploadNameBytes bounds an upload job name well inside the 255-byte limit every

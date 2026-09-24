@@ -46,10 +46,7 @@ func newTransmission(c domain.DownloadClient, secret string, client *http.Client
 		return nil, fmt.Errorf("download: transmission: %w", err)
 	}
 
-	var settings domain.TransmissionSettings
-	if c.Settings.Transmission != nil {
-		settings = *c.Settings.Transmission
-	}
+	settings := deref(c.Settings.Transmission)
 	return &transmissionDriver{client: cli, settings: settings}, nil
 }
 

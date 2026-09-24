@@ -31,10 +31,7 @@ type quiDriver struct {
 // secret (the API key). InstanceID > 0 is enforced by the download service at
 // Create/Update time (validateSettings), not here.
 func newQui(c domain.DownloadClient, secret string, client *http.Client) (Driver, error) {
-	var settings domain.QuiSettings
-	if c.Settings.Qui != nil {
-		settings = *c.Settings.Qui
-	}
+	settings := deref(c.Settings.Qui)
 	return &quiDriver{
 		jc:         apphttp.NewAPIKeyClient("download: qui", c.Host, secret, client),
 		instanceID: settings.InstanceID,
