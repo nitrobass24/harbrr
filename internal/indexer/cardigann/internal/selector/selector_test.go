@@ -28,7 +28,7 @@ func readFixture(t *testing.T, name string) []byte {
 // firstRow parses an HTML fixture and returns the first row for rows.selector.
 func firstHTMLRow(t *testing.T, fixture, rowsSel string) Row {
 	t.Helper()
-	doc, err := New().ParseHTML(readFixture(t, fixture))
+	doc, err := ParseHTML(readFixture(t, fixture))
 	if err != nil {
 		t.Fatalf("ParseHTML: %v", err)
 	}
@@ -139,7 +139,7 @@ span.freeleech: "yes"
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, found, err := New().Field(row(t), tc.block, nil)
+			got, found, err := Field(row(t), tc.block, nil)
 			assertField(t, fieldResult{got, found, err}, tc.wantValue, tc.wantFound, tc.wantErr)
 		})
 	}
@@ -164,7 +164,7 @@ func TestFieldDefersRequiredDecision(t *testing.T) {
 		{Selector: "td.flag", Case: caseBlock(`span.nope: x`)}, // no case arm matches
 	}
 	for i := range cases {
-		v, found, err := New().Field(row, cases[i], nil)
+		v, found, err := Field(row, cases[i], nil)
 		if err != nil {
 			t.Fatalf("case %d: unexpected error %v", i, err)
 		}

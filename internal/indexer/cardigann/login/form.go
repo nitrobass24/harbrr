@@ -12,6 +12,7 @@ import (
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/httpx"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/selector"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/template"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 )
@@ -180,7 +181,7 @@ func (e *Executor) extractSelectorInputs(body []byte, inputs map[string]loader.S
 	if len(inputs) == 0 {
 		return url.Values{}, nil
 	}
-	doc, err := e.selector.ParseHTML(body)
+	doc, err := selector.ParseHTML(body)
 	if err != nil {
 		return nil, fmt.Errorf("parsing login page for selector inputs: %w", err)
 	}
@@ -188,7 +189,7 @@ func (e *Executor) extractSelectorInputs(body []byte, inputs map[string]loader.S
 	out := url.Values{}
 	for _, name := range slices.Sorted(maps.Keys(inputs)) {
 		blk := inputs[name]
-		val, found, ferr := e.selector.Field(root, blk, e.eval)
+		val, found, ferr := selector.Field(root, blk, e.eval)
 		if ferr != nil {
 			return nil, fmt.Errorf("extracting selector input %q: %w", name, ferr)
 		}
@@ -248,7 +249,7 @@ func (e *Executor) postFormAbsolute(ctx context.Context, def *loader.Definition,
 // selectorMatches reports whether sel matches at least one element in body. Used
 // by CheckTest to reproduce Jackett's "selection.Length == 0 => login needed".
 func (e *Executor) selectorMatches(body []byte, sel string) (bool, error) {
-	doc, err := e.selector.ParseHTML(body)
+	doc, err := selector.ParseHTML(body)
 	if err != nil {
 		return false, fmt.Errorf("parsing test page: %w", err)
 	}
@@ -260,7 +261,7 @@ func (e *Executor) selectorMatches(body []byte, sel string) (bool, error) {
 	// error branch and the raw sel — never a config value — reaches the message);
 	// pass a nil eval so Field does not evaluate the selector a second time,
 	// matching the other pre-rendered call sites (logout, download).
-	_, found, err := e.selector.Field(doc.Root(), loader.SelectorBlock{Selector: rendered}, nil)
+	_, found, err := selector.Field(doc.Root(), loader.SelectorBlock{Selector: rendered}, nil)
 	if err != nil {
 		// Report the ORIGINAL (un-rendered) selector text, never the rendered
 		// form, which could interpolate a config value into the message.

@@ -40,8 +40,7 @@ func looksLoggedOut(def *loader.Definition, body []byte, contentType string, que
 	if contentType != "" && !strings.Contains(contentType, "text/html") {
 		return false
 	}
-	eng := selector.New()
-	doc, err := eng.ParseHTML(body)
+	doc, err := selector.ParseHTML(body)
 	if err != nil {
 		return false
 	}
@@ -49,7 +48,7 @@ func looksLoggedOut(def *loader.Definition, body []byte, contentType string, que
 	if err != nil {
 		return false
 	}
-	_, found, err := eng.Field(doc.Root(), loader.SelectorBlock{Selector: rendered}, nil)
+	_, found, err := selector.Field(doc.Root(), loader.SelectorBlock{Selector: rendered}, nil)
 	if err != nil {
 		return false
 	}

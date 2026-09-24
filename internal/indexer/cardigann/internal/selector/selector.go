@@ -18,21 +18,10 @@ var ErrSelectorNoMatch = errors.New("selector matched no element")
 // EvalFunc is the injectable template-eval seam. Jackett interleaves Go-template
 // evaluation into handleSelector (for selector strings, case values, text, and
 // default). To keep this stage decoupled from the template package, each
-// row-extraction call takes an EvalFunc explicitly rather than the Engine
+// row-extraction call takes an EvalFunc explicitly rather than this stage
 // holding one: a nil EvalFunc defaults to identity (see evalFragment), so
 // callers with no template context (most selector tests) can pass nil.
 type EvalFunc func(string) (string, error)
-
-// Engine extracts field values from parsed HTML/JSON documents, reproducing
-// Jackett's CardigannIndexer.handleSelector / handleJsonSelector semantics. It
-// holds no per-call state, so a single Engine is safe to share and call
-// concurrently across searches.
-type Engine struct{}
-
-// New constructs an Engine.
-func New() *Engine {
-	return &Engine{}
-}
 
 // evalFragment runs eval over s, defaulting to identity when eval is nil so a
 // caller with no template context can pass nil rather than wiring an identity
@@ -115,9 +104,9 @@ func (r Row) backend() node {
 //
 // eval is the template-eval seam for THIS call only (e.g. the search stage
 // rebuilds it per row to see the growing .Result map); nil defaults to identity.
-// The Engine itself holds no eval state, so concurrent callers never share or
-// race on it.
-func (e *Engine) Field(row Row, block loader.SelectorBlock, eval EvalFunc) (value string, found bool, err error) {
+// This stage holds no eval state, so concurrent callers never share or race on
+// it.
+func Field(row Row, block loader.SelectorBlock, eval EvalFunc) (value string, found bool, err error) {
 	if block.Text != nil {
 		v, err := evalFragment(eval, block.Text.String())
 		if err != nil {
@@ -148,11 +137,14 @@ func (e *Engine) Field(row Row, block loader.SelectorBlock, eval EvalFunc) (valu
 		}
 	}
 
-	return e.extract(cur, block, eval)
+	return extract(cur, block, eval)
 }
 
 // extract performs the case/attribute/text branch of handleSelector after the
-// selector and remove phases have positioned cur.
+// selector and remove phases have positioned cur. Every extracted value is
+// trimmed, reproducing Jackett's ParseUtil.NormalizeSpace — which is TRIM-ONLY
+// (`s?.Trim() ?? ""`): it does NOT collapse internal whitespace runs (that is
+// the separate NormalizeMultiSpaces, which handleSelector never calls).
 //
 // Known minor divergence (not corpus-reachable): for a JSON field with NO
 // selector/case/attribute/text, Jackett leaves value=null and returns "" (the
@@ -160,18 +152,18 @@ func (e *Engine) Field(row Row, block loader.SelectorBlock, eval EvalFunc) (valu
 // the row node's canonical string. No vendored JSON def authors a selector-less
 // field, so this path is never exercised; the engine's required/optional handling
 // would mask it regardless. Documented rather than special-cased.
-func (e *Engine) extract(cur node, block loader.SelectorBlock, eval EvalFunc) (string, bool, error) {
+func extract(cur node, block loader.SelectorBlock, eval EvalFunc) (string, bool, error) {
 	switch {
 	case block.Case.Len() > 0:
-		return e.applyCase(cur, block.Case, eval)
+		return applyCase(cur, block.Case, eval)
 	case block.Attribute != "":
 		v, ok := cur.attribute(block.Attribute)
 		if !ok {
 			return "", false, nil
 		}
-		return normalizeSpace(v), true, nil
+		return strings.TrimSpace(v), true, nil
 	default:
-		return normalizeSpace(cur.text()), true, nil
+		return strings.TrimSpace(cur.text()), true, nil
 	}
 }
 
@@ -188,7 +180,7 @@ func (e *Engine) extract(cur node, block loader.SelectorBlock, eval EvalFunc) (s
 // matches, whereas handleJsonSelector has already assigned the SelectToken
 // result to value, only reassigns it on a match, and checks `value == null`
 // after the loop — so an unmatched non-null value passes through raw.
-func (e *Engine) applyCase(cur node, cases loader.CaseBlock, eval EvalFunc) (string, bool, error) {
+func applyCase(cur node, cases loader.CaseBlock, eval EvalFunc) (string, bool, error) {
 	for _, c := range cases.Ordered() {
 		ok, err := cur.caseMatch(c.Key)
 		if err != nil {
@@ -204,7 +196,7 @@ func (e *Engine) applyCase(cur node, cases loader.CaseBlock, eval EvalFunc) (str
 		return v, true, nil
 	}
 	if j, ok := cur.(*jsonNode); ok && j.value != nil {
-		return normalizeSpace(j.text()), true, nil
+		return strings.TrimSpace(j.text()), true, nil
 	}
 	return "", false, nil
 }

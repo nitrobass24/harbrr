@@ -11,6 +11,7 @@ import (
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/httpx"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/selector"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/template"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 )
@@ -211,11 +212,11 @@ func (e *Executor) checkErrors(l *loader.Login, rawURL string, body []byte, stat
 	if len(l.Error) == 0 {
 		return nil
 	}
-	doc, err := e.selector.ParseHTML(body)
+	doc, err := selector.ParseHTML(body)
 	if err != nil {
 		return fmt.Errorf("parsing login response from %s: %w", apphttp.SchemeHost(rawURL), err)
 	}
-	msg, matched, err := e.selector.CheckErrorBlocks(doc.Root(), l.Error, e.eval)
+	msg, matched, err := selector.CheckErrorBlocks(doc.Root(), l.Error, e.eval)
 	if err != nil {
 		return fmt.Errorf("checking login error selectors from %s: %w", apphttp.SchemeHost(rawURL), err)
 	}

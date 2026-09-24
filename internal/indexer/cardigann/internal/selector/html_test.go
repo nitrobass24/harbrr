@@ -12,7 +12,7 @@ func TestRowsHTML(t *testing.T) {
 
 	t.Run("one row per match", func(t *testing.T) {
 		t.Parallel()
-		doc, err := New().ParseHTML(readFixture(t, "rows.html"))
+		doc, err := ParseHTML(readFixture(t, "rows.html"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -24,7 +24,7 @@ func TestRowsHTML(t *testing.T) {
 			t.Fatalf("rows = %d, want 2", len(rows))
 		}
 		// Second row's name field.
-		v, found, err := New().Field(rows[1], loader.SelectorBlock{Selector: "td.name"}, nil)
+		v, found, err := Field(rows[1], loader.SelectorBlock{Selector: "td.name"}, nil)
 		if err != nil || !found {
 			t.Fatalf("field err=%v found=%v", err, found)
 		}
@@ -35,7 +35,7 @@ func TestRowsHTML(t *testing.T) {
 
 	t.Run("after merges following row children", func(t *testing.T) {
 		t.Parallel()
-		doc, err := New().ParseHTML(readFixture(t, "after.html"))
+		doc, err := ParseHTML(readFixture(t, "after.html"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -49,14 +49,14 @@ func TestRowsHTML(t *testing.T) {
 		}
 		// After merge, the detail cell from the following row is now reachable
 		// inside the kept row.
-		v, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "td.detail"}, nil)
+		v, found, err := Field(rows[0], loader.SelectorBlock{Selector: "td.detail"}, nil)
 		if err != nil || !found {
 			t.Fatalf("field err=%v found=%v", err, found)
 		}
 		if v != "First detail" {
 			t.Fatalf("merged detail = %q, want First detail", v)
 		}
-		title, _, _ := New().Field(rows[0], loader.SelectorBlock{Selector: "td.title"}, nil)
+		title, _, _ := Field(rows[0], loader.SelectorBlock{Selector: "td.title"}, nil)
 		if title != "First" {
 			t.Fatalf("title = %q, want First", title)
 		}
@@ -64,7 +64,7 @@ func TestRowsHTML(t *testing.T) {
 
 	t.Run("empty rows selector errors", func(t *testing.T) {
 		t.Parallel()
-		doc, _ := New().ParseHTML(readFixture(t, "rows.html"))
+		doc, _ := ParseHTML(readFixture(t, "rows.html"))
 		if _, err := doc.Rows(loader.RowsBlock{}); err == nil {
 			t.Fatal("expected error for empty rows selector")
 		}
@@ -128,7 +128,7 @@ a.tag: tagged
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, found, err := New().Field(row(t), tc.block, nil)
+			got, found, err := Field(row(t), tc.block, nil)
 			assertField(t, fieldResult{got, found, err}, tc.wantValue, tc.wantFound, false)
 		})
 	}
@@ -143,7 +143,7 @@ func TestSelfMatchHTML(t *testing.T) {
 	row := firstHTMLRow(t, "edge.html", "div#row")
 
 	// The row is <div id="row">; a selector matching it self-matches.
-	v, found, err := New().Field(row, loader.SelectorBlock{Selector: "div#row", Attribute: "id"}, nil)
+	v, found, err := Field(row, loader.SelectorBlock{Selector: "div#row", Attribute: "id"}, nil)
 	if err != nil || !found {
 		t.Fatalf("self-match err=%v found=%v", err, found)
 	}
@@ -152,7 +152,7 @@ func TestSelfMatchHTML(t *testing.T) {
 	}
 
 	// A non-self, non-descendant selector still misses.
-	_, found, err = New().Field(row, loader.SelectorBlock{Selector: "div#absent"}, nil)
+	_, found, err = Field(row, loader.SelectorBlock{Selector: "div#absent"}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -168,7 +168,7 @@ func TestSelfMatchHTML(t *testing.T) {
 func TestRootSelectorHTML(t *testing.T) {
 	t.Parallel()
 	// Use rows.html; scope to the first row, then reach the OTHER row via :root.
-	doc, err := New().ParseHTML(readFixture(t, "rows.html"))
+	doc, err := ParseHTML(readFixture(t, "rows.html"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestRootSelectorHTML(t *testing.T) {
 	// From row 0, ":root tr[data-id='200'] td.name" reaches the second row, which
 	// a plain (descendant-scoped) selector could never see.
 	block := loader.SelectorBlock{Selector: ":root tr[data-id='200'] td.name"}
-	v, found, err := New().Field(rows[0], block, nil)
+	v, found, err := Field(rows[0], block, nil)
 	if err != nil || !found {
 		t.Fatalf(":root cross-row err=%v found=%v", err, found)
 	}

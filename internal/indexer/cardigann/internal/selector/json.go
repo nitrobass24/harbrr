@@ -36,7 +36,7 @@ func (n *jsonNode) rowRoot() any {
 }
 
 // ParseJSON parses a JSON response body into a Document.
-func (e *Engine) ParseJSON(body []byte) (*Document, error) {
+func ParseJSON(body []byte) (*Document, error) {
 	var v any
 	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.UseNumber()

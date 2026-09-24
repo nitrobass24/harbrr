@@ -7,8 +7,7 @@ import (
 )
 
 // TestSearch_ConcurrentQueriesDoNotRace drives many concurrent Search calls
-// through ONE shared Engine (and thus one shared selector.Engine and one shared
-// login.Executor) with DIFFERENT queries, under -race. The selector's
+// through ONE shared Engine // login.Executor) with DIFFERENT queries, under -race. The selector's
 // row-extraction seam is stateless (eval is passed per call, never mutated
 // on shared engine state), so this must be race-free AND every goroutine must
 // see only its own query's andmatch-filtered result — never another

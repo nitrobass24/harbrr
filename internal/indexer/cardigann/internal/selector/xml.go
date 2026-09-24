@@ -32,7 +32,7 @@ import (
 // def's `selector: pubDate` matches <pubDate> in both engines; the only
 // divergence is that a case-MISmatched selector/document pair matches here but
 // not in Jackett. Attribute values and text keep their original case.
-func (e *Engine) ParseXML(body []byte) (*Document, error) {
+func ParseXML(body []byte) (*Document, error) {
 	root, err := xmlToNode(body)
 	if err != nil {
 		return nil, fmt.Errorf("parsing XML document: %w", err)

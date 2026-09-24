@@ -34,11 +34,11 @@ type rowState struct {
 // extract+default+filter each field with an eval func bound to the growing
 // Result, accumulate into base/result, apply the row filters, then build the
 // Release. keep is false when a row filter (andmatch) drops the row.
-func parseRow(def *loader.Definition, sel *selector.Engine, row selector.Row, query Query, deps Deps) (rel *normalizer.Release, keep bool, err error) {
+func parseRow(def *loader.Definition, row selector.Row, query Query, deps Deps) (rel *normalizer.Release, keep bool, err error) {
 	state := rowState{result: map[string]string{}, base: map[string]string{}}
 
 	for _, fe := range def.Search.Fields.Ordered() {
-		if err := parseField(fe, sel, row, query, deps, &state); err != nil {
+		if err := parseField(fe, row, query, deps, &state); err != nil {
 			// The row matched but this field did not resolve — the other half of
 			// the "no rows" / "rows but no fields" split a capture reports. The
 			// FIRST failing field wins (withMiss never overwrites).
@@ -72,11 +72,11 @@ func parseRow(def *loader.Definition, sel *selector.Engine, row selector.Row, qu
 // exception reaches the row-level catch, which drops the row (HTML) or aborts
 // the parse (JSON). resolveField's error is therefore swallowed here for
 // optional fields and propagated verbatim for required ones.
-func parseField(fe loader.Entry[loader.SelectorBlock], sel *selector.Engine, row selector.Row, query Query, deps Deps, state *rowState) error {
+func parseField(fe loader.Entry[loader.SelectorBlock], row selector.Row, query Query, deps Deps, state *rowState) error {
 	name, modifiers := splitFieldKey(fe.Key)
 	optional := isOptional(fe.Key, name, modifiers, fe.Value)
 
-	resolved, skip, err := resolveField(fe.Value, name, optional, sel, row, query, deps, state.result)
+	resolved, skip, err := resolveField(fe.Value, name, optional, row, query, deps, state.result)
 	if err != nil {
 		if optional {
 			if _, ok := state.result[name]; !ok {
@@ -101,13 +101,13 @@ func parseField(fe loader.Entry[loader.SelectorBlock], sel *selector.Engine, row
 // so far is built and passed into this call's Field lookup, reproducing Jackett's
 // handleSelector(variables) interleaving without mutating any shared state.
 // Every error is returned as-is; parseField decides what it means for the row.
-func resolveField(block loader.SelectorBlock, name string, optional bool, sel *selector.Engine, row selector.Row, query Query, deps Deps, result map[string]string) (string, bool, error) {
+func resolveField(block loader.SelectorBlock, name string, optional bool, row selector.Row, query Query, deps Deps, result map[string]string) (string, bool, error) {
 	eval := bindEval(deps, query, result)
 
 	// A genuine fault (bad selector/template/case eval) — NOT "value absent",
 	// which Field reports as found=false with a nil error and which the
 	// optional/default logic below handles.
-	value, found, err := sel.Field(row, block, eval)
+	value, found, err := selector.Field(row, block, eval)
 	if err != nil {
 		return "", false, fmt.Errorf("extracting: %w", err)
 	}

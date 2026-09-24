@@ -27,7 +27,7 @@ func headerDeps() Deps {
 // order — the same rows ParseResults would iterate.
 func splitRows(t *testing.T, html, rowsSelector string) []selector.Row {
 	t.Helper()
-	doc, err := selector.New().ParseHTML([]byte(html))
+	doc, err := selector.ParseHTML([]byte(html))
 	if err != nil {
 		t.Fatalf("ParseHTML: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestBackfillDateHeader_SiblingHeaders(t *testing.T) {
 	}
 	for i, row := range rows {
 		rel := &normalizer.Release{}
-		if err := backfillDateHeader(def, selector.New(), row, rel, Query{}, deps, ""); err != nil {
+		if err := backfillDateHeader(def, row, rel, Query{}, deps, ""); err != nil {
 			t.Fatalf("row %d: backfillDateHeader: %v", i, err)
 		}
 		if rel.PublishDate != want[i] {
@@ -125,7 +125,7 @@ func TestBackfillDateHeader_ParentHop(t *testing.T) {
 	}
 	for i, row := range rows {
 		rel := &normalizer.Release{}
-		if err := backfillDateHeader(def, selector.New(), row, rel, Query{}, deps, ""); err != nil {
+		if err := backfillDateHeader(def, row, rel, Query{}, deps, ""); err != nil {
 			t.Fatalf("row %d: backfillDateHeader: %v", i, err)
 		}
 		if got, want := rel.PublishDate, "2024-01-05T00:00:00Z"; got != want {
@@ -196,7 +196,7 @@ func TestBackfillDateHeader_Edges(t *testing.T) {
 				t.Fatalf("no rows matched")
 			}
 			rel := &normalizer.Release{PublishDate: tt.preset}
-			err := backfillDateHeader(def, selector.New(), rows[0], rel, Query{}, deps, tt.respType)
+			err := backfillDateHeader(def, rows[0], rel, Query{}, deps, tt.respType)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("expected error, got nil (PublishDate=%q)", rel.PublishDate)
