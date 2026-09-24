@@ -26,16 +26,7 @@ type notificationResponse struct {
 
 // listNotifications returns all notification targets (URLs redacted).
 func (rt *router) listNotifications(w http.ResponseWriter, r *http.Request) {
-	list, err := rt.Notify.ListNotifications(r.Context())
-	if err != nil {
-		rt.writeServiceError(w, "list notifications", err)
-		return
-	}
-	out := make([]notificationResponse, 0, len(list))
-	for _, n := range list {
-		out = append(out, toNotificationResponse(n))
-	}
-	writeJSON(w, http.StatusOK, out)
+	listResource(rt, w, r, "list notifications", rt.Notify.ListNotifications, toNotificationResponse)
 }
 
 // createNotification adds a notification target with its destination URL encrypted.
@@ -63,16 +54,7 @@ func (rt *router) createNotification(w http.ResponseWriter, r *http.Request) {
 
 // getNotification returns one target (URL redacted).
 func (rt *router) getNotification(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "notification")
-	if !ok {
-		return
-	}
-	n, err := rt.Notify.GetNotification(r.Context(), id)
-	if err != nil {
-		rt.writeServiceError(w, "get notification", err)
-		return
-	}
-	writeJSON(w, http.StatusOK, toNotificationResponse(n))
+	getResource(rt, w, r, "notification", "get notification", rt.Notify.GetNotification, toNotificationResponse)
 }
 
 // updateNotification patches a target (a new url rotates the destination).
@@ -101,15 +83,7 @@ func (rt *router) updateNotification(w http.ResponseWriter, r *http.Request) {
 
 // deleteNotification removes a target.
 func (rt *router) deleteNotification(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "notification")
-	if !ok {
-		return
-	}
-	if err := rt.Notify.DeleteNotification(r.Context(), id); err != nil {
-		rt.writeServiceError(w, "delete notification", err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	rt.deleteResource(w, r, "notification", "delete notification", rt.Notify.DeleteNotification)
 }
 
 // enableNotification / disableNotification toggle a target.

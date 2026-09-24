@@ -1,11 +1,12 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -125,7 +126,7 @@ func loadDefinitionSummaries(l *loader.Loader, nativeDefs []*loader.Definition) 
 			Error:  s.Reason,
 		})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	slices.SortFunc(out, func(a, b definitionEntry) int { return cmp.Compare(a.ID, b.ID) })
 	return out, nil
 }
 

@@ -21,16 +21,7 @@ type syncProfileResponse struct {
 
 // listSyncProfiles returns all sync profiles.
 func (rt *router) listSyncProfiles(w http.ResponseWriter, r *http.Request) {
-	list, err := rt.AppSync.ListProfiles(r.Context())
-	if err != nil {
-		rt.writeServiceError(w, "list sync profiles", err)
-		return
-	}
-	out := make([]syncProfileResponse, 0, len(list))
-	for _, p := range list {
-		out = append(out, toSyncProfileResponse(p))
-	}
-	writeJSON(w, http.StatusOK, out)
+	listResource(rt, w, r, "list sync profiles", rt.AppSync.ListProfiles, toSyncProfileResponse)
 }
 
 // createSyncProfile adds a sync profile (unique name → 409).
@@ -54,16 +45,7 @@ func (rt *router) createSyncProfile(w http.ResponseWriter, r *http.Request) {
 
 // getSyncProfile returns one sync profile.
 func (rt *router) getSyncProfile(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "sync profile")
-	if !ok {
-		return
-	}
-	p, err := rt.AppSync.GetProfile(r.Context(), id)
-	if err != nil {
-		rt.writeServiceError(w, "get sync profile", err)
-		return
-	}
-	writeJSON(w, http.StatusOK, toSyncProfileResponse(p))
+	getResource(rt, w, r, "sync profile", "get sync profile", rt.AppSync.GetProfile, toSyncProfileResponse)
 }
 
 // updateSyncProfile patches a sync profile (present-empty indexerIds clears the
@@ -92,15 +74,7 @@ func (rt *router) updateSyncProfile(w http.ResponseWriter, r *http.Request) {
 // deleteSyncProfile removes a sync profile (refused with a 409 while any connection
 // still references it).
 func (rt *router) deleteSyncProfile(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r, "sync profile")
-	if !ok {
-		return
-	}
-	if err := rt.AppSync.DeleteProfile(r.Context(), id); err != nil {
-		rt.writeServiceError(w, "delete sync profile", err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	rt.deleteResource(w, r, "sync profile", "delete sync profile", rt.AppSync.DeleteProfile)
 }
 
 // toSyncProfileResponse maps a sync profile to its API view (indexerIds never null).

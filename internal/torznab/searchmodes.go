@@ -55,13 +55,13 @@ func (m searchMode) available(caps *mapper.Capabilities) bool {
 	return len(caps.Modes[m.capsKey]) > 0
 }
 
-// supportedParams returns the comma-joined canonical supported-param string for
-// this mode, re-derived from the definition's declared params. It always starts
+// supportedParams returns the canonical supported-param list for this mode,
+// re-derived from the definition's declared params. It always starts
 // with "q" and includes each canonical param the definition declared, in the
 // fixed canonical order. tv-search's "imdbid" is special: Jackett gates it on
 // the per-definition AllowTVSearchIMDB flag (TvSearchImdbAvailable), NOT on the
 // param list, so it is included iff that flag is set.
-func (m searchMode) supportedParams(caps *mapper.Capabilities) string {
+func (m searchMode) supportedParams(caps *mapper.Capabilities) []string {
 	out := make([]string, 0, len(m.params)+1)
 	out = append(out, "q")
 	declared := declaredParamSet(caps.Modes[m.capsKey])
@@ -70,7 +70,7 @@ func (m searchMode) supportedParams(caps *mapper.Capabilities) string {
 			out = append(out, p)
 		}
 	}
-	return strings.Join(out, ",")
+	return out
 }
 
 // paramEnabled reports whether a single canonical param is advertised: by the
@@ -114,7 +114,7 @@ func CapabilityTokens(caps *mapper.Capabilities) []string {
 			continue
 		}
 		out = append(out, m.xmlElem)
-		for p := range strings.SplitSeq(m.supportedParams(caps), ",") {
+		for _, p := range m.supportedParams(caps) {
 			out = append(out, m.xmlElem+"-"+p)
 		}
 	}
