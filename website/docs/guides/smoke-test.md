@@ -40,10 +40,12 @@ Native:
 harbrr smoke
 ```
 
-In Docker (the command ships in the image):
+In Docker (the command ships in the image), the env file has to be inside the container, so
+copy it in and point `--env-file` at it:
 
 ```bash
-docker exec <harbrr-container> harbrr smoke
+docker cp smoke.env <harbrr-container>:/config/smoke.env
+docker exec <harbrr-container> harbrr smoke --env-file /config/smoke.env
 ```
 
 The run prints a summary and writes `smoke-report.md` in the working directory. It exits
