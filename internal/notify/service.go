@@ -192,12 +192,14 @@ func (s *Service) SetEnabled(ctx context.Context, id int64, enabled bool) error 
 }
 
 // DeleteNotification removes a target by id. Unlike appsync/announce, notify mints
-// nothing, so this is a plain get-then-delete with no revoke step.
+// nothing to revoke, so this is a bare repo delete (as proxy and solver do) rather than
+// Lifecycle's read-then-delete, whose read only discards the row it fetched; the repo
+// delete reports a missing id itself.
 func (s *Service) DeleteNotification(ctx context.Context, id int64) error {
-	return s.life.Delete(ctx, id, connresource.DeleteSpec[domain.Notification]{
-		Get:    s.repo.GetNotification,
-		Delete: s.repo.DeleteNotification,
-	})
+	if err := s.repo.DeleteNotification(ctx, s.db, id); err != nil {
+		return fmt.Errorf("notify: delete notification: %w", err)
+	}
+	return nil
 }
 
 // TestNotification sends a synthetic event to one target so an operator can confirm the

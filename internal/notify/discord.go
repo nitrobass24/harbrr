@@ -97,12 +97,5 @@ func truncate(s string, limit int) string {
 	if utf8.RuneCountInString(s) <= limit {
 		return s
 	}
-	out := make([]rune, 0, limit)
-	for _, r := range s {
-		if len(out) >= limit-1 {
-			break
-		}
-		out = append(out, r)
-	}
-	return string(out) + "…"
+	return string([]rune(s)[:limit-1]) + "…"
 }

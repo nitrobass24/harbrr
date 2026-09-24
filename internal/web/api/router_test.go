@@ -164,7 +164,7 @@ func newEnvFull(t *testing.T, cfg api.Config, buildCache func(db *database.DB) *
 	appsSvc := apps.NewService(db, keyring, http.DefaultClient)
 	appSync := appsync.NewService(db, source, appsSvc, authSvc, keyring, http.DefaultClient, zerolog.Nop())
 	announceSvc := announce.NewService(db, appsSvc, authSvc, keyring,
-		announce.DefaultTargetFactory(http.DefaultClient, nil, nil), zerolog.Nop())
+		announce.DefaultTargetFactory(http.DefaultClient), zerolog.Nop())
 	downloadSvc := download.NewService(db, appsSvc, keyring, http.DefaultClient)
 	notifySvc := notify.NewService(db, keyring, http.DefaultClient, zerolog.Nop())
 	proxySvc := proxy.NewService(db, keyring)

@@ -63,11 +63,11 @@ func (s *Service) restore(ctx context.Context, t *Tables, force bool) error {
 	if err := ensureRestorable(ctx, s.db, force, t.Admin != nil); err != nil {
 		return err
 	}
-	appConnApps, err := s.resolveAppConnApps(ctx, t.AppConnections)
+	appConnApps, err := resolveConnApps(ctx, s, t.AppConnections)
 	if err != nil {
 		return err
 	}
-	announceConnApps, err := s.resolveAnnounceConnApps(ctx, t.AnnounceConnections)
+	announceConnApps, err := resolveConnApps(ctx, s, t.AnnounceConnections)
 	if err != nil {
 		return err
 	}
@@ -92,25 +92,15 @@ func (s *Service) restore(ctx context.Context, t *Tables, force bool) error {
 	return nil
 }
 
-// resolveAppConnApps / resolveAnnounceConnApps get-or-create the App each bundled
-// connection references (see resolveConnAppForLoad), keyed by the row's ORIGINAL (source)
-// id — loadAppConnections/loadAnnounceConnections look up the pre-resolved App id by that
-// key instead of calling Resolve themselves (see restore's doc comment for why).
-func (s *Service) resolveAppConnApps(ctx context.Context, rows []AppConnRow) (idMap, error) {
+// resolveConnApps get-or-creates the App each bundled connection references (see
+// resolveConnAppForLoad), keyed by the row's ORIGINAL (source) id —
+// loadAppConnections/loadAnnounceConnections look up the pre-resolved App id by that key
+// instead of calling Resolve themselves (see restore's doc comment for why). Both
+// connection row types embed connIdentity, so one loop serves both.
+func resolveConnApps[T interface{ identity() connIdentity }](ctx context.Context, s *Service, rows []T) (idMap, error) {
 	out := make(idMap, len(rows))
-	for _, r := range rows {
-		app, err := s.resolveConnAppForLoad(ctx, r.Kind, r.Name, r.BaseURL, r.APIKey, r.HarbrrURL)
-		if err != nil {
-			return nil, err
-		}
-		out[r.ID] = app.ID
-	}
-	return out, nil
-}
-
-func (s *Service) resolveAnnounceConnApps(ctx context.Context, rows []AnnounceConnRow) (idMap, error) {
-	out := make(idMap, len(rows))
-	for _, r := range rows {
+	for _, row := range rows {
+		r := row.identity()
 		app, err := s.resolveConnAppForLoad(ctx, r.Kind, r.Name, r.BaseURL, r.APIKey, r.HarbrrURL)
 		if err != nil {
 			return nil, err

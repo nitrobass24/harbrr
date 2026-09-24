@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -351,19 +352,10 @@ func AppAcceptsProtocol(kind, protocol string) bool {
 }
 
 func IndexerServesApp(kind string, cats []Category) bool {
-	lo, hi, ok := AppCategoryRange(kind)
-	if !ok {
+	if _, _, ok := AppCategoryRange(kind); !ok {
 		return true
 	}
-	for _, c := range cats {
-		if c.ID >= lo && c.ID <= hi {
-			return true
-		}
-		if kind == domain.AppKindReadarr && c.ID == audiobookCategory {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(cats, func(c Category) bool { return categoryServesApp(kind, c.ID) })
 }
 
 // categoryServesApp is the single-category form of IndexerServesApp: whether one Newznab

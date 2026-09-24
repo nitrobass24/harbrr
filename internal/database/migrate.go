@@ -5,7 +5,6 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
-	"sort"
 	"time"
 
 	"github.com/autobrr/harbrr/internal/database/dbinterface"
@@ -91,8 +90,8 @@ func (db *DB) appliedMigrations(ctx context.Context) (map[string]struct{}, error
 	return applied, nil
 }
 
-// pendingMigrations lists embedded migration filenames not yet applied, in
-// lexical order.
+// pendingMigrations lists embedded migration filenames not yet applied, in lexical
+// order — fs.ReadDir returns the embedded entries sorted by filename.
 func pendingMigrations(applied map[string]struct{}) ([]string, error) {
 	entries, err := fs.ReadDir(migrationsFS, migrationsDir)
 	if err != nil {
@@ -108,7 +107,6 @@ func pendingMigrations(applied map[string]struct{}) ([]string, error) {
 		}
 		pending = append(pending, e.Name())
 	}
-	sort.Strings(pending)
 	return pending, nil
 }
 
