@@ -54,25 +54,14 @@ function matches(row: SearchRow, terms: Term[], catNames: Map<number, string>): 
 }
 
 /**
- * filterRows narrows rows to those matching every term in `input`: case-insensitive
- * substring by default, `/pattern/` for a regex, a leading `-` or `!` to exclude.
- * Empty input returns the `rows` array itself, so memo identity holds.
+ * filterGroups narrows grouped results to those matching every term in `input`:
+ * case-insensitive substring by default, `/pattern/` for a regex, a leading `-` or `!`
+ * to exclude. A group is kept when ANY of its members matches, so a filter never
+ * half-collapses a group into a partial source list (autobrr/harbrr#398). Empty input
+ * returns the `groups` array itself, so memo identity holds.
  *
  * Returns null when any term is a half-typed or invalid regex — callers keep the
  * last valid view instead of blanking the results over a character in flight.
- */
-export function filterRows(rows: SearchRow[], input: string, catNames: Map<number, string>): SearchRow[] | null {
-  const terms = parseTerms(input)
-  if (terms === null) return null
-  if (terms.length === 0) return rows
-
-  return rows.filter((row) => matches(row, terms, catNames))
-}
-
-/**
- * filterGroups is filterRows over grouped results: a group is kept when ANY of its
- * members matches, so a filter never half-collapses a group into a partial source list
- * (autobrr/harbrr#398). Same null-on-invalid contract as filterRows.
  */
 export function filterGroups(groups: ResultGroup[], input: string, catNames: Map<number, string>): ResultGroup[] | null {
   const terms = parseTerms(input)
