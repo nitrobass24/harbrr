@@ -17,7 +17,7 @@ import (
 func resolveRowsArray(root any, selector string) ([]any, bool, error) {
 	target := root
 	if path := rowsPath(selector); path != "" {
-		v, ok := resolvePath(root, path)
+		v, ok := ResolvePath(root, path)
 		if !ok {
 			return nil, false, nil
 		}
@@ -66,13 +66,13 @@ func rowsFilters(selector string) string {
 	return ""
 }
 
-// resolvePath walks a Newtonsoft-style SelectToken path over a JSON value decoded
+// ResolvePath walks a Newtonsoft-style SelectToken path over a JSON value decoded
 // into Go's any (map[string]any / []any / scalars). It supports the corpus subset:
 // dotted object keys and array indices written either as a dotted segment
 // ("tags.0") or as Newtonsoft bracket syntax ("files[0]", "$[0].id"). A leading
 // "$" or "." is the caller's responsibility to strip. ok is false on any missing
 // key, out-of-range index, or type mismatch.
-func resolvePath(root any, path string) (any, bool) {
+func ResolvePath(root any, path string) (any, bool) {
 	p := strings.TrimPrefix(strings.TrimSpace(path), "$")
 	p = trimDotPrefix(p)
 	tokens := tokenizePath(p)

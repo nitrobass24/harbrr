@@ -39,7 +39,6 @@ type flareCookie struct {
 }
 
 type flareSolution struct {
-	URL       string        `json:"url"`
 	UserAgent string        `json:"userAgent"`
 	Cookies   []flareCookie `json:"cookies"`
 }

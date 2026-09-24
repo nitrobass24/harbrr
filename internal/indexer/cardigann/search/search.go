@@ -18,6 +18,7 @@ import (
 
 	"golang.org/x/text/encoding"
 
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/encode"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/regexadapter"
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
@@ -95,10 +96,6 @@ type Deps struct {
 	// UTF-8 before parsing and request query/body values are codepage-encoded,
 	// reproducing Jackett's Encoding.GetEncoding(Definition.Encoding).
 	Encoding encoding.Encoding
-	// Language is the definition's `language:` code. It routes the regex engine
-	// for TEMPLATE patterns ({{ re_replace }}) the same way the filter registry's
-	// own language routes field-filter patterns (autobrr/harbrr#636).
-	Language string
 	// FoldAndMatchPunctuation makes the andmatch row filter punctuation-tolerant
 	// (andMatchFold): an *arr-stripped term still matches an unstripped tracker
 	// title. Off by default — the default path is byte-identical to Jackett — and
@@ -128,7 +125,7 @@ func ParseResults(def *loader.Definition, body []byte, respType string, query Qu
 	// with the def Encoding). This is the shared offline core, so both the live search
 	// (Execute passes the raw body) and offline replay (Engine.ParseResponseQuery) get
 	// correct UTF-8 selection. A UTF-8/no-encoding def is a no-op.
-	body = decodeBody(deps.Encoding, body)
+	body = encode.DecodeBody(deps.Encoding, body)
 
 	doc, err := parseDocument(body, respType)
 	if err != nil {
@@ -312,7 +309,7 @@ func Execute(ctx context.Context, def *loader.Definition, query Query, session *
 		// (the decoded body), so decode here too for a non-UTF-8 def. ParseResults
 		// decodes the raw body itself, so it receives the raw sr.body below — never
 		// a double-transcode (both decodes read the same raw source). No-op for UTF-8.
-		decoded := decodeBody(deps.Encoding, body)
+		decoded := encode.DecodeBody(deps.Encoding, body)
 		// Lazy login: a logged-out response (login.test selector absent) aborts the
 		// parse so the engine can re-login and retry once. Checked before parsing,
 		// matching Jackett's CheckIfLoginIsNeeded -> DoLogin order. The gate uses the

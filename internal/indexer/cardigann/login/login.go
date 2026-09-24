@@ -194,14 +194,6 @@ func (e *Executor) resolvePath(raw string) (string, error) {
 	return resolved, nil
 }
 
-// get issues a GET, returning the (capped) body and final status. The shared
-// client follows redirects (see do); the login-test path uses getNoFollow.
-// Cookies are applied/recorded by the Doer's jar (see the Doer cookie contract);
-// tests assert on the recorded request. All error sites redact the URL.
-func (e *Executor) get(ctx context.Context, rawURL string, headers map[string][]string) (body []byte, status int, err error) {
-	return e.do(ctx, stdhttp.MethodGet, rawURL, nil, headers)
-}
-
 // getNoFollow issues a GET whose redirects are surfaced to the caller instead of
 // followed: it stamps apphttp.WithNoRedirectFollow so the shared client's
 // RedirectPolicy hands back the raw 3xx (the same no-follow contract the search
@@ -210,16 +202,6 @@ func (e *Executor) get(ctx context.Context, rawURL string, headers map[string][]
 // uses it, to reproduce Jackett's TestLogin — whose WebClient never auto-follows.
 func (e *Executor) getNoFollow(ctx context.Context, rawURL string, headers map[string][]string) (body []byte, status int, location string, err error) {
 	return e.send(apphttp.WithNoRedirectFollow(ctx), stdhttp.MethodGet, rawURL, nil, headers)
-}
-
-// do performs one request through the seam and reads the body, letting the
-// client follow redirects — the post-login 302 lands on the page the error/test
-// selectors read. It discards the redirect Location (there is none on a followed
-// request's final response); the login-test path wants it, so it calls send via
-// getNoFollow instead.
-func (e *Executor) do(ctx context.Context, method, rawURL string, bodyReader io.Reader, headers map[string][]string) ([]byte, int, error) {
-	body, status, _, err := e.send(ctx, method, rawURL, bodyReader, headers)
-	return body, status, err
 }
 
 // send is the shared request core for do/getNoFollow. It deliberately touches NO

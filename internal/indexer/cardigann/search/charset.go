@@ -8,8 +8,6 @@ import (
 	"golang.org/x/text/encoding/htmlindex"
 	"golang.org/x/text/encoding/ianaindex"
 	"golang.org/x/text/transform"
-
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/encode"
 )
 
 // ResolveEncoding maps a definition's declared `encoding:` name to the
@@ -43,18 +41,6 @@ func ResolveEncoding(name string) (encoding.Encoding, error) {
 		return enc, nil
 	}
 	return nil, fmt.Errorf("unsupported definition encoding %q", n)
-}
-
-// decodeBody transcodes a response body from the definition's declared charset
-// to UTF-8. The transcoded bytes then feed the same goquery/JSON/XML parsers, so
-// Cyrillic (and other non-Latin) titles land as correct UTF-8 instead of U+FFFD.
-//
-// The implementation lives in encode.DecodeBody — the ONE transcoder shared with
-// the login stage, which decodes its own responses so non-ASCII login.error
-// selectors match (autobrr/harbrr#633). This thin alias keeps the search call
-// sites unchanged.
-func decodeBody(enc encoding.Encoding, body []byte) []byte {
-	return encode.DecodeBody(enc, body)
 }
 
 // encodeValue transcodes a request query/body value from UTF-8 to the

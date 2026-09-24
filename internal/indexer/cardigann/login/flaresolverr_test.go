@@ -162,7 +162,7 @@ func TestDo_DecompressesGzip(t *testing.T) {
 		t.Fatalf("gzip close: %v", err)
 	}
 	e := New(WithClient(&encodingDoer{encoding: "gzip", body: buf.Bytes()}), WithBaseURL("https://t.invalid/"))
-	body, _, err := e.get(context.Background(), "https://t.invalid/x", nil)
+	body, _, _, err := e.send(context.Background(), stdhttp.MethodGet, "https://t.invalid/x", nil, nil)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestDo_DecompressesDeflate(t *testing.T) {
 		t.Fatalf("flate close: %v", err)
 	}
 	e := New(WithClient(&encodingDoer{encoding: "deflate", body: buf.Bytes()}), WithBaseURL("https://t.invalid/"))
-	body, _, err := e.get(context.Background(), "https://t.invalid/x", nil)
+	body, _, _, err := e.send(context.Background(), stdhttp.MethodGet, "https://t.invalid/x", nil, nil)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestDo_DecompressesZlibDeflate(t *testing.T) {
 		t.Fatalf("zlib close: %v", err)
 	}
 	e := New(WithClient(&encodingDoer{encoding: "deflate", body: buf.Bytes()}), WithBaseURL("https://t.invalid/"))
-	body, _, err := e.get(context.Background(), "https://t.invalid/x", nil)
+	body, _, _, err := e.send(context.Background(), stdhttp.MethodGet, "https://t.invalid/x", nil, nil)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}

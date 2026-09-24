@@ -1,6 +1,7 @@
 package login
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"maps"
@@ -26,7 +27,7 @@ import (
 //     the extracted selector values.
 //  5. Resolve the submit target (Login.SubmitPath, else the form's action attr,
 //     else the landing path) and POST. A challenged POST is solved-and-retried
-//     (see postFormAbsolute).
+//     (see submitLoginPost).
 //  6. Run the error selectors.
 //
 // The cookie jar persists Set-Cookie from the landing GET into the POST.
@@ -48,7 +49,7 @@ func (e *Executor) loginForm(ctx context.Context, def *loader.Definition) error 
 		return err
 	}
 
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(body)))
+	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("parsing login page from %s: %w", apphttp.SchemeHost(landingURL), err)
 	}
@@ -73,7 +74,12 @@ func (e *Executor) loginForm(ctx context.Context, def *loader.Definition) error 
 			return err
 		}
 	}
-	return e.postFormAbsolute(ctx, def, target, pairs, e.loginSecrets(def))
+	// The form flow has already resolved its target via the form action, so it
+	// submits directly rather than going through postForm's path resolution.
+	// Form body uses url.Values.Encode — see postForm (methods.go) for the
+	// deliberate login form-encoding divergence note.
+	headers := httpx.WithFormContentType(loginHeaders(def))
+	return e.submitLoginPost(ctx, def.Login, target, pairs.Encode(), headers, e.loginSecrets(def))
 }
 
 // assembleFormPairs builds the POST body in Jackett's exact precedence order:
@@ -230,20 +236,6 @@ func (e *Executor) resolveFormTarget(l *loader.Login, form *goquery.Selection, l
 		return "", fmt.Errorf("resolving form action: %w", err)
 	}
 	return resolved, nil
-}
-
-// postFormAbsolute POSTs an already-resolved absolute target, then runs the
-// error selectors (or clears an anti-bot challenge first — see
-// submitLoginPost). Distinct from postForm (methods.go), which resolves a
-// definition path; the form flow has already resolved its target via the form
-// action.
-//
-// Form body uses url.Values.Encode — see postForm (methods.go) for the deliberate
-// login form-encoding divergence note.
-func (e *Executor) postFormAbsolute(ctx context.Context, def *loader.Definition, target string, pairs url.Values, secrets []string) error {
-	headers := httpx.WithFormContentType(loginHeaders(def))
-	encoded := pairs.Encode()
-	return e.submitLoginPost(ctx, def.Login, target, encoded, headers, secrets)
 }
 
 // selectorMatches reports whether sel matches at least one element in body. Used

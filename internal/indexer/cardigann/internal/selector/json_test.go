@@ -589,7 +589,7 @@ func TestRootArrayBracketIndex(t *testing.T) {
 	}
 	// Each element is itself a row; resolve a bracket-indexed path against the
 	// resolver directly to mirror SelectToken("$[2].name").
-	got, ok := resolvePath([]any{
+	got, ok := ResolvePath([]any{
 		map[string]any{"name": "one"},
 		map[string]any{"name": "two"},
 		map[string]any{"name": "three"},

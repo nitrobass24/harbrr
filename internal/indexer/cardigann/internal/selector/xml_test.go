@@ -182,7 +182,7 @@ func TestParseXMLMixedCaseNames(t *testing.T) {
 // panic).
 // TestParseXMLDeclaredEncoding proves a prolog declaring a non-UTF-8 encoding
 // parses: the body reaching ParseXML has already been transcoded to UTF-8 by
-// search.decodeBody, and Jackett hands AngleSharp the decoded string, which
+// encode.DecodeBody, and Jackett hands AngleSharp the decoded string, which
 // ignores the declaration. Without a CharsetReader the stdlib decoder refuses
 // every spelling but utf-8/UTF-8 on the first token, failing the whole search
 // for a feed that says windows-1251 / ISO-8859-1 / UTF8 — 40+ vendored defs

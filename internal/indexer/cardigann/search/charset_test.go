@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/encode"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 )
@@ -75,15 +76,15 @@ func TestDecodeBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveEncoding: %v", err)
 	}
-	if got := string(decodeBody(enc, privetCp1251)); got != privetUTF8 {
-		t.Errorf("decodeBody(cp1251) = %q, want %q", got, privetUTF8)
+	if got := string(encode.DecodeBody(enc, privetCp1251)); got != privetUTF8 {
+		t.Errorf("encode.DecodeBody(cp1251) = %q, want %q", got, privetUTF8)
 	}
-	if bytes.ContainsRune(decodeBody(enc, privetCp1251), '�') {
+	if bytes.ContainsRune(encode.DecodeBody(enc, privetCp1251), '�') {
 		t.Error("decoded body still contains U+FFFD mojibake")
 	}
 	// nil encoding: identity, even for bytes that are not valid UTF-8.
-	if got := decodeBody(nil, privetCp1251); string(got) != string(privetCp1251) {
-		t.Errorf("decodeBody(nil) mutated bytes: % X", got)
+	if got := encode.DecodeBody(nil, privetCp1251); string(got) != string(privetCp1251) {
+		t.Errorf("encode.DecodeBody(nil) mutated bytes: % X", got)
 	}
 }
 

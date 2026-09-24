@@ -55,7 +55,7 @@ func (d *Document) rowKeyOrders(block loader.RowsBlock) [][]string {
 	return orders
 }
 
-// rawResolve walks the same Newtonsoft-style path subset as resolvePath, but over
+// rawResolve walks the same Newtonsoft-style path subset as ResolvePath, but over
 // raw JSON, so the bytes of the target node survive with their property order.
 func rawResolve(raw json.RawMessage, path string) (json.RawMessage, bool) {
 	cur := raw

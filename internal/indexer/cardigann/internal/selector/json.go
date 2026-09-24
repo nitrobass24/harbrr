@@ -65,7 +65,7 @@ func (n *jsonNode) query(sel string) (node, bool, error) {
 	if !ok {
 		return nil, false, nil
 	}
-	v, ok := resolvePath(base, path)
+	v, ok := ResolvePath(base, path)
 	if !ok {
 		return nil, false, nil
 	}
@@ -164,7 +164,7 @@ func (d *Document) buildJSONRows(arr []any, block loader.RowsBlock) []Row {
 	for i, e := range arr {
 		value := e
 		if block.Attribute != "" {
-			sub, ok := resolvePath(e, block.Attribute)
+			sub, ok := ResolvePath(e, block.Attribute)
 			if !ok {
 				continue
 			}

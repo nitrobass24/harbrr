@@ -12,7 +12,6 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/encode"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/httpx"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/regexadapter"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/template"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
@@ -186,7 +185,7 @@ func requestParams(query Query, deps Deps) template.Params {
 		Keywords:   query.templateKeywords(),
 		Categories: query.Categories,
 		Clock:      clock,
-		RegexRoute: regexadapter.RouteOptions{Language: deps.Language},
+		RegexRoute: deps.Filters.routeOptions(),
 	}
 }
 
