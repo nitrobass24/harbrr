@@ -1,9 +1,8 @@
 package regexadapter
 
 import (
-	"time"
-
-	"github.com/autobrr/go-cache/ttlcache"
+	"sync"
+	"sync/atomic"
 )
 
 // Compile is called once per ROW per FIELD on the search path (search/fields.go
@@ -19,18 +18,40 @@ import (
 // *Regexp after compileRegexp2 returns it, so entries are shared across
 // concurrent searches as-is.
 //
-// TTL rather than an unbounded map: a filter's pattern argument is a template
-// (search/fields.go renderFilterArgs), so a definition MAY interpolate row- or
-// query-derived text into the pattern itself and make the key space unbounded.
-// No vendored definition does today (0 of 1890 filter arg-blocks), but a dropin
-// or a future vendor refresh can, and an eviction policy costs nothing here.
-// The 15-minute sliding window matches go-cache's own regexcache: a pattern in
-// active use never expires, and a definition that stops being searched lets its
-// patterns go.
-var compileCache = ttlcache.New[compileKey, *Regexp](
-	ttlcache.SetDefaultTTL(15*time.Minute),
-	ttlcache.SetTimerResolution(5*time.Minute),
+// The key space is bounded by the definitions on disk: a filter's pattern
+// argument is a template (search/fields.go renderFilterArgs), but no definition
+// interpolates row- or query-derived text into a pattern (0 of 1890 vendored
+// filter arg-blocks), so nothing evicts and a plain sync.Map suffices. Two
+// concurrent first compiles of the same key may both compile; last write wins
+// and either entry is equally valid.
+//
+// compileCacheCap bounds the map anyway: a dropin that templates row- or
+// query-derived text into a pattern would otherwise grow it by one entry per
+// distinct search for the life of the process. Clearing everything past the cap
+// is deliberately crude (the whole corpus recompiles once, ~6µs a pattern); it
+// is a leak guard, not an eviction policy.
+const compileCacheCap = 4096
+
+var (
+	compileCache    sync.Map // compileKey -> *Regexp
+	compileCacheLen atomic.Int64
 )
+
+// storeCompiled memoizes r under key, clearing the whole cache first when it
+// has passed compileCacheCap entries. The check and the store are deliberately
+// not serialized: concurrent first compiles can overshoot the cap by their own
+// count and skew compileCacheLen by as much until the next clear resets it.
+// A leak guard tolerates that; a mutex here would serialize every cache miss
+// on the search path to make an approximate number exact.
+func storeCompiled(key compileKey, r *Regexp) {
+	if compileCacheLen.Load() >= compileCacheCap {
+		compileCache.Clear()
+		compileCacheLen.Store(0)
+	}
+	if _, loaded := compileCache.LoadOrStore(key, r); !loaded {
+		compileCacheLen.Add(1)
+	}
+}
 
 // compileKey identifies a compiled pattern. It keys on the ROUTING DECISION
 // rather than on RouteOptions, because that is all the routing inputs

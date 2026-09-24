@@ -5,7 +5,6 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/autobrr/go-cache/ttlcache"
 	"github.com/dlclark/regexp2"
 )
 
@@ -31,8 +30,8 @@ const (
 	EngineRE2 Engine = iota
 	// EngineRegexp2 is github.com/dlclark/regexp2 (.NET Regex semantics):
 	// backtracking, supports lookarounds/backreferences/named groups. Chosen
-	// on opt-in, non-Latin language, RE2 compile-failure, or .NET-only
-	// constructs. Bounded by matchTimeout.
+	// on a non-Latin language, RE2 compile-failure, or .NET-only constructs.
+	// Bounded by matchTimeout.
 	EngineRegexp2
 )
 
@@ -48,17 +47,13 @@ func (e Engine) String() string {
 	}
 }
 
-// RouteOptions carries the caller-supplied routing inputs. There is no
-// regex-engine opt-in FIELD in the Cardigann schema, so opt-in is modelled
-// here as a flag the engine sets, and Language is the def's `language:` code
-// (used for the non-Latin-script trigger). The zero value (Latin, no opt-in)
-// routes purely on the pattern itself.
+// RouteOptions carries the caller-supplied routing inputs: Language is the
+// def's `language:` code, used for the non-Latin-script trigger. The zero value
+// (Latin/unknown) routes purely on the pattern itself.
 type RouteOptions struct {
 	// Language is the Cardigann def `language:` code (e.g. "en-US", "zh-CN").
 	// A non-Latin script forces regexp2. Empty means Latin/unknown.
 	Language string
-	// OptIn forces regexp2 regardless of pattern or language.
-	OptIn bool
 }
 
 // Regexp is a compiled pattern bound to a single engine, exposing a uniform
@@ -76,18 +71,19 @@ func (r *Regexp) Engine() Engine { return r.engine }
 
 // Compile routes pattern to an engine per RouteOptions, then compiles it.
 //
-// Routing: regexp2 is chosen when the caller opts in, the language is
-// non-Latin-script, or the pattern uses .NET-only constructs. Otherwise RE2 is
-// tried first (its linear-time guarantee is the default), and on an RE2 COMPILE
-// failure we fall back to regexp2 (which accepts a broader grammar). The result
-// is an error only when BOTH engines reject the pattern.
+// Routing: regexp2 is chosen when the language is non-Latin-script or the
+// pattern uses .NET-only constructs. Otherwise RE2 is tried first (its
+// linear-time guarantee is the default), and on an RE2 COMPILE failure we fall
+// back to regexp2 (which accepts a broader grammar). The result is an error
+// only when BOTH engines reject the pattern.
 //
 // Error strings reference the pattern text and engine only. Patterns are
 // definition-authored (not secret); the matched VALUE is never compiled in.
 func Compile(pattern string, opts RouteOptions) (*Regexp, error) {
 	want2 := wantRegexp2(pattern, opts)
 	key := compileKey{pattern: pattern, regexp2: want2}
-	if cached, ok := compileCache.Get(key); ok {
+	if v, ok := compileCache.Load(key); ok {
+		cached, _ := v.(*Regexp)
 		return cached, nil
 	}
 
@@ -101,7 +97,7 @@ func Compile(pattern string, opts RouteOptions) (*Regexp, error) {
 		if err != nil {
 			return nil, err
 		}
-		compileCache.Set(key, r, ttlcache.DefaultTTL)
+		storeCompiled(key, r)
 		return r, nil
 	}
 
@@ -124,11 +120,11 @@ func Compile(pattern string, opts RouteOptions) (*Regexp, error) {
 			if err2 != nil {
 				return nil, err2
 			}
-			compileCache.Set(key, r, ttlcache.DefaultTTL)
+			storeCompiled(key, r)
 			return r, nil
 		}
 		r := &Regexp{engine: EngineRE2, re: re}
-		compileCache.Set(key, r, ttlcache.DefaultTTL)
+		storeCompiled(key, r)
 		return r, nil
 	}
 
@@ -143,20 +139,20 @@ func Compile(pattern string, opts RouteOptions) (*Regexp, error) {
 		// keying on an error too. Left uncached deliberately.
 		return nil, fmt.Errorf("pattern %q compiles under neither engine: RE2: %w; regexp2: %w", pattern, err, re2Err)
 	}
-	compileCache.Set(key, r, ttlcache.DefaultTTL)
+	storeCompiled(key, r)
 	return r, nil
 }
 
-// wantRegexp2 reports the (a) opt-in, (b) non-Latin, (d) .NET-construct
-// triggers, plus the two class-semantics triggers (\b / \B, and a shorthand
-// class RE2 cannot express — see classes.go). The (c) RE2-compile-failure trigger is handled as a fallback in
-// Compile, not here, because it can only be known by attempting compilation.
+// wantRegexp2 reports the (b) non-Latin and (d) .NET-construct triggers, plus
+// the two class-semantics triggers (\b / \B, and a shorthand class RE2 cannot
+// express — see classes.go). The (c) RE2-compile-failure trigger is handled as
+// a fallback in Compile, not here, because it can only be known by attempting
+// compilation.
 // A .NET Unicode block name is a .NET-construct trigger too — both engines
 // accept the normalized script name, but the block spelling signals .NET intent
 // and most such defs are non-Latin regardless.
 func wantRegexp2(pattern string, opts RouteOptions) bool {
-	return opts.OptIn ||
-		isNonLatinScript(opts.Language) ||
+	return isNonLatinScript(opts.Language) ||
 		hasDotNetConstructs(pattern) ||
 		hasDotNetUnicodeBlock(pattern) ||
 		// RE2 has no Unicode word boundary (and rejects the backspace \b inside a

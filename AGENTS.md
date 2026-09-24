@@ -94,7 +94,7 @@ or composition/lifecycle wiring, read `docs/architecture.md`, `docs/autobrr-app-
 ## Engine-specific rules
 
 - **Regex:** RE2 (`regexp`) by default for ReDoS safety; route to `regexp2` (.NET semantics) only when
-  the def opts in, the def's `language:` is non-Latin, the pattern fails RE2 compile, or it uses
+  the def's `language:` is non-Latin, the pattern fails RE2 compile, or it uses
   .NET-only constructs (backreferences, lookarounds, atomic/conditional groups, `(?<name>)`). The
   differential suite runs both engines on the same fixtures and is the gate. Never silence a parity
   diff by editing a def.

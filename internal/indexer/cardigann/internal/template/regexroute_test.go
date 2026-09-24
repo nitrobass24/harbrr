@@ -33,11 +33,6 @@ func TestReReplaceUsesContextRegexRoute(t *testing.T) {
 			route: regexadapter.RouteOptions{Language: "ru-RU"},
 			want:  "abX\n",
 		},
-		{
-			name:  "explicit opt-in routes to regexp2",
-			route: regexadapter.RouteOptions{OptIn: true},
-			want:  "abX\n",
-		},
 	}
 
 	for _, tt := range tests {

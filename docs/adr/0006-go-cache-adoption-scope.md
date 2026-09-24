@@ -1,5 +1,17 @@
 # go-cache is adopted for one call site only: memoizing regex compilation
 
+**Status: Superseded (2026-09-21) — autobrr/harbrr#718.**
+
+The one call site this ADR adopted `ttlcache` for now uses a plain `sync.Map`, and
+`github.com/autobrr/go-cache` is no longer a harbrr dependency. The corpus census shows no
+definition interpolates row- or query-derived text into a filter pattern (0 of 1890 vendored
+filter arg-blocks), so the key space is bounded by the defs on disk and there is nothing for a
+TTL to evict — exactly the swap the Consequences section below anticipated, at exactly the cost
+it named (the eviction policy, and nothing else). The unbounded-key-space case the "Why a TTL"
+section guards against is covered by a hard entry cap that clears the map instead (a leak
+guard, not an eviction policy). Everything after this line is the historical record of the
+original decision.
+
 `github.com/autobrr/go-cache` (#563) ships three packages — `ttlcache`, `timecache`, and
 `regexcache`. harbrr adopts **`ttlcache`, in exactly one place**: memoizing
 `regexadapter.Compile`. The other two packages, and every other caching site in harbrr, were
