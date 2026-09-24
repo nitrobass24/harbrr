@@ -15,10 +15,6 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 )
 
-// apiKeyHeader is the header both tools authenticate the push with (qui's X-API-Key and
-// cross-seed v6's x-api-key are the same header, case-insensitive).
-const apiKeyHeader = "X-API-Key" //nolint:gosec // G101: an HTTP header name, not a credential.
-
 // Release is one new release harbrr offers to a cross-seed tool.
 type Release struct {
 	Name    string // the torrent/release name
@@ -68,11 +64,5 @@ type Target interface {
 // authenticates the push and is scrubbed by value from any error the tool's response
 // can produce.
 func newClient(kind, baseURL, apiKey string, client *http.Client) *apphttp.JSONClient {
-	return apphttp.NewJSONClient(apphttp.JSONClient{
-		Prefix: "announce: " + kind,
-		Base:   baseURL,
-		Auth:   http.Header{apiKeyHeader: {apiKey}},
-		Client: client,
-		Secret: apiKey,
-	})
+	return apphttp.NewAPIKeyClient("announce: "+kind, baseURL, apiKey, client)
 }

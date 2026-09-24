@@ -46,8 +46,9 @@ func RedirectPolicy(req *stdhttp.Request, via []*stdhttp.Request) error {
 //
 // A header-less request keeps following (the stdlib default): two bare GETs ride this
 // client — blackhole's passthrough fetch of a caller-supplied indexer link
-// (internal/download/blackhole.go fetchBytes) and announce's fetch of harbrr's own /dl
-// (internal/announce/factory.go HTTPTorrentFetcher) — and usenet indexers routinely 302
+// (internal/download/blackhole.go Add) and announce's fetch of harbrr's own /dl
+// (internal/announce/factory.go HTTPTorrentFetcher), both through GetCapped — and
+// usenet indexers routinely 302
 // nzb links to other hosts. Go builds the redirected request from Location, so the
 // original URL (and any apikey in its query) travels only as the Referer Go adds before
 // calling CheckRedirect; that header is dropped on a cross-host hop so the redirect

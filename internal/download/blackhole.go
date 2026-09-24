@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -106,8 +105,11 @@ func (d *blackholeDriver) Add(ctx context.Context, p Payload) error {
 		if p.URL == "" {
 			return fmt.Errorf("download: blackhole: %s: empty payload (no bytes or URL)", p.Protocol)
 		}
-		if data, err = fetchBytes(ctx, d.client, p.URL, limit); err != nil {
-			return err
+		// GetCapped scrubs the URL out of its errors — a sealed harbrr /dl link or
+		// an indexer's nzb URL can carry an apikey/token — so the only form of it in
+		// the message is the redacted one this wrap adds.
+		if data, err = apphttp.GetCapped(ctx, d.client, p.URL, limit); err != nil {
+			return fmt.Errorf("download: blackhole: fetch %s: %w", apphttp.RedactURL(p.URL), err)
 		}
 	}
 	return writeAtomic(dir, releaseFilename(p.Name, ext, maxBlackholeNameBytes), data)
@@ -131,34 +133,6 @@ func dirForProtocol(s domain.BlackholeSettings, proto Protocol) (dir, ext string
 	default:
 		return "", "", 0, fmt.Errorf("download: blackhole: %w: %s", ErrUnsupportedProtocol, proto)
 	}
-}
-
-// fetchBytes GETs url and returns its body, capped at limit bytes. Any error
-// is scrubbed of the URL — a sealed harbrr /dl link or an indexer's nzb URL
-// can carry an apikey/token.
-func fetchBytes(ctx context.Context, client *http.Client, url string, limit int64) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("download: blackhole: build fetch request: %w", apphttp.RedactURLError(err))
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("download: blackhole: fetch %s: %w", apphttp.RedactURL(url), apphttp.RedactURLError(err))
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("download: blackhole: fetch %s: status %d", apphttp.RedactURL(url), resp.StatusCode)
-	}
-	// Read one byte past the cap so an oversized body is rejected rather than
-	// silently truncated (a partial torrent/nzb on disk would be garbage).
-	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
-	if err != nil {
-		return nil, fmt.Errorf("download: blackhole: read body: %w", err)
-	}
-	if int64(len(data)) > limit {
-		return nil, fmt.Errorf("download: blackhole: fetch %s: exceeds %d bytes", apphttp.RedactURL(url), limit)
-	}
-	return data, nil
 }
 
 // writeAtomic writes data into dir/filename via a temp file + rename, so a

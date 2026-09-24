@@ -37,15 +37,9 @@ func (s *Service) QuiInstances(ctx context.Context, id int64) ([]QuiInstance, er
 		return nil, err
 	}
 
-	// NewJSONClient normalises the base URL, so an app stored with a trailing slash
+	// NewAPIKeyClient normalises the base URL, so an app stored with a trailing slash
 	// no longer asks qui for "//api/instances".
-	jc := apphttp.NewJSONClient(apphttp.JSONClient{
-		Prefix: "apps: qui instances",
-		Base:   app.BaseURL,
-		Auth:   http.Header{"X-API-Key": {key}},
-		Client: s.client,
-		Secret: key,
-	})
+	jc := apphttp.NewAPIKeyClient("apps: qui instances", app.BaseURL, key, s.client)
 	var instances []QuiInstance
 	if _, err := jc.Do(ctx, http.MethodGet, "/api/instances", nil, &instances); err != nil {
 		return nil, err

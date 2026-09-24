@@ -3,7 +3,6 @@ package announce
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 
 	"github.com/autobrr/harbrr/internal/domain"
@@ -35,29 +34,12 @@ func DefaultTargetFactory(client *http.Client, fetch TorrentFetcher, tags []stri
 
 // HTTPTorrentFetcher fetches the .torrent bytes by GETting harbrr's own /dl URL (which
 // resolves the tracker link server-side and streams the torrent). The URL carries harbrr's
-// apikey; it is never logged, and a transport error is scrubbed of the URL by the caller.
+// apikey; it is never logged, and GetCapped scrubs it out of a transport error.
 func HTTPTorrentFetcher(client *http.Client) TorrentFetcher {
 	return func(ctx context.Context, downloadURL string) ([]byte, error) {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
+		data, err := apphttp.GetCapped(ctx, client, downloadURL, maxTorrentBytes)
 		if err != nil {
-			return nil, fmt.Errorf("build /dl request: %w", apphttp.ScrubURLError(err))
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("fetch /dl: %w", apphttp.ScrubURLError(err))
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			return nil, fmt.Errorf("fetch /dl: status %d", resp.StatusCode)
-		}
-		// Read one byte past the cap so an oversized body is rejected rather than silently
-		// truncated (a partial torrent base64-posted to qui would be garbage).
-		data, err := io.ReadAll(io.LimitReader(resp.Body, maxTorrentBytes+1))
-		if err != nil {
-			return nil, fmt.Errorf("read /dl body: %w", err)
-		}
-		if len(data) > maxTorrentBytes {
-			return nil, fmt.Errorf("read /dl body: exceeds %d bytes", maxTorrentBytes)
+			return nil, fmt.Errorf("fetch /dl: %w", err)
 		}
 		return data, nil
 	}
