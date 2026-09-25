@@ -11,6 +11,7 @@ import (
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/httpx"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/selector"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/template"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 )
@@ -51,7 +52,7 @@ func (e *Executor) loginGet(ctx context.Context, def *loader.Definition) error {
 	if err != nil {
 		return err
 	}
-	body, status, err := e.get(ctx, full, loginHeaders(def))
+	body, status, _, err := e.send(ctx, stdhttp.MethodGet, full, nil, loginHeaders(def))
 	if err != nil {
 		return err
 	}
@@ -93,7 +94,7 @@ func (e *Executor) loginOneURL(ctx context.Context, def *loader.Definition) erro
 	if err != nil {
 		return err
 	}
-	body, status, err := e.get(ctx, rawURL+one, loginHeaders(def))
+	body, status, _, err := e.send(ctx, stdhttp.MethodGet, rawURL+one, nil, loginHeaders(def))
 	if err != nil {
 		return err
 	}
@@ -102,8 +103,8 @@ func (e *Executor) loginOneURL(ctx context.Context, def *loader.Definition) erro
 
 // postForm POSTs url.Values as application/x-www-form-urlencoded to the resolved
 // target path, then runs the error selectors. Used by the post method only; the
-// form method posts its already-resolved form action via postFormAbsolute
-// (form.go). Both share submitLoginPost for a challenged POST.
+// form method posts its already-resolved form action directly (form.go). Both
+// share submitLoginPost for a challenged POST.
 //
 // Login form bodies use stdlib url.Values.Encode (alphabetically sorted keys,
 // url.QueryEscape values), which diverges from Jackett's WebUtility encoding on
@@ -125,7 +126,7 @@ func (e *Executor) postForm(ctx context.Context, def *loader.Definition, target 
 
 // submitLoginPost POSTs encoded to rawURL, then either clears an anti-bot
 // challenge and retries or runs the error selectors — the shared body of
-// postForm and postFormAbsolute, so a future POST-based login method cannot
+// both POST login flows, so a future POST-based login method cannot
 // silently forget the challenge check.
 //
 // When the POST is blocked by an anti-bot challenge (e.g. Cloudflare gating the
@@ -136,7 +137,7 @@ func (e *Executor) postForm(ctx context.Context, def *loader.Definition, target 
 // check a challenge page sails through checkErrors (no 401, no error-selector
 // match) as a SILENT false success with no session cookies.
 func (e *Executor) submitLoginPost(ctx context.Context, l *loader.Login, rawURL, encoded string, headers map[string][]string, secrets []string) error {
-	body, status, err := e.do(ctx, stdhttp.MethodPost, rawURL, strings.NewReader(encoded), headers)
+	body, status, _, err := e.send(ctx, stdhttp.MethodPost, rawURL, strings.NewReader(encoded), headers)
 	if err != nil {
 		return err
 	}
@@ -157,7 +158,7 @@ func (e *Executor) solveAndRetryLoginPost(ctx context.Context, l *loader.Login, 
 		// so an incident can be triaged; solveHost's errors carry no secret.
 		return fmt.Errorf("%w: the login POST is guarded by an anti-bot challenge: %w", ErrSolverRequired, err)
 	}
-	body, status, err := e.do(ctx, stdhttp.MethodPost, rawURL, strings.NewReader(postData), headers)
+	body, status, _, err := e.send(ctx, stdhttp.MethodPost, rawURL, strings.NewReader(postData), headers)
 	if err != nil {
 		return err
 	}
@@ -211,11 +212,11 @@ func (e *Executor) checkErrors(l *loader.Login, rawURL string, body []byte, stat
 	if len(l.Error) == 0 {
 		return nil
 	}
-	doc, err := e.selector.ParseHTML(body)
+	doc, err := selector.ParseHTML(body)
 	if err != nil {
 		return fmt.Errorf("parsing login response from %s: %w", apphttp.SchemeHost(rawURL), err)
 	}
-	msg, matched, err := e.selector.CheckErrorBlocks(doc.Root(), l.Error, e.eval)
+	msg, matched, err := selector.CheckErrorBlocks(doc.Root(), l.Error, e.eval)
 	if err != nil {
 		return fmt.Errorf("checking login error selectors from %s: %w", apphttp.SchemeHost(rawURL), err)
 	}

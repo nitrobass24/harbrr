@@ -84,7 +84,7 @@ func TestNewDownloadURI(t *testing.T) {
 // stdlib parser (bare interpolation, resolved by Go field name) and the
 // re_replace pre-pass (resolveStringVar -> resolveDownloadURIVar).
 func TestEvalDownloadURI(t *testing.T) {
-	ctx := NewContext()
+	ctx := newContext()
 	ctx.DownloadUri = NewDownloadURI(mustParse(t, "https://example.org/download/info/42?id=42&sub=x"))
 
 	tests := []struct {
@@ -117,7 +117,7 @@ func TestEvalDownloadURI(t *testing.T) {
 // Jackett's missingkey=zero. Bare {{ .DownloadUri.X }} with a nil pointer is a
 // documented hard error and intentionally not exercised here.
 func TestEvalDownloadURINilGuard(t *testing.T) {
-	ctx := NewContext()
+	ctx := newContext()
 	got, err := Eval(`{{ re_replace .DownloadUri.AbsolutePath "/info/" "/" }}`, ctx)
 	if err != nil {
 		t.Fatalf("Eval: %v", err)

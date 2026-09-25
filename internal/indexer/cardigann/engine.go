@@ -14,7 +14,6 @@ import (
 	"golang.org/x/text/encoding"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/dateparse"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/selector"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/mapper"
@@ -36,20 +35,16 @@ type (
 // category map into the normalizer; the dateparse parser into the filter
 // registry; the def language/type/base URL throughout) so a search is a single
 // Search call. The Engine is built once per definition and is safe to reuse
-// across concurrent queries: the selector engine holds no per-call state, and
+// across concurrent queries: the selector stage holds no per-call state, and
 // the search stage takes eval closures and the row/document data as explicit
 // parameters rather than mutating shared fields.
 type Engine struct {
-	def  *loader.Definition
-	caps *mapper.Capabilities
-	deps search.Deps
-	// selector extracts row/field values from parsed HTML/JSON documents. It
-	// holds no per-call state, so this single instance is shared across every
-	// search this Engine runs, including concurrent ones.
-	selector *selector.Engine
-	login    *login.Executor
-	doer     search.Doer
-	baseURL  string
+	def     *loader.Definition
+	caps    *mapper.Capabilities
+	deps    search.Deps
+	login   *login.Executor
+	doer    search.Doer
+	baseURL string
 	// gateDegenerate is the instance's "degenerate_query_gate: auto" opt-in, read by
 	// SkipsQuery. Off by default, so an untouched instance sends every query it
 	// always did.
@@ -150,7 +145,6 @@ func NewEngine(def *loader.Definition, opts ...Option) (*Engine, error) {
 		def:            def,
 		caps:           caps,
 		deps:           deps,
-		selector:       selector.New(),
 		login:          buildLogin(o, deps.Encoding),
 		doer:           o.doer,
 		baseURL:        o.baseURL,
@@ -210,9 +204,8 @@ const (
 // buildDeps wires the extraction-half stages: the dateparse parser (def language
 // + injected clock) feeds the search filter registry's date seams; the registry's
 // language is the def language so regex filters route correctly; the normalizer
-// carries the base URL, def type, and category map. The selector engine is
-// built separately in NewEngine (Engine.selector) and passed into the search
-// stage's calls explicitly, since it is not part of Deps.
+// carries the base URL, def type, and category map. The selector stage is
+// package-level and stateless, so it is not part of Deps.
 func buildDeps(def *loader.Definition, caps *mapper.Capabilities, o options) (search.Deps, error) {
 	parser := dateparse.New(
 		dateparse.WithLanguage(def.Language),
@@ -242,7 +235,6 @@ func buildDeps(def *loader.Definition, caps *mapper.Capabilities, o options) (se
 		BaseURL:    o.baseURL,
 		Clock:      o.clock,
 		Encoding:   enc,
-		Language:   def.Language,
 		// canonicalCheckbox is the strict read: only an explicit truthy value
 		// ("true"/"1"/"on"/"yes") opts in, so a persisted literal "false" is off.
 		FoldAndMatchPunctuation: canonicalCheckbox(o.config[foldPunctuationSetting]) == configTrue,
@@ -252,9 +244,8 @@ func buildDeps(def *loader.Definition, caps *mapper.Capabilities, o options) (se
 // buildLogin constructs the login executor with the HTTP seam, base URL,
 // config, and the definition's charset transcoder (the SAME one Deps.Encoding
 // carries, so login and search decode tracker bodies identically — see
-// login.WithEncoding). It owns its own selector engine (login.New), separate from
-// Engine.selector used by the search stage; login.Executor evaluates its
-// selector templates against its own config via Executor.eval. When the Doer
+// login.WithEncoding). login.Executor evaluates its selector templates against
+// its own config via Executor.eval. When the Doer
 // owns a cookie jar (production and the parity harness both drive an
 // *http.Client with one), that SAME jar is handed to the executor so login
 // seeding and the transport's cookie handling share a single jar — a second jar
@@ -323,7 +314,7 @@ func (e *Engine) Search(ctx context.Context, query Query) ([]*Release, error) {
 	if err := e.ensureSession(ctx); err != nil {
 		return nil, fmt.Errorf("cardigann: login for %q: %w", e.def.ID, err)
 	}
-	releases, err := search.Execute(ctx, e.def, query, e.login.Session(), e.doer, e.selector, e.deps)
+	releases, err := search.Execute(ctx, e.def, query, e.login.Session(), e.doer, e.deps)
 	if errors.Is(err, search.ErrSearchLoggedOut) {
 		// Lazy login: the session expired since the eager first login. Re-login
 		// once and retry the search a single time (Jackett's
@@ -336,7 +327,7 @@ func (e *Engine) Search(ctx context.Context, query Query) ([]*Release, error) {
 		if rerr := e.relogin(ctx); rerr != nil {
 			return nil, fmt.Errorf("cardigann: re-login for %q after session expiry: %w", e.def.ID, rerr)
 		}
-		releases, err = search.Execute(ctx, e.def, query, e.login.Session(), e.doer, e.selector, e.deps)
+		releases, err = search.Execute(ctx, e.def, query, e.login.Session(), e.doer, e.deps)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("cardigann: search for %q: %w", e.def.ID, err)
@@ -488,7 +479,7 @@ func (e *Engine) ParseResponseQuery(body []byte, responseType string, query Quer
 	if responseType == "" {
 		responseType = search.DefaultResponseType(e.def)
 	}
-	releases, err := search.ParseResults(e.def, body, responseType, query, e.selector, e.deps)
+	releases, err := search.ParseResults(e.def, body, responseType, query, e.deps)
 	if err != nil {
 		return nil, fmt.Errorf("cardigann: parsing response for %q: %w", e.def.ID, err)
 	}

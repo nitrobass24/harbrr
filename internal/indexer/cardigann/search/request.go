@@ -12,7 +12,6 @@ import (
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/encode"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/httpx"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/regexadapter"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/template"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/login"
@@ -186,7 +185,7 @@ func requestParams(query Query, deps Deps) template.Params {
 		Keywords:   query.templateKeywords(),
 		Categories: query.Categories,
 		Clock:      clock,
-		RegexRoute: regexadapter.RouteOptions{Language: deps.Language},
+		RegexRoute: deps.Filters.routeOptions(),
 	}
 }
 
@@ -240,7 +239,7 @@ func encodeStringSlice(s []string) []string {
 // AllowEmptyInputs is set, matching Jackett.
 func buildInputs(def *loader.Definition, path loader.SearchPathBlock, query Query, deps Deps) ([]kv, error) {
 	ctx := requestContext(query, deps)
-	allowEmpty := boolVal(def.Search.AllowEmptyInputs)
+	allowEmpty := loader.Bool(def.Search.AllowEmptyInputs)
 
 	var pairs []kv
 	if inheritInputs(path) {
@@ -317,7 +316,7 @@ func assembleRequest(path loader.SearchPathBlock, absURL string, pairs []kv, hea
 			url:              absURL,
 			body:             encodeOrderedSep(pairs, "&"),
 			headers:          httpx.WithFormContentType(headers),
-			followRedirect:   boolVal(path.FollowRedirect),
+			followRedirect:   loader.Bool(path.FollowRedirect),
 			respType:         pathResponseType(path),
 			noResultsMessage: pathNoResultsMessage(path),
 		}, nil
@@ -331,7 +330,7 @@ func assembleRequest(path loader.SearchPathBlock, absURL string, pairs []kv, hea
 		method:           stdhttp.MethodGet,
 		url:              full,
 		headers:          headers,
-		followRedirect:   boolVal(path.FollowRedirect),
+		followRedirect:   loader.Bool(path.FollowRedirect),
 		respType:         pathResponseType(path),
 		noResultsMessage: pathNoResultsMessage(path),
 	}, nil
@@ -599,6 +598,3 @@ func applySession(req *stdhttp.Request, session *login.Session) {
 		req.Header.Set("User-Agent", session.UserAgent)
 	}
 }
-
-// boolVal dereferences an optional bool, defaulting to false.
-func boolVal(p *bool) bool { return p != nil && *p }

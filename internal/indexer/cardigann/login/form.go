@@ -1,6 +1,7 @@
 package login
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"maps"
@@ -12,6 +13,7 @@ import (
 
 	apphttp "github.com/autobrr/harbrr/internal/http"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/httpx"
+	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/selector"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/template"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 )
@@ -25,7 +27,7 @@ import (
 //     the extracted selector values.
 //  5. Resolve the submit target (Login.SubmitPath, else the form's action attr,
 //     else the landing path) and POST. A challenged POST is solved-and-retried
-//     (see postFormAbsolute).
+//     (see submitLoginPost).
 //  6. Run the error selectors.
 //
 // The cookie jar persists Set-Cookie from the landing GET into the POST.
@@ -47,7 +49,7 @@ func (e *Executor) loginForm(ctx context.Context, def *loader.Definition) error 
 		return err
 	}
 
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(body)))
+	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("parsing login page from %s: %w", apphttp.SchemeHost(landingURL), err)
 	}
@@ -72,7 +74,12 @@ func (e *Executor) loginForm(ctx context.Context, def *loader.Definition) error 
 			return err
 		}
 	}
-	return e.postFormAbsolute(ctx, def, target, pairs, e.loginSecrets(def))
+	// The form flow has already resolved its target via the form action, so it
+	// submits directly rather than going through postForm's path resolution.
+	// Form body uses url.Values.Encode — see postForm (methods.go) for the
+	// deliberate login form-encoding divergence note.
+	headers := httpx.WithFormContentType(loginHeaders(def))
+	return e.submitLoginPost(ctx, def.Login, target, pairs.Encode(), headers, e.loginSecrets(def))
 }
 
 // assembleFormPairs builds the POST body in Jackett's exact precedence order:
@@ -180,7 +187,7 @@ func (e *Executor) extractSelectorInputs(body []byte, inputs map[string]loader.S
 	if len(inputs) == 0 {
 		return url.Values{}, nil
 	}
-	doc, err := e.selector.ParseHTML(body)
+	doc, err := selector.ParseHTML(body)
 	if err != nil {
 		return nil, fmt.Errorf("parsing login page for selector inputs: %w", err)
 	}
@@ -188,7 +195,7 @@ func (e *Executor) extractSelectorInputs(body []byte, inputs map[string]loader.S
 	out := url.Values{}
 	for _, name := range slices.Sorted(maps.Keys(inputs)) {
 		blk := inputs[name]
-		val, found, ferr := e.selector.Field(root, blk, e.eval)
+		val, found, ferr := selector.Field(root, blk, e.eval)
 		if ferr != nil {
 			return nil, fmt.Errorf("extracting selector input %q: %w", name, ferr)
 		}
@@ -231,24 +238,10 @@ func (e *Executor) resolveFormTarget(l *loader.Login, form *goquery.Selection, l
 	return resolved, nil
 }
 
-// postFormAbsolute POSTs an already-resolved absolute target, then runs the
-// error selectors (or clears an anti-bot challenge first — see
-// submitLoginPost). Distinct from postForm (methods.go), which resolves a
-// definition path; the form flow has already resolved its target via the form
-// action.
-//
-// Form body uses url.Values.Encode — see postForm (methods.go) for the deliberate
-// login form-encoding divergence note.
-func (e *Executor) postFormAbsolute(ctx context.Context, def *loader.Definition, target string, pairs url.Values, secrets []string) error {
-	headers := httpx.WithFormContentType(loginHeaders(def))
-	encoded := pairs.Encode()
-	return e.submitLoginPost(ctx, def.Login, target, encoded, headers, secrets)
-}
-
 // selectorMatches reports whether sel matches at least one element in body. Used
 // by CheckTest to reproduce Jackett's "selection.Length == 0 => login needed".
 func (e *Executor) selectorMatches(body []byte, sel string) (bool, error) {
-	doc, err := e.selector.ParseHTML(body)
+	doc, err := selector.ParseHTML(body)
 	if err != nil {
 		return false, fmt.Errorf("parsing test page: %w", err)
 	}
@@ -260,7 +253,7 @@ func (e *Executor) selectorMatches(body []byte, sel string) (bool, error) {
 	// error branch and the raw sel — never a config value — reaches the message);
 	// pass a nil eval so Field does not evaluate the selector a second time,
 	// matching the other pre-rendered call sites (logout, download).
-	_, found, err := e.selector.Field(doc.Root(), loader.SelectorBlock{Selector: rendered}, nil)
+	_, found, err := selector.Field(doc.Root(), loader.SelectorBlock{Selector: rendered}, nil)
 	if err != nil {
 		// Report the ORIGINAL (un-rendered) selector text, never the rendered
 		// form, which could interpolate a config value into the message.

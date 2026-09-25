@@ -34,9 +34,9 @@ import (
 // IsSecret-derived values.
 // eval is the template-eval seam for this call, threaded through to every
 // Field lookup below; nil defaults to identity.
-func (e *Engine) CheckErrorBlocks(root Row, blocks []loader.ErrorBlock, eval EvalFunc) (message string, matched bool, err error) {
+func CheckErrorBlocks(root Row, blocks []loader.ErrorBlock, eval EvalFunc) (message string, matched bool, err error) {
 	for i := range blocks {
-		msg, ok, blkErr := e.evalErrorBlock(root, blocks[i], eval)
+		msg, ok, blkErr := evalErrorBlock(root, blocks[i], eval)
 		if blkErr != nil {
 			return "", false, blkErr
 		}
@@ -51,9 +51,9 @@ func (e *Engine) CheckErrorBlocks(root Row, blocks []loader.ErrorBlock, eval Eva
 // it extracts the error message: from the block's Message selector block when
 // present, else the matched element's text. The returned message is
 // trimmed/single-lined.
-func (e *Engine) evalErrorBlock(root Row, blk loader.ErrorBlock, eval EvalFunc) (msg string, matched bool, err error) {
+func evalErrorBlock(root Row, blk loader.ErrorBlock, eval EvalFunc) (msg string, matched bool, err error) {
 	probe := loader.SelectorBlock{Selector: blk.Selector}
-	val, found, err := e.Field(root, probe, eval)
+	val, found, err := Field(root, probe, eval)
 	if err != nil {
 		return "", false, fmt.Errorf("evaluating error selector %q: %w", blk.Selector, err)
 	}
@@ -61,7 +61,7 @@ func (e *Engine) evalErrorBlock(root Row, blk loader.ErrorBlock, eval EvalFunc) 
 		return "", false, nil
 	}
 	if blk.Message != nil {
-		mval, mfound, merr := e.Field(root, *blk.Message, eval)
+		mval, mfound, merr := Field(root, *blk.Message, eval)
 		if merr != nil {
 			return "", false, fmt.Errorf("evaluating error message selector %q: %w", blk.Message.Selector, merr)
 		}

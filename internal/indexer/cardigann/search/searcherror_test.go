@@ -156,7 +156,7 @@ func TestParseResults_SearchError(t *testing.T) {
 			if err != nil {
 				t.Fatalf("loader.Parse: %v", err)
 			}
-			rels, err := ParseResults(def, []byte(tt.body), "", Query{Keywords: "ubuntu"}, selector.New(), searchErrorDeps())
+			rels, err := ParseResults(def, []byte(tt.body), "", Query{Keywords: "ubuntu"}, searchErrorDeps())
 			if !tt.wantErr {
 				if err != nil {
 					t.Fatalf("ParseResults: %v, want normal parse", err)
@@ -193,19 +193,18 @@ func TestCheckSearchError_BranchExclusion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loader.Parse: %v", err)
 	}
-	eng := selector.New()
-	doc, err := eng.ParseHTML([]byte(errorPage200))
+	doc, err := selector.ParseHTML([]byte(errorPage200))
 	if err != nil {
 		t.Fatalf("ParseHTML: %v", err)
 	}
 
 	// HTML branch: the error selector matches, so this must error.
-	if err := checkSearchError(def, doc, "", eng, nil); !errors.Is(err, ErrTrackerError) {
+	if err := checkSearchError(def, doc, "", nil); !errors.Is(err, ErrTrackerError) {
 		t.Errorf("html branch: err = %v, want ErrTrackerError", err)
 	}
 	// JSON and XML branches skip the check even though the same doc would match.
 	for _, rt := range []string{responseTypeJSON, responseTypeXML} {
-		if err := checkSearchError(def, doc, rt, eng, nil); err != nil {
+		if err := checkSearchError(def, doc, rt, nil); err != nil {
 			t.Errorf("%s branch: err = %v, want nil (check skipped)", rt, err)
 		}
 	}
@@ -218,7 +217,7 @@ func TestCheckSearchError_BranchExclusion(t *testing.T) {
 	if len(noErr.Search.Error) != 0 {
 		t.Fatalf("test setup: expected the error block to be stripped")
 	}
-	if err := checkSearchError(noErr, doc, "", eng, nil); err != nil {
+	if err := checkSearchError(noErr, doc, "", nil); err != nil {
 		t.Errorf("no error block: err = %v, want nil", err)
 	}
 }
@@ -282,13 +281,12 @@ func TestCheckSearchError_ScrubsSecret(t *testing.T) {
 		t.Fatalf("loader.Parse: %v", err)
 	}
 	body := `<html><body><div class="errorpage">Auth failed for passkey ` + passkey + ` please retry</div></body></html>`
-	eng := selector.New()
-	doc, err := eng.ParseHTML([]byte(body))
+	doc, err := selector.ParseHTML([]byte(body))
 	if err != nil {
 		t.Fatalf("ParseHTML: %v", err)
 	}
 
-	err = checkSearchError(def, doc, "", eng, map[string]string{"passkey": passkey})
+	err = checkSearchError(def, doc, "", map[string]string{"passkey": passkey})
 	if !errors.Is(err, ErrTrackerError) {
 		t.Fatalf("err = %v, want ErrTrackerError", err)
 	}
@@ -322,7 +320,7 @@ func TestExecute_SearchErrorNotParseError(t *testing.T) {
 	doer := &redirectDoer{t: t, steps: []redirectStep{
 		{wantMethod: "GET", wantURL: "https://err.invalid/browse?q=ubuntu", body: errorPage200},
 	}}
-	_, err = Execute(t.Context(), def, Query{Keywords: "ubuntu"}, nil, doer, selector.New(), searchErrorDeps())
+	_, err = Execute(t.Context(), def, Query{Keywords: "ubuntu"}, nil, doer, searchErrorDeps())
 	if !errors.Is(err, ErrTrackerError) {
 		t.Fatalf("Execute error = %v, want ErrTrackerError", err)
 	}

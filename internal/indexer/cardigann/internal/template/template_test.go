@@ -125,7 +125,7 @@ func TestEvalTruthiness(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			ctx := NewContext()
+			ctx := newContext()
 			if tt.mutate != nil {
 				tt.mutate(ctx)
 			}
@@ -195,7 +195,7 @@ func TestEvalWhitespaceCollapseIsDeliberate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			ctx := NewContext()
+			ctx := newContext()
 			if tt.mutate != nil {
 				tt.mutate(ctx)
 			}
@@ -253,7 +253,7 @@ func TestEvalFuncs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			ctx := NewContext()
+			ctx := newContext()
 			if tt.mutate != nil {
 				tt.mutate(ctx)
 			}
@@ -322,7 +322,7 @@ func TestEvalRealShape(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			ctx := NewContext()
+			ctx := newContext()
 			if tt.mutate != nil {
 				tt.mutate(ctx)
 			}
@@ -403,7 +403,7 @@ func TestEvalBadIdentRewriteScope(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			ctx := NewContext()
+			ctx := newContext()
 			if tt.mutate != nil {
 				tt.mutate(ctx)
 			}
@@ -499,7 +499,7 @@ func TestEvalReReplaceResultIsData(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			ctx := NewContext()
+			ctx := newContext()
 			if tt.mutate != nil {
 				tt.mutate(ctx)
 			}
@@ -521,7 +521,7 @@ func TestEvalReReplaceResultIsData(t *testing.T) {
 func TestEvalGenuineActionStillResolves(t *testing.T) {
 	t.Parallel()
 
-	ctx := NewContext()
+	ctx := newContext()
 	ctx.Config["2facode"] = "123456"
 	got, err := Eval(`code={{ .Config.2facode }}`, ctx)
 	if err != nil {
@@ -586,7 +586,7 @@ func TestCorpusParses(t *testing.T) {
 }
 
 func representativeContext() *Context {
-	ctx := NewContext()
+	ctx := newContext()
 	ctx.Keywords = "example"
 	ctx.Categories = []string{"100", "101"}
 	ctx.Query["Keywords"] = "example"

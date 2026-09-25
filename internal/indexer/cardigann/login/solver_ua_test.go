@@ -98,10 +98,10 @@ func TestSolverUserAgent_ReplayedOnLoginRequests(t *testing.T) {
 	e := New(WithClient(d), WithBaseURL("https://t.invalid/"))
 	e.setSolverUA("Mozilla/5.0 (solver)")
 
-	if _, _, err := e.get(t.Context(), "https://t.invalid/login", nil); err != nil {
+	if _, _, _, err := e.send(t.Context(), stdhttp.MethodGet, "https://t.invalid/login", nil, nil); err != nil {
 		t.Fatalf("get (no def UA): %v", err)
 	}
-	if _, _, err := e.get(t.Context(), "https://t.invalid/login", map[string][]string{"User-Agent": {"DefUA"}}); err != nil {
+	if _, _, _, err := e.send(t.Context(), stdhttp.MethodGet, "https://t.invalid/login", nil, map[string][]string{"User-Agent": {"DefUA"}}); err != nil {
 		t.Fatalf("get (def UA): %v", err)
 	}
 

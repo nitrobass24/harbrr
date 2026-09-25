@@ -36,7 +36,7 @@ func (n *jsonNode) rowRoot() any {
 }
 
 // ParseJSON parses a JSON response body into a Document.
-func (e *Engine) ParseJSON(body []byte) (*Document, error) {
+func ParseJSON(body []byte) (*Document, error) {
 	var v any
 	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.UseNumber()
@@ -65,7 +65,7 @@ func (n *jsonNode) query(sel string) (node, bool, error) {
 	if !ok {
 		return nil, false, nil
 	}
-	v, ok := resolvePath(base, path)
+	v, ok := ResolvePath(base, path)
 	if !ok {
 		return nil, false, nil
 	}
@@ -122,7 +122,7 @@ func (d *Document) jsonRows(block loader.RowsBlock) ([]Row, error) {
 	if !ok {
 		// Jackett: a missing rows array is "0 rows" only when
 		// MissingAttributeEqualsNoResults is set; otherwise it is an error.
-		if boolVal(block.MissingAttributeEqualsNoResults) {
+		if loader.Bool(block.MissingAttributeEqualsNoResults) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("rows selector %q: %w", block.Selector, ErrSelectorNoMatch)
@@ -153,7 +153,7 @@ func (d *Document) jsonCountIsZero(count *loader.SelectorBlock) bool {
 // is skipped — Jackett skips it under MissingAttributeEqualsNoResults and would
 // otherwise dereference null; harbrr degrades cleanly in both cases.
 func (d *Document) buildJSONRows(arr []any, block loader.RowsBlock) []Row {
-	multiple := boolVal(block.Multiple)
+	multiple := loader.Bool(block.Multiple)
 	// Document property order for the object shape, recovered from the raw body (#681).
 	var orders [][]string
 	if multiple {
@@ -164,7 +164,7 @@ func (d *Document) buildJSONRows(arr []any, block loader.RowsBlock) []Row {
 	for i, e := range arr {
 		value := e
 		if block.Attribute != "" {
-			sub, ok := resolvePath(e, block.Attribute)
+			sub, ok := ResolvePath(e, block.Attribute)
 			if !ok {
 				continue
 			}
@@ -212,6 +212,3 @@ func rowChildren(value any, multiple bool, order []string) []any {
 		return nil
 	}
 }
-
-// boolVal dereferences an optional bool flag, defaulting to false.
-func boolVal(p *bool) bool { return p != nil && *p }

@@ -50,7 +50,13 @@ func (r *FilterRegistry) filterRegexp(value string, args []string) (string, erro
 }
 
 // routeOptions builds the regexadapter routing inputs from the registry's
-// per-def language (set by the engine; "" = Latin default).
+// per-def language (set by the engine; "" = Latin default). It is also the
+// routing source for TEMPLATE patterns ({{ re_replace }}), so field filters and
+// templates route identically (autobrr/harbrr#636). A nil registry — only a test
+// Deps that wires no filters — routes as Latin.
 func (r *FilterRegistry) routeOptions() regexadapter.RouteOptions {
+	if r == nil {
+		return regexadapter.RouteOptions{}
+	}
 	return regexadapter.RouteOptions{Language: r.language}
 }

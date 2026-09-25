@@ -19,12 +19,10 @@ type Definition struct {
 	Language    string `yaml:"language"`
 	Type        string `yaml:"type"`
 	Encoding    string `yaml:"encoding"`
-	// FollowRedirect (definition-level) gates only Jackett's LOGIN/landing-page
-	// redirect follow — never search (search reads the path-level flag alone; both
-	// default false independently in Jackett's model). harbrr's login client always
-	// follows redirects, a documented superset that subsumes this flag; the search
-	// stage honors the path-level flag (see search/redirect.go).
-	FollowRedirect  *bool           `yaml:"followredirect,omitempty"`
+	// The definition-level followredirect key is deliberately not modeled: it
+	// gates only Jackett's LOGIN/landing-page redirect follow, and harbrr's login
+	// client always follows redirects — a documented superset that subsumes it.
+	// The search stage honors the path-level flag (SearchPathBlock.FollowRedirect).
 	TestLinkTorrent *bool           `yaml:"testlinktorrent,omitempty"`
 	RequestDelay    *float64        `yaml:"requestDelay,omitempty"`
 	Links           []string        `yaml:"links"`
@@ -283,7 +281,7 @@ type SearchPathBlock struct {
 	// follow (Jackett FollowIfRedirect: ≤5 GET hops). Unset/false means a 3xx is
 	// NOT followed — it is a logged-out signal (defs with login) or parsed as-is,
 	// matching Jackett's no-auto-follow WebClient. There is no fallback to the
-	// definition-level flag (see the Definition.FollowRedirect note).
+	// definition-level followredirect key (see the Definition note).
 	FollowRedirect *bool          `yaml:"followredirect,omitempty"`
 	Categories     []Scalar       `yaml:"categories,omitempty"`
 	Inputs         InputsBlock    `yaml:"inputs,omitempty"`
@@ -382,6 +380,10 @@ type FilterBlock struct {
 // declares it separately from FilterBlock but with an identical shape, so it is
 // an alias rather than a second, drift-prone copy of the same struct.
 type RowFilterBlock = FilterBlock
+
+// Bool dereferences one of the model's optional bool flags, defaulting to
+// false when the definition left it out.
+func Bool(p *bool) bool { return p != nil && *p }
 
 // Scalar is a oneOf scalar union (string|number|boolean) normalized to its
 // string form, mirroring how Jackett's deserializer coerces these values to

@@ -75,7 +75,7 @@ func (e *Executor) solver() Solver {
 // fail-loud ErrSolverRequired behaviour. A page that is still challenged after a
 // solve also fails loud — never a loop.
 func (e *Executor) fetchLandingPastAntiBot(ctx context.Context, rawURL string, headers map[string][]string) ([]byte, error) {
-	body, _, err := e.get(ctx, rawURL, headers)
+	body, _, _, err := e.send(ctx, stdhttp.MethodGet, rawURL, nil, headers)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +95,7 @@ func (e *Executor) fetchLandingPastAntiBot(ctx context.Context, rawURL string, h
 	// Anti-bot clearance is UA-coupled (cf_clearance is bound to the solver's
 	// User-Agent) AND a gzip-only header set is a known 403 trigger, so the replay
 	// carries the solver's UA plus a browser-realistic Accept/Accept-Encoding set.
-	body, _, err = e.get(ctx, rawURL, withSolverReplayHeaders(headers, res.UserAgent))
+	body, _, _, err = e.send(ctx, stdhttp.MethodGet, rawURL, nil, withSolverReplayHeaders(headers, res.UserAgent))
 	if err != nil {
 		return nil, err
 	}

@@ -21,7 +21,7 @@ type htmlNode struct {
 }
 
 // ParseHTML parses an HTML response body into a Document.
-func (e *Engine) ParseHTML(body []byte) (*Document, error) {
+func ParseHTML(body []byte) (*Document, error) {
 	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("parsing HTML document: %w", err)
@@ -221,23 +221,33 @@ func (s *stepSplitter) done() {
 }
 
 func (s *stepSplitter) feed(c byte) {
-	switch {
-	case s.quote != 0:
+	if s.quote != 0 {
 		s.inQuote(c)
-	case isQuote(c):
+		return
+	}
+	switch c {
+	case '"', '\'':
 		s.quote = c
 		s.b.WriteByte(c)
-	case isOpen(c):
+	case '(', '[':
 		s.depth++
 		s.b.WriteByte(c)
-	case isClose(c):
+	case ')', ']':
 		s.depth--
 		s.b.WriteByte(c)
-	case s.depth == 0 && isCombinator(c):
+	case '>', '+', '~': // combinators, but only at top level
+		if s.depth != 0 {
+			s.writeCompound(c)
+			return
+		}
 		s.done()
 		s.pending = c
 		s.sawSpace = false
-	case s.depth == 0 && isSpaceByte(c):
+	case ' ', '\t', '\n': // descendant whitespace, but only at top level
+		if s.depth != 0 {
+			s.writeCompound(c)
+			return
+		}
 		s.sawSpace = s.b.Len() > 0
 	default:
 		s.writeCompound(c)
@@ -263,12 +273,6 @@ func (s *stepSplitter) writeCompound(c byte) {
 	s.b.WriteByte(c)
 }
 
-func isQuote(c byte) bool      { return c == '"' || c == '\'' }
-func isOpen(c byte) bool       { return c == '(' || c == '[' }
-func isClose(c byte) bool      { return c == ')' || c == ']' }
-func isCombinator(c byte) bool { return c == '>' || c == '+' || c == '~' }
-func isSpaceByte(c byte) bool  { return c == ' ' || c == '\t' || c == '\n' }
-
 func (n *htmlNode) remove(sel string) error {
 	matcher, err := compileCSS(sel)
 	if err != nil {
@@ -286,7 +290,7 @@ func (n *htmlNode) attribute(name string) (string, bool) {
 // text nodes, equivalent to AngleSharp's IElement.TextContent (which, like
 // goquery's Text(), preserves source whitespace verbatim — it does not collapse
 // runs). Jackett applies ParseUtil.NormalizeSpace (a trim) afterward; that trim
-// lives in extract -> normalizeSpace, not here.
+// lives in extract, not here.
 func (n *htmlNode) text() string {
 	return n.sel.Text()
 }

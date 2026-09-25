@@ -9,7 +9,6 @@ import (
 	"golang.org/x/text/encoding"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/httpx"
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/selector"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/template"
 )
 
@@ -88,8 +87,6 @@ type Executor struct {
 	// config supplies template variables (.Config.username, .Config.cookie, ...).
 	// Passed in as a map by the engine; this stage never touches the secrets store.
 	config map[string]string
-	// selector extracts CSRF inputs, error messages, and test-page selectors.
-	selector *selector.Engine
 	// configuredSolver is the optional anti-bot solver consulted when a login
 	// landing page is an interstitial (Cloudflare etc.). Nil defaults to
 	// NoopSolver (fail loud); access it through the solver() accessor, which
@@ -160,9 +157,6 @@ func New(opts ...Option) *Executor {
 	if e.jar == nil {
 		jar, _ := cookiejar.New(&cookiejar.Options{PublicSuffixList: publicsuffix.List})
 		e.jar = jar
-	}
-	if e.selector == nil {
-		e.selector = selector.New()
 	}
 	return e
 }

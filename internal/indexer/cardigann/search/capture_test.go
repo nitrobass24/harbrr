@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/autobrr/harbrr/internal/indexer/cardigann/internal/selector"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/loader"
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/normalizer"
 )
@@ -112,7 +111,7 @@ func runCapture(t *testing.T, doer *captureDoer) Capture {
 	if err != nil {
 		t.Fatalf("loader.Parse: %v", err)
 	}
-	_, err = Execute(t.Context(), def, Query{Keywords: "ubuntu"}, nil, doer, selector.New(), captureDeps())
+	_, err = Execute(t.Context(), def, Query{Keywords: "ubuntu"}, nil, doer, captureDeps())
 	if err == nil {
 		t.Fatal("Execute succeeded, want a classified failure")
 	}
@@ -150,7 +149,7 @@ func TestCapture_SuccessfulSearchRetainsNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loader.Parse: %v", err)
 	}
-	rels, err := Execute(t.Context(), def, Query{Keywords: "ubuntu"}, nil, doer, selector.New(), captureDeps())
+	rels, err := Execute(t.Context(), def, Query{Keywords: "ubuntu"}, nil, doer, captureDeps())
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}

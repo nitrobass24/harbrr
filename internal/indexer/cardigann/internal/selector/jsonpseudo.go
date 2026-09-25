@@ -67,7 +67,7 @@ func jsonFieldSelector(node any, sel string) (string, bool) {
 
 	parent := node
 	if path != "" {
-		v, ok := resolvePath(node, path)
+		v, ok := ResolvePath(node, path)
 		if !ok {
 			return "", false
 		}
@@ -110,6 +110,6 @@ func jsonKeyPresent(parent any, key string) bool {
 		_, ok := jsonFieldSelector(parent, key)
 		return ok
 	}
-	_, ok := resolvePath(parent, key)
+	_, ok := ResolvePath(parent, key)
 	return ok
 }

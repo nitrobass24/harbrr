@@ -31,7 +31,7 @@ func TestParseXML(t *testing.T) {
   </channel>
 </rss>`
 
-	doc, err := New().ParseXML([]byte(feed))
+	doc, err := ParseXML([]byte(feed))
 	if err != nil {
 		t.Fatalf("ParseXML: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestParseXML(t *testing.T) {
 		t.Fatalf("rows = %d, want 2", len(rows))
 	}
 
-	title, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "title"}, nil)
+	title, found, err := Field(rows[0], loader.SelectorBlock{Selector: "title"}, nil)
 	if err != nil || !found {
 		t.Fatalf("title: found=%v err=%v", found, err)
 	}
@@ -54,7 +54,7 @@ func TestParseXML(t *testing.T) {
 
 	// <link> round-trips as text (the HTML5 parser would treat it as void and
 	// the URL would leak out as a sibling).
-	link, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "link"}, nil)
+	link, found, err := Field(rows[0], loader.SelectorBlock{Selector: "link"}, nil)
 	if err != nil || !found {
 		t.Fatalf("link: found=%v err=%v", found, err)
 	}
@@ -63,7 +63,7 @@ func TestParseXML(t *testing.T) {
 	}
 
 	// The namespaced attr is selectable by its qualified name.
-	seeders, found, err := New().Field(rows[0], loader.SelectorBlock{
+	seeders, found, err := Field(rows[0], loader.SelectorBlock{
 		Selector:  `torznab\:attr[name="seeders"]`,
 		Attribute: "value",
 	}, nil)
@@ -87,23 +87,23 @@ func TestParseXMLNamespaceScoping(t *testing.T) {
   <a:sibling/>
 </root>`
 
-	doc, err := New().ParseXML([]byte(feed))
+	doc, err := ParseXML([]byte(feed))
 	if err != nil {
 		t.Fatalf("ParseXML: %v", err)
 	}
 
 	// The sibling keeps the root prefix "a".
-	if _, found, err := New().Field(doc.Root(), loader.SelectorBlock{Selector: `a\:sibling`}, nil); err != nil || !found {
+	if _, found, err := Field(doc.Root(), loader.SelectorBlock{Selector: `a\:sibling`}, nil); err != nil || !found {
 		t.Fatalf("a:sibling not found (found=%v err=%v) — root prefix lost", found, err)
 	}
 	// It must NOT have leaked the inner prefix "b".
-	if _, leaked, err := New().Field(doc.Root(), loader.SelectorBlock{Selector: `b\:sibling`}, nil); err != nil {
+	if _, leaked, err := Field(doc.Root(), loader.SelectorBlock{Selector: `b\:sibling`}, nil); err != nil {
 		t.Fatalf("b:sibling query error: %v", err)
 	} else if leaked {
 		t.Error("sibling mislabeled b:sibling — nested namespace prefix leaked")
 	}
 	// The inner element inside child correctly uses prefix "b".
-	if _, found, err := New().Field(doc.Root(), loader.SelectorBlock{Selector: `b\:inner`}, nil); err != nil || !found {
+	if _, found, err := Field(doc.Root(), loader.SelectorBlock{Selector: `b\:inner`}, nil); err != nil || !found {
 		t.Errorf("b:inner not found (found=%v err=%v)", found, err)
 	}
 }
@@ -125,7 +125,7 @@ func TestParseXMLMixedCaseNames(t *testing.T) {
   <TZ:Info name="Seeders" value="42"/>
 </item></channel></rss>`
 
-	doc, err := New().ParseXML([]byte(feed))
+	doc, err := ParseXML([]byte(feed))
 	if err != nil {
 		t.Fatalf("ParseXML: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestParseXMLMixedCaseNames(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, found, err := New().Field(rows[0], tt.block, nil)
+			got, found, err := Field(rows[0], tt.block, nil)
 			if err != nil || !found {
 				t.Fatalf("Field(%q): found=%v err=%v", tt.block.Selector, found, err)
 			}
@@ -182,7 +182,7 @@ func TestParseXMLMixedCaseNames(t *testing.T) {
 // panic).
 // TestParseXMLDeclaredEncoding proves a prolog declaring a non-UTF-8 encoding
 // parses: the body reaching ParseXML has already been transcoded to UTF-8 by
-// search.decodeBody, and Jackett hands AngleSharp the decoded string, which
+// encode.DecodeBody, and Jackett hands AngleSharp the decoded string, which
 // ignores the declaration. Without a CharsetReader the stdlib decoder refuses
 // every spelling but utf-8/UTF-8 on the first token, failing the whole search
 // for a feed that says windows-1251 / ISO-8859-1 / UTF8 — 40+ vendored defs
@@ -206,7 +206,7 @@ func TestParseXMLDeclaredEncoding(t *testing.T) {
 			t.Parallel()
 			// Already-UTF-8 bytes (Cyrillic title), whatever the prolog claims.
 			feed := tc.prolog + `<rss><channel><item><title>Раздача 1080p</title></item></channel></rss>`
-			doc, err := New().ParseXML([]byte(feed))
+			doc, err := ParseXML([]byte(feed))
 			if err != nil {
 				t.Fatalf("ParseXML: %v", err)
 			}
@@ -217,7 +217,7 @@ func TestParseXMLDeclaredEncoding(t *testing.T) {
 			if len(rows) != 1 {
 				t.Fatalf("rows = %d, want 1", len(rows))
 			}
-			title, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "title"}, nil)
+			title, found, err := Field(rows[0], loader.SelectorBlock{Selector: "title"}, nil)
 			if err != nil || !found {
 				t.Fatalf("title: found=%v err=%v", found, err)
 			}
@@ -230,7 +230,7 @@ func TestParseXMLDeclaredEncoding(t *testing.T) {
 
 func TestParseXMLInvalid(t *testing.T) {
 	t.Parallel()
-	if _, err := New().ParseXML([]byte("<rss><channel><item></rss")); err == nil {
+	if _, err := ParseXML([]byte("<rss><channel><item></rss")); err == nil {
 		t.Fatal("ParseXML of malformed XML = nil error, want a loud error")
 	}
 }
@@ -245,7 +245,7 @@ func TestParseXMLCDATA(t *testing.T) {
   <title><![CDATA[Title & <Raw> Markup]]></title>
   <desc>Pre <![CDATA[Mid]]> Post</desc>
 </item></channel></rss>`
-	doc, err := New().ParseXML([]byte(feed))
+	doc, err := ParseXML([]byte(feed))
 	if err != nil {
 		t.Fatalf("ParseXML: %v", err)
 	}
@@ -254,7 +254,7 @@ func TestParseXMLCDATA(t *testing.T) {
 		t.Fatalf("rows = %d err = %v, want 1", len(rows), err)
 	}
 
-	title, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "title"}, nil)
+	title, found, err := Field(rows[0], loader.SelectorBlock{Selector: "title"}, nil)
 	if err != nil || !found {
 		t.Fatalf("title: found=%v err=%v", found, err)
 	}
@@ -262,7 +262,7 @@ func TestParseXMLCDATA(t *testing.T) {
 		t.Errorf("CDATA title = %q, want literal %q", title, "Title & <Raw> Markup")
 	}
 
-	desc, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "desc"}, nil)
+	desc, found, err := Field(rows[0], loader.SelectorBlock{Selector: "desc"}, nil)
 	if err != nil || !found {
 		t.Fatalf("desc: found=%v err=%v", found, err)
 	}
@@ -286,7 +286,7 @@ func TestParseXMLCDATA(t *testing.T) {
 func TestParseXMLComments(t *testing.T) {
 	t.Parallel()
 	const feed = `<rss><channel><item><title>Real<!-- hidden -->Text</title></item></channel></rss>`
-	doc, err := New().ParseXML([]byte(feed))
+	doc, err := ParseXML([]byte(feed))
 	if err != nil {
 		t.Fatalf("ParseXML: %v", err)
 	}
@@ -294,7 +294,7 @@ func TestParseXMLComments(t *testing.T) {
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("rows = %d err = %v, want 1", len(rows), err)
 	}
-	title, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "title"}, nil)
+	title, found, err := Field(rows[0], loader.SelectorBlock{Selector: "title"}, nil)
 	if err != nil || !found {
 		t.Fatalf("title: found=%v err=%v", found, err)
 	}
@@ -318,7 +318,7 @@ func TestParseXMLDefaultNamespace(t *testing.T) {
 	const feed = `<feed xmlns="http://www.w3.org/2005/Atom">
   <entry><title>Atom Title</title></entry>
 </feed>`
-	doc, err := New().ParseXML([]byte(feed))
+	doc, err := ParseXML([]byte(feed))
 	if err != nil {
 		t.Fatalf("ParseXML: %v", err)
 	}
@@ -326,7 +326,7 @@ func TestParseXMLDefaultNamespace(t *testing.T) {
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("rows = %d err = %v, want 1", len(rows), err)
 	}
-	title, found, err := New().Field(rows[0], loader.SelectorBlock{Selector: "title"}, nil)
+	title, found, err := Field(rows[0], loader.SelectorBlock{Selector: "title"}, nil)
 	if err != nil || !found {
 		t.Fatalf("title: found=%v err=%v", found, err)
 	}
@@ -345,11 +345,11 @@ func TestParseXMLDefaultNamespace(t *testing.T) {
 func TestParseXMLUndeclaredPrefix(t *testing.T) {
 	t.Parallel()
 	const feed = `<rss><channel><item><foo:bar>x</foo:bar></item></channel></rss>`
-	doc, err := New().ParseXML([]byte(feed))
+	doc, err := ParseXML([]byte(feed))
 	if err != nil {
 		t.Fatalf("ParseXML of an undeclared prefix should degrade, not error: %v", err)
 	}
-	val, found, err := New().Field(doc.Root(), loader.SelectorBlock{Selector: `foo\:bar`}, nil)
+	val, found, err := Field(doc.Root(), loader.SelectorBlock{Selector: `foo\:bar`}, nil)
 	if err != nil || !found {
 		t.Fatalf("foo:bar: found=%v err=%v", found, err)
 	}

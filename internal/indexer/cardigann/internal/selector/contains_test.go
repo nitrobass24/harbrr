@@ -187,7 +187,7 @@ func TestContainsCaseSensitiveHTML(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			doc, err := New().ParseHTML([]byte(page))
+			doc, err := ParseHTML([]byte(page))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -213,7 +213,7 @@ func TestContainsCaseBlockArm(t *testing.T) {
 	t.Parallel()
 
 	const page = `<div id="row"><a href="/torrents/1">Films / Bluray remux 4K</a></div>`
-	doc, err := New().ParseHTML([]byte(page))
+	doc, err := ParseHTML([]byte(page))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +229,7 @@ func TestContainsCaseBlockArm(t *testing.T) {
 'a:contains("Films"):contains("Bluray remux 4K")': uhd-remux
 `),
 	}
-	v, found, err := New().Field(rows[0], block, nil)
+	v, found, err := Field(rows[0], block, nil)
 	if err != nil || !found {
 		t.Fatalf("case field err=%v found=%v", err, found)
 	}
@@ -250,7 +250,7 @@ func TestCaseBlockDeclaredOrderFirstMatchWins(t *testing.T) {
 	t.Parallel()
 
 	const page = `<div id="row"><a href="/torrents/1">Films / Bluray Remux 4K</a></div>`
-	doc, err := New().ParseHTML([]byte(page))
+	doc, err := ParseHTML([]byte(page))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +266,7 @@ func TestCaseBlockDeclaredOrderFirstMatchWins(t *testing.T) {
 'a:contains("Films"):contains("Bluray Remux 4K")': movies-uhd
 `),
 	}
-	v, found, err := New().Field(rows[0], block, nil)
+	v, found, err := Field(rows[0], block, nil)
 	if err != nil || !found {
 		t.Fatalf("case field err=%v found=%v", err, found)
 	}
@@ -284,7 +284,7 @@ func TestCaseBlockStarIsPositional(t *testing.T) {
 	t.Parallel()
 
 	const page = `<div id="row"><span class="freeleech">FL</span></div>`
-	doc, err := New().ParseHTML([]byte(page))
+	doc, err := ParseHTML([]byte(page))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +300,7 @@ func TestCaseBlockStarIsPositional(t *testing.T) {
 span.freeleech: specific
 `),
 	}
-	v, found, err := New().Field(rows[0], block, nil)
+	v, found, err := Field(rows[0], block, nil)
 	if err != nil || !found {
 		t.Fatalf("case field err=%v found=%v", err, found)
 	}
@@ -315,7 +315,7 @@ func TestContainsRemoveRespectsCase(t *testing.T) {
 	t.Parallel()
 
 	const page = `<div id="row"><div class="tags"><span>VIP</span><span>vip</span></div></div>`
-	doc, err := New().ParseHTML([]byte(page))
+	doc, err := ParseHTML([]byte(page))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -328,7 +328,7 @@ func TestContainsRemoveRespectsCase(t *testing.T) {
 		Selector: "div.tags",
 		Remove:   `span:contains("VIP")`,
 	}
-	v, found, err := New().Field(rows[0], block, nil)
+	v, found, err := Field(rows[0], block, nil)
 	if err != nil || !found {
 		t.Fatalf("field err=%v found=%v", err, found)
 	}

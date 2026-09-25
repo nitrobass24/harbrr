@@ -42,10 +42,10 @@ func FromInfoHash(infoHash, title string) string {
 	b.WriteString("magnet:?xt=urn:btih:")
 	b.WriteString(infoHash)
 	b.WriteString("&dn=")
-	b.WriteString(urlEncode(title))
+	b.WriteString(encode.WebUtilityStringEncode(title))
 	for _, tr := range publicTrackers {
 		b.WriteString("&tr=")
-		b.WriteString(urlEncode(tr))
+		b.WriteString(encode.WebUtilityStringEncode(tr))
 	}
 	return b.String()
 }
@@ -87,16 +87,4 @@ func queryArg(raw, name string) string {
 	qs, _, _ = strings.Cut(qs, "#") // drop any fragment
 	values, _ := url.ParseQuery(qs) // keep the partial map on error (lenient, like Jackett)
 	return values.Get(name)
-}
-
-// urlEncode matches Jackett's MagnetUtil encoding of the magnet dn=/tr= values:
-// WebUtilityHelpers.UrlEncode -> WebUtility.UrlEncodeToBytes, whose intermediate
-// STRING leaves the sub-delimiters ! * ( ) LITERAL (space -> '+', ~ -> %7E, ' ->
-// %27, Unicode -> UTF-8 octets). A magnet is Torznab OUTPUT, not a tracker
-// request, so it uses WebUtilityStringEncode (! * ( ) literal) rather than the
-// on-the-wire WebUtilityEncode the request path uses (which percent-encodes them
-// for WAF safety) — see the encode package doc. Tracker URLs carry none of
-// ! * ( ), so the tr= tail is byte-identical under either encoder.
-func urlEncode(s string) string {
-	return encode.WebUtilityStringEncode(s)
 }

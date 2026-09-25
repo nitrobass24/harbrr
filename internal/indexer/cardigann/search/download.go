@@ -202,7 +202,7 @@ func resolveInfoHash(ctx context.Context, dl *loader.DownloadBlock, link string,
 		return "", false, nil
 	}
 	body := beforeBody
-	if !boolVal(ih.UseBeforeResponse) || dl.Before == nil || beforeBody == nil {
+	if !loader.Bool(ih.UseBeforeResponse) || dl.Before == nil || beforeBody == nil {
 		b, err := doRequest(ctx, doer, builtRequest{method: stdhttp.MethodGet, url: link, headers: headers}, session)
 		if err != nil {
 			return "", false, err
@@ -267,7 +267,7 @@ func resolveSelectors(ctx context.Context, def *loader.Definition, dl *loader.Do
 // selectorPageBody returns the body a selector reads: the before response when the
 // selector opts in (and a before response exists), otherwise a fresh GET of the link.
 func selectorPageBody(ctx context.Context, sel loader.SelectorField, dl *loader.DownloadBlock, link string, beforeBody []byte, headers map[string][]string, session *login.Session, doer Doer) ([]byte, error) {
-	if boolVal(sel.UseBeforeResponse) && dl.Before != nil && beforeBody != nil {
+	if loader.Bool(sel.UseBeforeResponse) && dl.Before != nil && beforeBody != nil {
 		return beforeBody, nil
 	}
 	return doRequest(ctx, doer, builtRequest{method: stdhttp.MethodGet, url: link, headers: headers}, session)
@@ -309,12 +309,11 @@ func selectValue(du *template.DownloadURI, body []byte, sel loader.SelectorField
 		return "", false, fmt.Errorf("rendering download selector %q: %w", sel.Selector, err)
 	}
 
-	eng := selector.New()
-	doc, err := eng.ParseHTML(body)
+	doc, err := selector.ParseHTML(body)
 	if err != nil {
 		return "", false, fmt.Errorf("parsing download page: %w", err)
 	}
-	value, found, err := eng.Field(doc.Root(), loader.SelectorBlock{Selector: rendered, Attribute: sel.Attribute}, nil)
+	value, found, err := selector.Field(doc.Root(), loader.SelectorBlock{Selector: rendered, Attribute: sel.Attribute}, nil)
 	if err != nil {
 		return "", false, fmt.Errorf("download selector %q: %w", rendered, err)
 	}

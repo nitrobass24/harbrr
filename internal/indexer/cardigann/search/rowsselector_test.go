@@ -69,7 +69,7 @@ func TestRenderRowsSelector_CompilesAndSplits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("renderRowsSelector: %v", err)
 	}
-	doc, err := selector.New().ParseHTML([]byte(html))
+	doc, err := selector.ParseHTML([]byte(html))
 	if err != nil {
 		t.Fatalf("ParseHTML: %v", err)
 	}

@@ -32,7 +32,7 @@ import (
 // def's `selector: pubDate` matches <pubDate> in both engines; the only
 // divergence is that a case-MISmatched selector/document pair matches here but
 // not in Jackett. Attribute values and text keep their original case.
-func (e *Engine) ParseXML(body []byte) (*Document, error) {
+func ParseXML(body []byte) (*Document, error) {
 	root, err := xmlToNode(body)
 	if err != nil {
 		return nil, fmt.Errorf("parsing XML document: %w", err)
@@ -49,7 +49,7 @@ func xmlToNode(body []byte) (*html.Node, error) {
 	root := &html.Node{Type: html.DocumentNode}
 	dec := xml.NewDecoder(bytes.NewReader(body))
 	dec.Strict = false
-	// The body reaching here is already UTF-8 (search.decodeBody transcoded it per
+	// The body reaching here is already UTF-8 (encode.DecodeBody transcoded it per
 	// the def's encoding:), but a feed's prolog still declares whatever the tracker
 	// wrote — `encoding="windows-1251"`, `ISO-8859-1`, even `UTF8`. Without a
 	// CharsetReader the stdlib decoder refuses any spelling other than utf-8/UTF-8
