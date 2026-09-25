@@ -301,8 +301,8 @@ func TestPublishDateLayouts(t *testing.T) {
 		{"not a date", ""},
 	}
 	for _, c := range cases {
-		if got := d.publishDate(c.in); got != c.want {
-			t.Errorf("publishDate(%q) = %q, want %q", c.in, got, c.want)
+		if got := d.PublishDateOrEmpty(c.in); got != c.want {
+			t.Errorf("PublishDateOrEmpty(%q) = %q, want %q", c.in, got, c.want)
 		}
 	}
 }

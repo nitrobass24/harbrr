@@ -20,7 +20,7 @@ var searchSeparators = regexp.MustCompile(`[ -._]+`)
 // Search performs an authenticated browse and renews the session once when XSpeeds
 // reports that the request is logged out. Login is serialized; browse requests are not.
 func (d *driver) Search(ctx context.Context, query search.Query) ([]*normalizer.Release, error) {
-	return runOperation(ctx, d, "search", func(ctx context.Context, _ sessionState) ([]*normalizer.Release, error) {
+	return runOperation(ctx, d, "search", func(ctx context.Context, _ native.SessionState) ([]*normalizer.Release, error) {
 		request, err := d.newBrowseRequest(ctx, query)
 		if err != nil {
 			return nil, err

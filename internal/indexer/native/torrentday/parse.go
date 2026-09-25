@@ -111,7 +111,7 @@ func (d *driver) toRelease(row *torrentDayRow) *normalizer.Release {
 // 1:1 custom id (native.FirstStandardCat). An unmapped id yields no category
 // (an uncategorised release) rather than failing the page.
 func (d *driver) categories(c native.FlexString) []int {
-	return native.FirstStandardCat(d.Caps.CategoryMap.MapTrackerCatToNewznab(c.Str()))
+	return d.CatByID(c.Str())
 }
 
 // downloadURL rebuilds the Prowlarr download URL: {base}download.php/<id>/<id>.torrent.

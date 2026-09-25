@@ -91,5 +91,5 @@ func cleanTitle(title string) string {
 }
 
 func (d *driver) categories(id int64) []int {
-	return native.FirstStandardCat(d.Caps.CategoryMap.MapTrackerCatToNewznab(strconv.FormatInt(id, 10)))
+	return d.CatByID(strconv.FormatInt(id, 10))
 }

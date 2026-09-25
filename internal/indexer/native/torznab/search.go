@@ -71,8 +71,5 @@ func (d *driver) get(ctx context.Context, rawurl string, download bool) (*native
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/rss+xml, application/xml, text/xml")
-	if download {
-		return d.DoDownload(ctx, req, native.ClassifyAuth403)
-	}
-	return d.Do(ctx, req, native.ClassifyAuth403)
+	return d.Fetch(ctx, req, download, native.ClassifyAuth403)
 }

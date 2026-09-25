@@ -30,10 +30,7 @@ func (d *driver) get(ctx context.Context, rawurl string, download bool) (*native
 	}
 	req.Header.Set(apiKeyHeader, strings.TrimSpace(d.cfgValue("apikey")))
 	req.Header.Set("Accept", "application/json")
-	if download {
-		return d.DoDownload(ctx, req, native.ClassifyAuth403)
-	}
-	return d.Do(ctx, req, native.ClassifyAuth403)
+	return d.Fetch(ctx, req, download, native.ClassifyAuth403)
 }
 
 // quickUserParam is the api.php request that returns the authenticated user's profile,

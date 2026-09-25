@@ -104,7 +104,7 @@ func TestAlphaRatioSearchAndParse(t *testing.T) {
 		"exclude_scene":       "true",
 		"use_freeleech_token": "true",
 	}
-	d.session = sessionState{cookie: alphaRatioCookie, generation: 1}
+	d.Publish(native.SessionState{Cookie: alphaRatioCookie, Generation: 1})
 
 	releases, err := d.Search(context.Background(), search.Query{
 		Keywords: "Example.Movie.2024",
@@ -437,11 +437,11 @@ func TestAlphaRatioCanceledLoginWaiterReturns(t *testing.T) {
 	}{
 		{
 			name: "initial session",
-			wait: func(ctx context.Context, d *driver) error { return d.ensureSession(ctx) },
+			wait: func(ctx context.Context, d *driver) error { _, err := d.Ensure(ctx, d.login); return err },
 		},
 		{
 			name: "session renewal",
-			wait: func(ctx context.Context, d *driver) error { return d.renewSession(ctx, 0) },
+			wait: func(ctx context.Context, d *driver) error { return d.Renew(ctx, 0, d.login) },
 		},
 	}
 	for _, test := range tests {
@@ -487,7 +487,7 @@ func assertCanceledLoginWaiterReturns(t *testing.T, wait func(context.Context, *
 	}
 	d := built.(*driver)
 	firstDone := make(chan error, 1)
-	go func() { firstDone <- d.ensureSession(context.Background()) }()
+	go func() { _, err := d.Ensure(context.Background(), d.login); firstDone <- err }()
 	select {
 	case <-loginStarted:
 	case <-time.After(time.Second):

@@ -3,6 +3,8 @@ package gazelle
 import (
 	"context"
 	stdhttp "net/http"
+
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // newRequest builds a GET request and hands it to the site's auth strategy to attach
@@ -14,14 +16,14 @@ import (
 // thread the request-used generation into the auth-failure path (renewal coalescing) and
 // scrub the exact cookie this request sent — never a later re-snapshot a concurrent
 // renewal could have advanced (apiKeyAuth has no session, so it returns the zero value).
-func (d *driver) newRequest(ctx context.Context, rawURL string) (*stdhttp.Request, sessionState, error) {
+func (d *driver) newRequest(ctx context.Context, rawURL string) (*stdhttp.Request, native.SessionState, error) {
 	req, err := d.NewRequest(ctx, stdhttp.MethodGet, rawURL, nil)
 	if err != nil {
-		return nil, sessionState{}, err
+		return nil, native.SessionState{}, err
 	}
 	req.Header.Set("Accept", "application/json")
 	if err := d.site.strategy.Prepare(ctx, d, req); err != nil {
-		return nil, sessionState{}, err
+		return nil, native.SessionState{}, err
 	}
-	return req, d.sessionSnapshot(), nil
+	return req, d.Snapshot(), nil
 }

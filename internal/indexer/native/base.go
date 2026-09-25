@@ -166,13 +166,13 @@ var (
 
 // AlsoAuth returns a copy that additionally treats codes as auth failures.
 func (c Classify) AlsoAuth(codes ...int) Classify {
-	c.auth = append(append([]int(nil), c.auth...), codes...)
+	c.auth = append(slices.Clone(c.auth), codes...)
 	return c
 }
 
 // AlsoRateLimited returns a copy that additionally treats codes as rate limits.
 func (c Classify) AlsoRateLimited(codes ...int) Classify {
-	c.rateLimit = append(append([]int(nil), c.rateLimit...), codes...)
+	c.rateLimit = append(slices.Clone(c.rateLimit), codes...)
 	return c
 }
 
@@ -241,6 +241,29 @@ func (b *Base) Do(ctx context.Context, req *stdhttp.Request, c Classify) (*Respo
 // preserve.
 func (b *Base) DoDownload(ctx context.Context, req *stdhttp.Request, c Classify, captureSecrets ...string) (*Response, error) {
 	return b.roundTrip(ctx, req, c, "download", captureSecrets...)
+}
+
+// Fetch is the download-selecting branch every driver's get helper ends in: DoDownload
+// for the grab path (torrent body cap, truncation-is-an-error, refusal capture),
+// Do otherwise. captureSecrets is DoDownload's, ignored on the non-download path.
+func (b *Base) Fetch(ctx context.Context, req *stdhttp.Request, download bool, c Classify, captureSecrets ...string) (*Response, error) {
+	if download {
+		return b.DoDownload(ctx, req, c, captureSecrets...)
+	}
+	return b.Do(ctx, req, c)
+}
+
+// CatByID maps a tracker category id to the single canonical newznab category, dropping
+// the mapper's synthesised 1:1 custom id (FirstStandardCat) so a release carries exactly
+// one category, matching Prowlarr. nil when the id is unmapped.
+func (b *Base) CatByID(id string) []int {
+	return FirstStandardCat(b.Caps.CategoryMap.MapTrackerCatToNewznab(id))
+}
+
+// CatByDesc is CatByID keyed by the tracker's category DESCRIPTION ("Movies", "Music",
+// a BroadcasTheNet resolution) rather than its id.
+func (b *Base) CatByDesc(desc string) []int {
+	return FirstStandardCat(b.Caps.CategoryMap.MapTrackerCatDescToNewznab(desc))
 }
 
 // NewRequest builds a request for this driver's transport. It is the ONLY way a native

@@ -195,7 +195,7 @@ func minimumSeedTime(category string) int64 {
 // discarding the mapper's synthesised 1:1 custom id. An unmapped/blank resolution falls
 // back to the TV root (5000), matching Prowlarr (which emits exactly one category).
 func (d *driver) categories(resolution string) []int {
-	if cats := native.FirstStandardCat(d.Caps.CategoryMap.MapTrackerCatDescToNewznab(resolution)); cats != nil {
+	if cats := d.CatByDesc(resolution); cats != nil {
 		return cats
 	}
 	return []int{tvCategory}

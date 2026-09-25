@@ -84,17 +84,10 @@ func (s FlexString) Str() string { return strings.TrimSpace(string(s)) }
 
 // SortByPublishDateDesc orders releases by PublishDate descending (Prowlarr's terminal
 // OrderByDescending(PublishDate)). PublishDate is UTC RFC3339, which sorts lexically in
-// chronological order, so a plain string comparison is correct. The stable sort preserves
-// input order for any tie (equal timestamps).
+// chronological order, so a plain string comparison is correct. Link breaks a tie so the
+// order is total and deterministic even when two rows share a timestamp; the stable sort
+// then preserves input order for rows identical in both.
 func SortByPublishDateDesc(rels []*normalizer.Release) {
-	sort.SliceStable(rels, func(i, j int) bool {
-		return rels[i].PublishDate > rels[j].PublishDate
-	})
-}
-
-// SortByPublishDateDescLinkTiebreak is SortByPublishDateDesc with a Link tiebreak so the
-// order is total and deterministic even when two rows share a timestamp.
-func SortByPublishDateDescLinkTiebreak(rels []*normalizer.Release) {
 	sort.SliceStable(rels, func(i, j int) bool {
 		if rels[i].PublishDate != rels[j].PublishDate {
 			return rels[i].PublishDate > rels[j].PublishDate

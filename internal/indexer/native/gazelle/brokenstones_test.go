@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/autobrr/harbrr/internal/indexer/cardigann/search"
+	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 const (
@@ -95,7 +96,7 @@ func TestBrokenStonesSearchAndParse(t *testing.T) {
 		"username": brokenStonesUsername,
 		"password": brokenStonesPassword,
 	}
-	d.session = sessionState{cookie: brokenStonesCookie, generation: 1}
+	d.Publish(native.SessionState{Cookie: brokenStonesCookie, Generation: 1})
 
 	releases, err := d.Search(context.Background(), search.Query{Keywords: "Example App"})
 	if err != nil {

@@ -147,7 +147,7 @@ func (d *driver) toRelease(row *hdbitsTorrent, useFilenames bool) *normalizer.Re
 		Seeders:              seeders,
 		Leechers:             leechers,
 		Peers:                seeders + leechers,
-		PublishDate:          d.publishDate(row.Added),
+		PublishDate:          d.PublishDateOrEmpty(row.Added),
 		DownloadVolumeFactor: downloadVolumeFactor(row),
 		UploadVolumeFactor:   uploadVolumeFactor(row),
 	}
@@ -194,7 +194,7 @@ func stripTorrentExt(name string) string {
 // mapper also synthesises a 1:1 custom id which native.FirstStandardCat discards so the
 // release carries exactly one category (matching Prowlarr, which emits one).
 func (d *driver) categories(typeCategory int64) []int {
-	return native.FirstStandardCat(d.Caps.CategoryMap.MapTrackerCatToNewznab(strconv.FormatInt(typeCategory, 10)))
+	return d.CatByID(strconv.FormatInt(typeCategory, 10))
 }
 
 // downloadVolumeFactor reproduces Prowlarr's GetDownloadVolumeFactor: freeleech is free (0),
@@ -230,19 +230,6 @@ func uploadVolumeFactor(row *hdbitsTorrent) float64 {
 // any other value (incl. "no") is non-freeleech.
 func isFreeleech(s string) bool {
 	return strings.EqualFold(strings.TrimSpace(s), "yes")
-}
-
-// publishDate parses the `added` field to UTC RFC3339 (Prowlarr's
-// result.Added.ToUniversalTime()) via the shared native.PublishDate — HDBits' captured feed
-// sends a no-colon offset ("2015-04-04T20:30:46+0000"), which it accepts. An
-// unparseable/empty value yields "" rather than failing the whole page (a single bad date
-// must not drop the result set).
-func (d *driver) publishDate(added string) string {
-	out, err := native.PublishDate(added, d.Clock)
-	if err != nil {
-		return ""
-	}
-	return out
 }
 
 // downloadURL rebuilds the Prowlarr download URL: {base}download.php?id={id}&passkey=

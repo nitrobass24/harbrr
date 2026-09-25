@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -71,7 +70,7 @@ func (d *driver) nodeURL(node *goquery.Selection) (string, bool) {
 	if !exists || strings.TrimSpace(href) == "" {
 		return "", false
 	}
-	resolved, err := resolveURL(d.cookieURL, href)
+	resolved, err := resolveURL(d.CookieURL, href)
 	if err != nil {
 		return "", false
 	}
@@ -93,7 +92,7 @@ func (d *driver) downloadURL(node *goquery.Selection) (string, bool) {
 	if id == "" {
 		return "", false
 	}
-	target := *d.cookieURL
+	target := *d.CookieURL
 	target.Path = strings.TrimRight(target.Path, "/") + "/download.php"
 	target.RawPath = ""
 	target.RawQuery = url.Values{"id": {id}}.Encode()
@@ -161,21 +160,15 @@ func cleanDescription(description string) string {
 	return strings.TrimSpace(description)
 }
 
+// parseInteger reads the digits out of a cell ("1,234", "12 seeders") and parses them;
+// a cell with no digits, or digits too large for an int64, yields 0.
 func parseInteger(raw string) int64 {
-	var digits strings.Builder
-	for _, char := range raw {
-		if char >= '0' && char <= '9' {
-			digits.WriteRune(char)
+	return native.ParseInt64(strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
 		}
-	}
-	if digits.Len() == 0 {
-		return 0
-	}
-	value, err := strconv.ParseInt(digits.String(), 10, 64)
-	if err != nil {
-		return 0
-	}
-	return value
+		return -1
+	}, raw))
 }
 
 // parseDate reads XSpeeds' "added" timestamp. It does NOT go through

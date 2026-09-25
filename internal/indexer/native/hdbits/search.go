@@ -51,7 +51,7 @@ type torrentQuery struct {
 // imdbQuery is the body's imdb object: the bare numeric id (tt-stripped), matching
 // Prowlarr's TorrentQuery.ImdbInfo.
 type imdbQuery struct {
-	ID int `json:"id"`
+	ID int64 `json:"id"`
 }
 
 // tvdbQuery is the body's tvdb object: the series id and, for a standard episode query,
@@ -127,7 +127,7 @@ func (d *driver) buildRequest(q search.Query) ([]byte, error) {
 // whole series' newest 100 torrents and miss every older episode.
 func setSearchCriteria(tq *torrentQuery, q search.Query) {
 	keywords := strings.TrimSpace(q.Keywords)
-	if imdb := int(native.IMDBNumber(q.IMDBID)); imdb > 0 {
+	if imdb := native.IMDBNumber(q.IMDBID); imdb > 0 {
 		tq.Imdb = &imdbQuery{ID: imdb}
 		tq.Search = episodeScopedTerm(q, keywords)
 		return

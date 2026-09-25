@@ -256,8 +256,8 @@ func TestPublishDate(t *testing.T) {
 		{"not a date", ""},
 	}
 	for _, c := range cases {
-		if got := parseDriver(t, nil).publishDate(c.in); got != c.want {
-			t.Errorf("publishDate(%q) = %q, want %q", c.in, got, c.want)
+		if got := parseDriver(t, nil).PublishDateOrEmpty(c.in); got != c.want {
+			t.Errorf("PublishDateOrEmpty(%q) = %q, want %q", c.in, got, c.want)
 		}
 	}
 }

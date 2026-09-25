@@ -22,8 +22,5 @@ func (d *driver) get(ctx context.Context, rawurl, accept string, download bool) 
 	if accept != "" {
 		req.Header.Set("Accept", accept)
 	}
-	if download {
-		return d.DoDownload(ctx, req, native.ClassifyAuth403)
-	}
-	return d.Do(ctx, req, native.ClassifyAuth403)
+	return d.Fetch(ctx, req, download, native.ClassifyAuth403)
 }

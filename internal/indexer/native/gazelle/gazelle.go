@@ -5,9 +5,9 @@
 // while AlphaRatio's non-music groups are already one release each. All downloads are
 // fetched server-side through /dl so header/cookie credentials never reach feed
 // consumers. Everything but the Gazelle request/parse dialect and the per-site config
-// (plus the form-login regime's cookie-session state) lives in the embedded native.Base,
-// whose Do/DoDownload own the paced transport, host-only redaction, status
-// classification, and capped body reads.
+// lives in the embedded native.Base, whose Do/DoDownload own the paced transport,
+// host-only redaction, status classification, and capped body reads, and in the embedded
+// native.CookieSession, which owns the form-login regime's jar, login gate and session.
 //
 // Per-site variation (ADR 0003, docs/adr/0003-gazelle-auth-strategy-seam.md) is data:
 // siteConfigs (sites.go) composes an authStrategy (strategy.go/strategy_formlogin.go)
@@ -18,39 +18,23 @@ package gazelle
 import (
 	"context"
 	"fmt"
-	stdhttp "net/http"
 	"net/url"
 	"strings"
-	"sync"
-
-	"golang.org/x/sync/semaphore"
 
 	"github.com/autobrr/harbrr/internal/indexer/native"
 )
 
 // driver is one configured Gazelle-family instance. It is built once per instance and
 // cached by the registry. RED/OPS carry a static API key and hold no session state;
-// AlphaRatio (and the planned #28-#31 sites) keep a persisted cookie session and
-// serialize automatic login/renewal through loginGate. The cookie-session fields are
-// unused for apiKeyAuth sites.
+// AlphaRatio (and the planned #28-#31 sites) keep a persisted cookie session in the
+// embedded native.CookieSession, which owns the jar, the single-login gate and the
+// session generation. It is unused for apiKeyAuth sites.
 type driver struct {
 	native.Base
+	*native.CookieSession
 	site siteConfig
 
-	persist   func(ctx context.Context, name, value string) error
-	jar       stdhttp.CookieJar
-	cookieURL *url.URL
-	loginGate *semaphore.Weighted
-	sessionMu sync.RWMutex
-	session   sessionState
-}
-
-// sessionState is an immutable snapshot copied under sessionMu. generation advances
-// whenever automatic login publishes a replacement cookie, allowing failed requests to
-// suppress duplicate renewal without confusing their cookie with the current session.
-type sessionState struct {
-	cookie     string
-	generation uint64
+	persist func(ctx context.Context, name, value string) error
 }
 
 var _ native.Driver = (*driver)(nil)
@@ -74,25 +58,22 @@ func New(p native.Params) (native.Driver, error) {
 	if err != nil {
 		return nil, fmt.Errorf("gazelle: parse base URL: %w", err)
 	}
-	var session sessionState
+	var session native.SessionState
 	if site.sessionCookieSetting != "" {
-		session.cookie = strings.TrimSpace(p.Cfg[site.sessionCookieSetting])
-		if session.cookie != "" {
-			session.generation = 1
+		session.Cookie = strings.TrimSpace(p.Cfg[site.sessionCookieSetting])
+		if session.Cookie != "" {
+			session.Generation = 1
 		}
 	}
-	jar := doerCookieJar(p.Doer)
-	if jar != nil && session.cookie != "" {
-		jar.SetCookies(cookieURL, parseCookieHeader(session.cookie))
+	jar := native.CookieJarOf(p.Doer)
+	if jar != nil && session.Cookie != "" {
+		jar.SetCookies(cookieURL, native.ParseCookieHeader(session.Cookie))
 	}
 	return &driver{
-		Base:      b,
-		site:      site,
-		persist:   p.PersistSetting,
-		jar:       jar,
-		cookieURL: cookieURL,
-		loginGate: semaphore.NewWeighted(1),
-		session:   session,
+		Base:          b,
+		CookieSession: native.NewCookieSession("gazelle", jar, cookieURL, session),
+		site:          site,
+		persist:       p.PersistSetting,
 	}, nil
 }
 

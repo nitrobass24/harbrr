@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -78,11 +77,7 @@ func (d *driver) parseReleases(body []byte) ([]*normalizer.Release, error) {
 		}
 		releases = append(releases, rel)
 	}
-	// PublishDate is uniform RFC3339 UTC, so a lexical descending sort is
-	// chronological; SliceStable mirrors .NET's stable OrderByDescending.
-	sort.SliceStable(releases, func(i, j int) bool {
-		return releases[i].PublishDate > releases[j].PublishDate
-	})
+	native.SortByPublishDateDesc(releases)
 	native.TraceReleases(d.Log, d.profile.site, releases)
 	return releases, nil
 }
