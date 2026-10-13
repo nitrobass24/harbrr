@@ -1,18 +1,20 @@
 ---
-id: sportz247
+id: racing4us
 replaces:
   - tsdb
   - f1gp
-name: Sportz247
-description: "Sportz247 is a Private Torrent Tracker for SPORTS"
+  - sportz247
+name: Racing4us
+description: "Racing4us is a Private Torrent Tracker for SPORTS"
 language: en-US
 type: private
 encoding: UTF-8
 links:
-  - https://sportz247.bar/
+  - https://racing4us.site/
 legacylinks:
   - https://f1gp.site/
   - https://f1gp.xyz/
+  - https://sportz247.bar/
 
 caps:
   categorymappings:
@@ -23,24 +25,24 @@ caps:
     - {id: 3, cat: TV/Sport, desc: "F1 Free Practice"}
     - {id: 5, cat: TV/Sport, desc: "F1 Pre Races"}
     - {id: 6, cat: TV/Sport, desc: "F1 Warm Up"}
-    - {id: 4, cat: TV/Sport, desc: "F1 Documentary"}
+    - {id: 4, cat: TV/Documentary, desc: "F1 Documentary"}
     - {id: 7, cat: TV/Sport, desc: "F1 Oldies"}
     - {id: 8, cat: TV/Sport, desc: "F1 Press Conferences"}
     - {id: 9, cat: TV/Sport, desc: "F1 Post Races"}
     - {id: 14, cat: TV/Sport, desc: "F1 Academy"}
-    - {id: 15, cat: TV/Sport, desc: "F1 Movies"}
-    - {id: 16, cat: TV/Sport, desc: "F1 Series"}
+    - {id: 15, cat: Movies, desc: "F1 Movies"}
+    - {id: 16, cat: TV, desc: "F1 Series"}
     - {id: 17, cat: TV/Sport, desc: "F2 Championship"}
     - {id: 18, cat: TV/Sport, desc: "F3 Championship"}
     - {id: 19, cat: TV/Sport, desc: "FE Championship"}
     - {id: 21, cat: TV/Sport, desc: "UFC"}
     - {id: 22, cat: TV/Sport, desc: "MotoGP"}
     - {id: 23, cat: TV/Sport, desc: "Boxing"}
-    - {id: 24, cat: Other, desc: "Magazines - Books"}
+    - {id: 24, cat: Books/Mags, desc: "Magazines - Books"}
     - {id: 26, cat: TV/Sport, desc: "Tennis"}
     - {id: 27, cat: TV/Sport, desc: "World Cup 2026"}
     - {id: 28, cat: TV/Sport, desc: "NBA"}
-    - {id: 29, cat: TV/Sport, desc: "Indy 500"}
+    - {id: 29, cat: TV/Sport, desc: "NTT IndyCar Series"}
     - {id: 30, cat: TV/Sport, desc: "Football/Soccer"}
     - {id: 33, cat: TV/Sport, desc: "WRC/Rally"}
     - {id: 34, cat: TV/Sport, desc: "BTCC"}
@@ -74,13 +76,17 @@ caps:
     - {id: 25, cat: TV/Sport, desc: "NASCAR Cup Series"}
     - {id: 66, cat: TV/Sport, desc: "NASCAR O'Reilly Auto Parts"}
     - {id: 64, cat: TV/Sport, desc: "IROC"}
-    - {id: 67, cat: TV/Sport, desc: "Sports TV Shows"}
+    - {id: 67, cat: TV, desc: "Sports TV Shows"}
     - {id: 68, cat: TV/Sport, desc: "AFL"}
     - {id: 69, cat: TV/Sport, desc: "NFL"}
+    - {id: 70, cat: TV/Sport, desc: "FIM EWC"}
+    - {id: 71, cat: TV/Sport, desc: "AFLW"}
 
   modes:
     search: [q]
     tv-search: [q, season, ep]
+    movie-search: [q]
+    book-search: [q]
 
 settings:
   - name: username
@@ -89,10 +95,6 @@ settings:
   - name: password
     type: password
     label: Password
-  - name: freeleech
-    type: checkbox
-    label: Search freeleech only
-    default: false
   - name: sort
     type: select
     label: Sort requested from site
@@ -100,7 +102,6 @@ settings:
     options:
       3: created
       5: seeders
-      4: size
       2: title
   - name: type
     type: select
@@ -128,14 +129,14 @@ login:
 
 search:
   paths:
-    # https://sportz247.bar/index.php?page=torrents&search=&category=0&active=0
+    # https://racing4us.site/index.php?page=torrents&search=&category=0&active=0
     - path: index.php
   inputs:
     page: torrents
     search: "{{ .Keywords }}"
     category: "{{ range .Categories }}{{.}};{{end}}"
-    # 0 filename, 1 file&descr, 2 descr, 3 uploaders, 5 gold, 6 silver, 7 bronze
-    options: "{{ if .Config.freeleech }}5{{ else }}0{{ end }}"
+    # 0 filename, 1 file&descr, 2 descr, 3 uploaders
+    options: 0
     # 0 all, 1 active only, 2 dead only
     active: 0
     order: "{{ .Config.sort }}"
@@ -168,36 +169,23 @@ search:
       attribute: onmouseover
       filters:
         - name: regexp
-          args: src=(.+?) width
-        - name: replace
-          args: ["torrentimg/nocover.jpg", ""]
+          args: src=([^\s]+)
     size:
-      selector: td:nth-last-child(4)
+      text: 2GB
     date:
       # auto adjusted by site account profile
-      selector: td:nth-last-child(9)
+      selector: td:nth-child(4)
       filters:
         - name: dateparse
           args: "dd/MM/yyyy"
     seeders:
-      selector: td:nth-last-child(8)
-      optional: true
-      default: 0
+      selector: td:nth-child(5)
     leechers:
-      optional: true
-      selector: td:nth-last-child(7)
-      default: 0
+      selector: td:nth-child(6)
     grabs:
-      optional: true
-      selector: td:nth-last-child(6)
-      default: 0
+      selector: td:nth-child(7)
     downloadvolumefactor:
-      case:
-        img[src="images/freeleech.gif"]: 0
-        img[src="images/gold.gif"]: 0
-        img[src="images/silver.gif"]: 0.5
-        img[src="images/bronze.gif"]: 0.75
-        "*": 1
+      text: 1
     uploadvolumefactor:
       text: 1
     minimumratio:
@@ -205,4 +193,4 @@ search:
     minimumseedtime:
       # 5 days (as seconds = 5 x 24 x 60 x 60)
       text: 432000
-#  xbtitFM v4.3.00
+#  xbtitFM v4.2.13

@@ -10,7 +10,7 @@ Cardigann can't express — and how far each is validated.
   account on that tracker). See **[Test status](test-status.md)** for the evidence behind this
   column and the auth/fetch patterns proven live.
 
-**617 trackers** total: 574 Cardigann corpus (all built) · 26 native drivers built · 17 native
+**628 trackers** total: 585 Cardigann corpus (all built) · 26 native drivers built · 17 native
 drivers planned. To configure one, see **[Adding an indexer](guides/add-indexer.md)**.
 
 ## Native drivers
@@ -74,7 +74,7 @@ Native drivers we have issues for but haven't built. 👍 or comment on the issu
 
 Served through the shared engine from the vendored Jackett snapshot — all built. Live-tested where an operator instance covers them.
 
-### Private (426)
+### Private (439)
 
 | Tracker | Built | Live-tested |
 |---|:--:|:--:|
@@ -87,6 +87,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | 3D Torrents | ✅ | ⬜ |
 | 3D Vault (API) | ✅ | ⬜ |
 | 4thD | ✅ | ⬜ |
+| 52movie | ✅ | ⬜ |
 | 52PT | ✅ | ⬜ |
 | 720pier | ✅ | ⬜ |
 | Abnormal (API) | ✅ | ⬜ |
@@ -96,6 +97,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | AGSVPT | ✅ | ⬜ |
 | Aidoru!Online | ✅ | ⬜ |
 | Aither (API) | ✅ | ✅ |
+| AlaBala | ✅ | ⬜ |
 | alingPT | ✅ | ⬜ |
 | alingPT (API) | ✅ | ⬜ |
 | Amigos Share Club | ✅ | ⬜ |
@@ -116,15 +118,16 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Azusa (梓喵) | ✅ | ⬜ |
 | Back-ups | ✅ | ⬜ |
 | baoziPT | ✅ | ⬜ |
+| baoziPT (API) | ✅ | ⬜ |
 | Beload | ✅ | ⬜ |
 | Best-Core | ✅ | ⬜ |
 | Bibliotik | ✅ | ⬜ |
 | BigCore | ✅ | ⬜ |
 | Bit-Bázis | ✅ | ⬜ |
+| BitAgent | ✅ | ⬜ |
 | Bitded | ✅ | ⬜ |
 | bitGAMER | ✅ | ⬜ |
 | BitHUmen | ✅ | ⬜ |
-| Bitpalace | ✅ | ⬜ |
 | BitPorn (API) | ✅ | ⬜ |
 | Bittorrentfiles | ✅ | ⬜ |
 | BiTTuRK | ✅ | ⬜ |
@@ -155,9 +158,9 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Cinematik (API) | ✅ | ⬜ |
 | ClearJAV (API) | ✅ | ⬜ |
 | Coastal-Music-Crew | ✅ | ⬜ |
-| ConCen | ✅ | ⬜ |
 | Concertos (API) | ✅ | ⬜ |
 | CrabPT (蟹黄堡) | ✅ | ⬜ |
+| CrabPT (蟹黄堡) (API) | ✅ | ⬜ |
 | CrazySpirits (API) | ✅ | ⬜ |
 | CrnaBerza | ✅ | ⬜ |
 | CrnaBerza2FA | ✅ | ⬜ |
@@ -173,10 +176,12 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | DaXiangJiao (大香蕉) | ✅ | ⬜ |
 | DaXiangJiao (大香蕉) (API) | ✅ | ⬜ |
 | Depth Studio | ✅ | ⬜ |
+| Depth Studio (API) | ✅ | ⬜ |
 | DesiTorrents (API) | ✅ | ⬜ |
 | Diablo Torrent | ✅ | ⬜ |
 | DigitalCore (API) | ✅ | ✅ |
 | DimeADozen | ✅ | ⬜ |
+| DirtyBytes (API) | ✅ | ⬜ |
 | DiscFan | ✅ | ⬜ |
 | DocsPedia | ✅ | ⬜ |
 | DreadVault (API) | ✅ | ⬜ |
@@ -195,6 +200,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Fappaizuri | ✅ | ⬜ |
 | Fappaizuri2FA | ✅ | ⬜ |
 | Femdomcult | ✅ | ⬜ |
+| FileIplay | ✅ | ⬜ |
 | FinElite | ✅ | ⬜ |
 | Flood | ✅ | ⬜ |
 | Free Farm (自由农场) | ✅ | ⬜ |
@@ -224,6 +230,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | HD-UNiT3D (API) | ✅ | ⬜ |
 | HDArea | ✅ | ⬜ |
 | HDBao | ✅ | ⬜ |
+| HDBao (API) | ✅ | ⬜ |
 | HDCiTY | ✅ | ⬜ |
 | HDClone | ✅ | ⬜ |
 | HDFans | ✅ | ⬜ |
@@ -236,6 +243,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | HDTurk | ✅ | ⬜ |
 | HDU | ✅ | ⬜ |
 | HDVideo | ✅ | ⬜ |
+| HDVideo (API) | ✅ | ⬜ |
 | HDZero (API) | ✅ | ⬜ |
 | Hebits | ✅ | ⬜ |
 | HellasHut | ✅ | ⬜ |
@@ -309,6 +317,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | MonikaDesign (API) | ✅ | ⬜ |
 | MouseBits | ✅ | ⬜ |
 | Musopia (音乐乌托邦) | ✅ | ⬜ |
+| Musopia (音乐乌托邦) (API) | ✅ | ⬜ |
 | Muxuege | ✅ | ⬜ |
 | MySpleen | ✅ | ⬜ |
 | NanyangPT (南洋) | ✅ | ⬜ |
@@ -339,7 +348,10 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Peeratiko | ✅ | ⬜ |
 | PeerGarden | ✅ | ⬜ |
 | Peers.FM | ✅ | ⬜ |
+| Periodical | ✅ | ⬜ |
 | Phoenix Project | ✅ | ⬜ |
+| PhoenixPT (凤凰PT) | ✅ | ⬜ |
+| PhoenixPT (凤凰PT) (API) | ✅ | ⬜ |
 | PigNetwork (猪猪网) | ✅ | ⬜ |
 | PixelCove | ✅ | ⬜ |
 | PixelCove2FA | ✅ | ⬜ |
@@ -359,6 +371,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | PTFiles | ✅ | ⬜ |
 | PThome | ✅ | ⬜ |
 | PTLAO | ✅ | ⬜ |
+| PTLAO (API) | ✅ | ⬜ |
 | PTLGS | ✅ | ⬜ |
 | PTSBAO (烧包) | ✅ | ⬜ |
 | PTSKIT | ✅ | ⬜ |
@@ -377,6 +390,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Qingwa (青蛙) | ✅ | ⬜ |
 | R3V WTF! | ✅ | ⬜ |
 | Racing4Everyone (API) | ✅ | ✅ |
+| Racing4us | ✅ | ⬜ |
 | RacingForMe | ✅ | ✅ |
 | RailgunPT | ✅ | ⬜ |
 | Rastastugan (API) | ✅ | ✅ |
@@ -402,7 +416,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | SiamBIT | ✅ | ⬜ |
 | Siqi | ✅ | ⬜ |
 | SkipTheCommercials (API) | ✅ | ⬜ |
-| Slobit Games | ✅ | ⬜ |
 | SnowPT | ✅ | ⬜ |
 | SoulVoice (聆音Club) | ✅ | ⬜ |
 | SoulVoice (聆音Club) (API) | ✅ | ⬜ |
@@ -410,8 +423,8 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Spirit of Revolution | ✅ | ⬜ |
 | SportsCora (API) | ✅ | ⬜ |
 | SportsCult | ✅ | ⬜ |
-| Sportz247 | ✅ | ⬜ |
 | SpringSunday | ✅ | ⬜ |
+| Stellarwinds | ✅ | ⬜ |
 | Superbits | ✅ | ⬜ |
 | Swarmazon (API) | ✅ | ⬜ |
 | TangPT (躺平) | ✅ | ⬜ |
@@ -427,10 +440,10 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | The Falling Angels | ✅ | ⬜ |
 | The Geeks | ✅ | ⬜ |
 | The Kitchen | ✅ | ⬜ |
+| The New Heaven | ✅ | ⬜ |
 | The New Retro | ✅ | ⬜ |
 | The Occult | ✅ | ⬜ |
 | The Old School (API) | ✅ | ⬜ |
-| The Paradiese | ✅ | ⬜ |
 | The Place | ✅ | ⬜ |
 | The Show | ✅ | ⬜ |
 | The Vault | ✅ | ⬜ |
@@ -505,12 +518,11 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | ZmPT (织梦) (API) | ✅ | ⬜ |
 | ZRPT (自然) | ✅ | ⬜ |
 
-### Semi-private (61)
+### Semi-private (60)
 
 | Tracker | Built | Live-tested |
 |---|:--:|:--:|
 | Anime by Belka | ✅ | ⬜ |
-| Anime Tosho | ✅ | ⬜ |
 | AnimeLayer | ✅ | ⬜ |
 | Best-Torrents | ✅ | ⬜ |
 | BitMagnet (Local DHT) | ✅ | ⬜ |
@@ -571,7 +583,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | UzTracker | ✅ | ⬜ |
 | Ztracker | ✅ | ⬜ |
 
-### Public (87)
+### Public (86)
 
 | Tracker | Built | Live-tested |
 |---|:--:|:--:|
@@ -580,6 +592,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | 52BT | ✅ | ⬜ |
 | ACG.RIP | ✅ | ⬜ |
 | Anibt | ✅ | ⬜ |
+| Anime Tosho | ✅ | ⬜ |
 | AniRena | ✅ | ⬜ |
 | AniSource | ✅ | ⬜ |
 | Bangumi Moe | ✅ | ⬜ |
@@ -639,7 +652,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | TheRARBG | ✅ | ⬜ |
 | Tokyo Toshokan | ✅ | ⬜ |
 | Torrent Downloads | ✅ | ⬜ |
-| Torrent Oyun indir | ✅ | ⬜ |
 | torrent-pirat | ✅ | ⬜ |
 | torrent.by | ✅ | ⬜ |
 | Torrent9 | ✅ | ⬜ |
@@ -651,7 +663,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | TorrentProject2 | ✅ | ⬜ |
 | Torrentsome | ✅ | ⬜ |
 | Torrenttip | ✅ | ⬜ |
-| U2P | ✅ | ⬜ |
 | U3C3 | ✅ | ⬜ |
 | Uindex | ✅ | ⬜ |
 | VST Torrentz | ✅ | ⬜ |
