@@ -1,6 +1,7 @@
 package search
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"html"
@@ -291,4 +292,27 @@ func filterDiacritics(value string, args []string) (string, error) {
 		sb.WriteRune(r)
 	}
 	return norm.NFC.String(sb.String()), nil
+}
+
+// filterBase64Decode implements base64decode via .NET WebEncoders.Base64UrlDecode:
+// the URL-safe alphabet is mapped back to standard, missing padding is restored,
+// and the bytes are read as UTF-8. Standard-alphabet input decodes too, since the
+// mapping leaves '+' and '/' alone. Malformed input is an error — Jackett throws
+// FormatException here and does not catch it.
+func filterBase64Decode(value string, _ []string) (string, error) {
+	std := strings.NewReplacer("-", "+", "_", "/").Replace(value)
+	if pad := len(std) % 4; pad != 0 {
+		std += strings.Repeat("=", 4-pad)
+	}
+	out, err := base64.StdEncoding.DecodeString(std)
+	if err != nil {
+		return "", fmt.Errorf("base64decode: %w", err)
+	}
+	return string(out), nil
+}
+
+// filterBase64Encode implements base64encode via .NET WebEncoders.Base64UrlEncode:
+// URL-safe alphabet, no padding — exactly Go's RawURLEncoding.
+func filterBase64Encode(value string, _ []string) (string, error) {
+	return base64.RawURLEncoding.EncodeToString([]byte(value)), nil
 }

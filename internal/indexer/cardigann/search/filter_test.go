@@ -56,6 +56,16 @@ func TestApplyStringFilters(t *testing.T) {
 		{name: "urlencode space", in: "a b", filters: []loader.FilterBlock{fb("urlencode")}, want: "a+b"},
 		{name: "htmldecode", in: "a&amp;b&lt;c", filters: []loader.FilterBlock{fb("htmldecode")}, want: "a&b<c"},
 		{name: "htmlencode", in: "a&b<c", filters: []loader.FilterBlock{fb("htmlencode")}, want: "a&amp;b&lt;c"},
+		// WebEncoders.Base64UrlDecode: URL-safe alphabet, padding optional, standard alphabet
+		// also accepted; a length that no padding can fix is a FormatException in .NET.
+		{name: "base64decode urlsafe unpadded", in: "YT9iL2M-ZA", filters: []loader.FilterBlock{fb("base64decode")}, want: "a?b/c>d"},
+		{name: "base64decode standard padded", in: "YT9iL2M+ZA==", filters: []loader.FilterBlock{fb("base64decode")}, want: "a?b/c>d"},
+		{name: "base64decode utf8 bytes", in: "4oCm", filters: []loader.FilterBlock{fb("base64decode")}, want: "…"},
+		{name: "base64decode magnet link", in: "bWFnbmV0Oj94dD11cm46YnRpaDpBQkM", filters: []loader.FilterBlock{fb("base64decode")}, want: "magnet:?xt=urn:btih:ABC"},
+		{name: "base64decode invalid chars", in: "a?b", filters: []loader.FilterBlock{fb("base64decode")}, wantErr: true},
+		{name: "base64decode bad length", in: "YTVi0", filters: []loader.FilterBlock{fb("base64decode")}, wantErr: true},
+		{name: "base64encode urlsafe unpadded", in: "a?b/c>d", filters: []loader.FilterBlock{fb("base64encode")}, want: "YT9iL2M-ZA"},
+		{name: "base64 round trip", in: "x", filters: []loader.FilterBlock{fb("base64encode"), fb("base64decode")}, want: "x"},
 		// WebUtility.HtmlEncode fidelity (vs Go html.EscapeString): " -> &quot; (not &#34;),
 		// ' -> &#39;, > -> &gt;; Latin-1 (é U+00E9) -> &#233;; BMP >= U+0100 (中) and the
 		// U+007F–U+009F band pass through; astral (😀 U+1F600) -> &#128512;.

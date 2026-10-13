@@ -66,6 +66,8 @@ func (r *FilterRegistry) buildOps() map[string]filterFunc {
 		"urlencode":     filterURLEncode,
 		"htmldecode":    filterHTMLDecode,
 		"htmlencode":    filterHTMLEncode,
+		"base64decode":  filterBase64Decode,
+		"base64encode":  filterBase64Encode,
 		"validfilename": filterValidFilename,
 		"diacritics":    filterDiacritics,
 		"jsonjoinarray": filterJSONJoinArray,
