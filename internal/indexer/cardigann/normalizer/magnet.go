@@ -59,8 +59,8 @@ func toInfoHash(magnet string) string {
 	if xt == "" {
 		return ""
 	}
-	if i := strings.LastIndexByte(xt, ':'); i >= 0 {
-		return xt[i+1:]
+	if _, hash, ok := strings.CutLast(xt, ":"); ok {
+		return hash
 	}
 	return xt
 }
