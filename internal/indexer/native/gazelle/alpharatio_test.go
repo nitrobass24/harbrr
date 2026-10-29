@@ -505,9 +505,9 @@ func assertCanceledLoginWaiterReturns(t *testing.T, wait func(context.Context, *
 		}
 	case <-time.After(time.Second):
 		close(releaseLogin)
-		<-firstDone
+		firstErr := <-firstDone
 		waiterErr := <-waiterDone
-		t.Fatalf("canceled waiter remained blocked; eventual error = %v", waiterErr)
+		t.Fatalf("canceled waiter remained blocked; eventual error = %v (first login: %v)", waiterErr, firstErr)
 	}
 	close(releaseLogin)
 	if err := <-firstDone; err != nil {
