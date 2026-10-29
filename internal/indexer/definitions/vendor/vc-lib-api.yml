@@ -1,29 +1,28 @@
 ---
-id: ptlao-api
-name: PTLAO (API)
-description: "PTLAO is a CHINESE Private Torrent Tracker for MOVIES / TV / GENERAL"
+id: vc-lib-api
+name: VC-Lib (API)
+description: "VC-Lib is a CHINESE Private Torrent Tracker for MUSIC"
 language: zh-CN
 type: private
 encoding: UTF-8
+requestDelay: 2
 links:
-  - https://ptlao.top/
+  - https://pt.vclib.online/
 
 caps:
   categorymappings:
-    - {id: 401, cat: Movies, desc: "Movies"}
-    - {id: 402, cat: TV, desc: "TV Series"}
-    - {id: 403, cat: TV, desc: "TV Shows"}
-    - {id: 405, cat: TV/Anime, desc: "Animations"}
-    - {id: 404, cat: TV/Documentary, desc: "Documentaries"}
-    - {id: 408, cat: Audio, desc: "HQ Audio"}
-    - {id: 409, cat: Other, desc: "Misc"}
-    - {id: 407, cat: TV/Sport, desc: "Sports"}
-    - {id: 406, cat: Audio/Video, desc: "Music Videos"}
+    - {id: 408, cat: Other, desc: "其他 - Other"}
+    - {id: 409, cat: PC/0day, desc: "软件 - Software"}
+    - {id: 407, cat: PC/Games, desc: "游戏 - Games"}
+    - {id: 406, cat: PC/0day, desc: "编辑器 - Editors"}
+    - {id: 403, cat: Other, desc: "声库 - Voicebanks"}
+    - {id: 402, cat: Audio/Video, desc: "视频 - Videos"}
+    - {id: 405, cat: Other, desc: "图片 - Images"}
+    - {id: 404, cat: Audio, desc: "单曲 - Singles"}
+    - {id: 401, cat: Audio, desc: "专辑 - Albums"}
 
   modes:
     search: [q]
-    tv-search: [q, season, ep]
-    movie-search: [q]
     music-search: [q]
 
 settings:
@@ -33,7 +32,7 @@ settings:
   - name: info_apikey
     type: info
     label: About your API Token
-    default: "Find/Generate an API token from your <a href=\"https://ptlao.top/usercp.php\" target=\"_blank\">PTLAO</a> account control panel."
+    default: "Find/Generate an API token from your <a href=\"https://pt.vclib.online/usercp.php\" target=\"_blank\">VC-Lib</a> account control panel."
   - name: passkey
     type: text
     label: Passkey
@@ -57,7 +56,7 @@ settings:
   - name: info_activity
     type: info
     label: Account Inactivity
-    default: "Account retention rules:<ol><li>Veteran User and above will be retained forever</li><li>Elite Users and above will not be deleted after parking (in the control panel)</li><li>Users with a parked account will be banned if they do not log in for 300 consecutive days</li><li>Users who do not log in for 150 consecutive days will be banned</li><li>Newly registered users with no traffic within 30 days, will be banned.</li></ol>"
+    default: "If you don't log in to Vclib for 365 days, the system will automatically ban you (not just doing it, you have to actually log in)."
 
 login:
   path: api/v1/torrents
@@ -137,5 +136,8 @@ search:
     uploadvolumefactor:
       selector: promotion_info.up_multiplier
     minimumratio:
-      text: 0.6
-# JSON API NexusPHP v1.9.14 2026-01-23
+      text: 0.8
+    minimumseedtime:
+      # 1 day (as seconds = 24 x 60 x 60)
+      text: 86400
+# JSON API NexusPHP v1.10.3 2026-08-02

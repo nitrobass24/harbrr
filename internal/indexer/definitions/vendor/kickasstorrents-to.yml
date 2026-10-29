@@ -50,6 +50,7 @@ caps:
     - {id: AppsAndroid, cat: PC/Mobile-Android, desc: "Apps Android"}
     - {id: AppsLinux, cat: PC, desc: "Apps Linux"}
     - {id: AppsMac, cat: PC/Mac, desc: "Apps Mac"}
+    - {id: AppsOtherApplications, cat: PC, desc: "Apps Other Applications"}
     - {id: AppsWindows, cat: PC/0day, desc: "Apps Windows"}
     - {id: Audiobooks, cat: Audio/Audiobook, desc: "Audio books"}
     - {id: Bollywood, cat: Movies, desc: "Movies Bollywood"}
@@ -140,8 +141,8 @@ settings:
 search:
   paths:
     # 50 rows per page, however the All page only returns 49 actual results as the 50th is a duplicate of the 49th 8-/
-    - path: "{{ if .Keywords }}search/?q={{ .Keywords }}{{ else }}17/All/{{ end }}"
-    - path: "{{ if .Keywords }}search/?page=2&q={{ .Keywords }}{{ else }}17/All/?page=2{{ end }}"
+    - path: "{{ if .Keywords }}search/?q={{ .Keywords }}{{ else }}17/all/{{ end }}"
+    - path: "{{ if .Keywords }}search/?page=2&q={{ .Keywords }}{{ else }}17/all/?page=2{{ end }}"
 
   headers:
     Accept: ["*/*"]

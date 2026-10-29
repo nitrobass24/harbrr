@@ -10,7 +10,7 @@ Cardigann can't express — and how far each is validated.
   account on that tracker). See **[Test status](test-status.md)** for the evidence behind this
   column and the auth/fetch patterns proven live.
 
-**628 trackers** total: 585 Cardigann corpus (all built) · 26 native drivers built · 17 native
+**625 trackers** total: 582 Cardigann corpus (all built) · 26 native drivers built · 17 native
 drivers planned. To configure one, see **[Adding an indexer](guides/add-indexer.md)**.
 
 ## Native drivers
@@ -74,7 +74,7 @@ Native drivers we have issues for but haven't built. 👍 or comment on the issu
 
 Served through the shared engine from the vendored Jackett snapshot — all built. Live-tested where an operator instance covers them.
 
-### Private (439)
+### Private (438)
 
 | Tracker | Built | Live-tested |
 |---|:--:|:--:|
@@ -87,7 +87,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | 3D Torrents | ✅ | ⬜ |
 | 3D Vault (API) | ✅ | ⬜ |
 | 4thD | ✅ | ⬜ |
-| 52movie | ✅ | ⬜ |
 | 52PT | ✅ | ⬜ |
 | 720pier | ✅ | ⬜ |
 | Abnormal (API) | ✅ | ⬜ |
@@ -97,7 +96,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | AGSVPT | ✅ | ⬜ |
 | Aidoru!Online | ✅ | ⬜ |
 | Aither (API) | ✅ | ✅ |
-| AlaBala | ✅ | ⬜ |
+| AlaBala (API) | ✅ | ⬜ |
 | alingPT | ✅ | ⬜ |
 | alingPT (API) | ✅ | ⬜ |
 | Amigos Share Club | ✅ | ⬜ |
@@ -123,6 +122,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Best-Core | ✅ | ⬜ |
 | Bibliotik | ✅ | ⬜ |
 | BigCore | ✅ | ⬜ |
+| BinaryBay | ✅ | ⬜ |
 | Bit-Bázis | ✅ | ⬜ |
 | BitAgent | ✅ | ⬜ |
 | Bitded | ✅ | ⬜ |
@@ -132,7 +132,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Bittorrentfiles | ✅ | ⬜ |
 | BiTTuRK | ✅ | ⬜ |
 | BJ-Share | ✅ | ⬜ |
-| BlueBird | ✅ | ⬜ |
 | BlueTorrents | ✅ | ⬜ |
 | BlurayTracker | ✅ | ⬜ |
 | Blutopia (API) | ✅ | ⬜ |
@@ -183,6 +182,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | DimeADozen | ✅ | ⬜ |
 | DirtyBytes (API) | ✅ | ⬜ |
 | DiscFan | ✅ | ⬜ |
+| DiscFan (API) | ✅ | ⬜ |
 | DocsPedia | ✅ | ⬜ |
 | DreadVault (API) | ✅ | ⬜ |
 | Drugari | ✅ | ⬜ |
@@ -359,6 +359,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Podzemlje | ✅ | ⬜ |
 | Polish Torrent (API) | ✅ | ⬜ |
 | PolishTracker (API) | ✅ | ⬜ |
+| Pornorip | ✅ | ⬜ |
 | Portugas (API) | ✅ | ⬜ |
 | ProAudioTorrents | ✅ | ⬜ |
 | PT GTK | ✅ | ⬜ |
@@ -370,15 +371,12 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | PTFans | ✅ | ⬜ |
 | PTFiles | ✅ | ⬜ |
 | PThome | ✅ | ⬜ |
-| PTLAO | ✅ | ⬜ |
-| PTLAO (API) | ✅ | ⬜ |
 | PTLGS | ✅ | ⬜ |
 | PTSBAO (烧包) | ✅ | ⬜ |
 | PTSKIT | ✅ | ⬜ |
 | PTSKIT (API) | ✅ | ⬜ |
 | PTTey | ✅ | ⬜ |
 | PTTime | ✅ | ⬜ |
-| PTYING (樱花) | ✅ | ⬜ |
 | PTzone | ✅ | ⬜ |
 | PTzone (API) | ✅ | ⬜ |
 | PT分享站 (itzmx) | ✅ | ⬜ |
@@ -402,6 +400,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Romanian Metal Torrents | ✅ | ⬜ |
 | Rousi.pro | ✅ | ⬜ |
 | SAMARITANO (API) | ✅ | ⬜ |
+| SAPIbr (API) | ✅ | ⬜ |
 | SBPT | ✅ | ⬜ |
 | SceneRush | ✅ | ⬜ |
 | SceneTime (API) | ✅ | ⬜ |
@@ -454,7 +453,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | TJUPT (北洋园PT) | ✅ | ⬜ |
 | TLFBits | ✅ | ⬜ |
 | TmGHuB | ✅ | ⬜ |
-| Toca Share (API) | ✅ | ⬜ |
 | Tormac | ✅ | ⬜ |
 | Tornado | ✅ | ⬜ |
 | Torrent Heaven | ✅ | ⬜ |
@@ -492,11 +490,12 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | V3X | ✅ | ⬜ |
 | Vault network | ✅ | ⬜ |
 | VC-Lib | ✅ | ⬜ |
+| VC-Lib (API) | ✅ | ⬜ |
 | VietMediaF | ✅ | ⬜ |
 | White Angel | ✅ | ⬜ |
 | WinterSakura | ✅ | ⬜ |
 | World-In-HD | ✅ | ⬜ |
-| World-of-Tomorrow | ✅ | ⬜ |
+| World-of-Tomorrow (API) | ✅ | ⬜ |
 | XDY (修道院) | ✅ | ⬜ |
 | XDY (修道院) (API) | ✅ | ⬜ |
 | Xingtan (杏坛) | ✅ | ⬜ |
@@ -549,6 +548,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Kinorun | ✅ | ⬜ |
 | Kinozal | ✅ | ⬜ |
 | Kinozal (M) | ✅ | ⬜ |
+| Magnetz | ✅ | ⬜ |
 | Marine Tracker | ✅ | ⬜ |
 | Mazepa | ✅ | ⬜ |
 | Metal Tracker | ✅ | ⬜ |
@@ -560,7 +560,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | New-Team | ✅ | ⬜ |
 | NewStudioL | ✅ | ⬜ |
 | NoNaMe ClubL | ✅ | ⬜ |
-| Polskie-Torrenty | ✅ | ⬜ |
 | PornoLab | ✅ | ⬜ |
 | Postman (API) | ✅ | ⬜ |
 | ProPorno | ✅ | ⬜ |
@@ -583,7 +582,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | UzTracker | ✅ | ⬜ |
 | Ztracker | ✅ | ⬜ |
 
-### Public (86)
+### Public (84)
 
 | Tracker | Built | Live-tested |
 |---|:--:|:--:|
@@ -611,7 +610,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | EZTV | ✅ | ⬜ |
 | FileMood | ✅ | ⬜ |
 | Free JAV Torrent | ✅ | ⬜ |
-| GamesTorrents | ✅ | ⬜ |
 | Internet Archive | ✅ | ⬜ |
 | kickasstorrents.to | ✅ | ⬜ |
 | kickasstorrents.ws | ✅ | ⬜ |
@@ -620,7 +618,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Mac Torrents Download | ✅ | ⬜ |
 | Magnet Cat | ✅ | ⬜ |
 | MagnetDownload | ✅ | ⬜ |
-| Magnetz | ✅ | ⬜ |
 | MegaPeer | ✅ | ⬜ |
 | Mikan | ✅ | ⬜ |
 | MixtapeTorrent | ✅ | ⬜ |

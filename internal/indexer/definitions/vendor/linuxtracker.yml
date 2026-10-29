@@ -11,7 +11,6 @@ links:
 
 caps:
   categorymappings:
-    - {id: 0, cat: Other, desc: "Other"}
     - {id: 2002, cat: PC/ISO, desc: "4MLinux"}
     - {id: 13, cat: PC/ISO, desc: "Absolute"}
     - {id: 2311, cat: PC/ISO, desc: "AlmaLinux"}
@@ -19,12 +18,14 @@ caps:
     - {id: 2004, cat: PC/ISO, desc: "ALT Linux"}
     - {id: 2292, cat: PC/ISO, desc: "Anarchy Linux"}
     - {id: 2005, cat: PC/ISO, desc: "Android x86"}
+    - {id: 8, cat: PC/ISO, desc: "AnduinOS"}
     - {id: 2006, cat: PC/ISO, desc: "Antergos"}
     - {id: 2263, cat: PC/ISO, desc: "Antivirus Live CD"}
     - {id: 2007, cat: PC/ISO, desc: "AntiX"}
     - {id: 2289, cat: PC/ISO, desc: "APODIO"}
     - {id: 39, cat: PC/ISO, desc: "Arch Linux"}
     - {id: 2009, cat: PC/ISO, desc: "Archbang"}
+    - {id: 6, cat: PC/ISO, desc: "ArchEZ"}
     - {id: 2212, cat: PC/ISO, desc: "ArchLabs"}
     - {id: 2183, cat: PC/ISO, desc: "Archman"}
     - {id: 2196, cat: PC/ISO, desc: "ArcoLinux"}
@@ -81,6 +82,7 @@ caps:
     - {id: 2287, cat: PC/ISO, desc: "Doge Linux"}
     - {id: 2308, cat: PC/ISO, desc: "Dr.Parted Live"}
     - {id: 144, cat: PC/ISO, desc: "DragonFly BSD"}
+    - {id: 5, cat: PC/ISO, desc: "DragonOS"}
     - {id: 2215, cat: PC/ISO, desc: "Dragora GNU/Linux"}
     - {id: 2307, cat: PC/ISO, desc: "Drauger OS"}
     - {id: 2285, cat: PC/ISO, desc: "DRBL Live"}
@@ -102,6 +104,7 @@ caps:
     - {id: 2223, cat: PC/ISO, desc: "Enso OS"}
     - {id: 2043, cat: PC/ISO, desc: "Exe GNU/Linux"}
     - {id: 2045, cat: PC/ISO, desc: "Extix"}
+    - {id: 9, cat: PC/ISO, desc: "Ezarcher"}
     - {id: 2220, cat: PC/ISO, desc: "Fatdog64 Linux"}
     - {id: 178, cat: PC/ISO, desc: "Fedora"}
     - {id: 2194, cat: PC/ISO, desc: "Feren OS"}
@@ -162,6 +165,7 @@ caps:
     - {id: 2068, cat: PC/ISO, desc: "LXLE"}
     - {id: 2296, cat: PC/ISO, desc: "Mabox Linux"}
     - {id: 1228, cat: PC/ISO, desc: "Mageia"}
+    - {id: 10, cat: PC/ISO, desc: "MagOS Linux"}
     - {id: 2071, cat: PC/ISO, desc: "MakuluLinux"}
     - {id: 2073, cat: PC/ISO, desc: "Manjaro"}
     - {id: 343, cat: PC/ISO, desc: "MidnightBSD"}
@@ -190,6 +194,7 @@ caps:
     - {id: 401, cat: PC/ISO, desc: "OpenBSD"}
     - {id: 2089, cat: PC/ISO, desc: "Openelec"}
     - {id: 2090, cat: PC/ISO, desc: "OpenIndiana"}
+    - {id: 7, cat: PC/ISO, desc: "Openmamba GNU/Linux"}
     - {id: 2091, cat: PC/ISO, desc: "OpenMandriva Lx"}
     - {id: 2092, cat: PC/ISO, desc: "Openmediavault"}
     - {id: 2093, cat: PC/ISO, desc: "Opensuse"}
@@ -289,7 +294,7 @@ caps:
     - {id: 2206, cat: PC/ISO, desc: "UBOS"}
     - {id: 563, cat: PC/ISO, desc: "Ubuntu"}
     - {id: 2198, cat: PC/ISO, desc: "Ubuntu Budgie"}
-    - {id: 2284, cat: PC/ISO, desc: "Ubuntu Cinnamon Rem"}
+    - {id: 2284, cat: PC/ISO, desc: "Ubuntu Cinnamon"}
     - {id: 2249, cat: PC/ISO, desc: "Ubuntu DesktopPack"}
     - {id: 2143, cat: PC/ISO, desc: "Ubuntu Gnome"}
     - {id: 2144, cat: PC/ISO, desc: "Ubuntu Kylin"}
@@ -324,7 +329,7 @@ caps:
     - {id: 1233, cat: PC/ISO, desc: "Zorin"}
     - {id: 4, cat: PC/ISO, desc: "Other distros"}
     # undocumented categories
-    - {id: 531, cat: PC/ISO, desc: "no category"}
+    - {id: 531, cat: PC/ISO, desc: "Uncategorized"}
 
   modes:
     search: [q]
