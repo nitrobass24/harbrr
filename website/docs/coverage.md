@@ -10,7 +10,7 @@ Cardigann can't express — and how far each is validated.
   account on that tracker). See **[Test status](test-status.md)** for the evidence behind this
   column and the auth/fetch patterns proven live.
 
-**625 trackers** total: 582 Cardigann corpus (all built) · 26 native drivers built · 17 native
+**628 trackers** total: 585 Cardigann corpus (all built) · 26 native drivers built · 17 native
 drivers planned. To configure one, see **[Adding an indexer](guides/add-indexer.md)**.
 
 ## Native drivers
@@ -74,7 +74,7 @@ Native drivers we have issues for but haven't built. 👍 or comment on the issu
 
 Served through the shared engine from the vendored Jackett snapshot — all built. Live-tested where an operator instance covers them.
 
-### Private (438)
+### Private (440)
 
 | Tracker | Built | Live-tested |
 |---|:--:|:--:|
@@ -174,6 +174,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | DataScene (API) | ✅ | ⬜ |
 | DaXiangJiao (大香蕉) | ✅ | ⬜ |
 | DaXiangJiao (大香蕉) (API) | ✅ | ⬜ |
+| Deep-Water (API) | ✅ | ⬜ |
 | Depth Studio | ✅ | ⬜ |
 | Depth Studio (API) | ✅ | ⬜ |
 | DesiTorrents (API) | ✅ | ⬜ |
@@ -215,6 +216,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | GGPT | ✅ | ⬜ |
 | GigaTorrents | ✅ | ⬜ |
 | Girotorrent | ✅ | ⬜ |
+| Golden Gate (GG) | ✅ | ⬜ |
 | HaiDan | ✅ | ⬜ |
 | HappyFappy | ✅ | ⬜ |
 | HappyFappy2FA | ✅ | ⬜ |
@@ -352,7 +354,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Phoenix Project | ✅ | ⬜ |
 | PhoenixPT (凤凰PT) | ✅ | ⬜ |
 | PhoenixPT (凤凰PT) (API) | ✅ | ⬜ |
-| PigNetwork (猪猪网) | ✅ | ⬜ |
 | PixelCove | ✅ | ⬜ |
 | PixelCove2FA | ✅ | ⬜ |
 | PlayletPT | ✅ | ⬜ |
@@ -399,6 +400,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | RocketHD (API) | ✅ | ⬜ |
 | Romanian Metal Torrents | ✅ | ⬜ |
 | Rousi.pro | ✅ | ⬜ |
+| Sagmire | ✅ | ⬜ |
 | SAMARITANO (API) | ✅ | ⬜ |
 | SAPIbr (API) | ✅ | ⬜ |
 | SBPT | ✅ | ⬜ |
@@ -409,6 +411,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | seedpool (API) | ✅ | ✅ |
 | SewerPT | ✅ | ⬜ |
 | SexTorrent (API) | ✅ | ⬜ |
+| Shadow (API) | ✅ | ⬜ |
 | Shadowbit | ✅ | ⬜ |
 | ShaKaw | ✅ | ⬜ |
 | Shareisland (API) | ✅ | ⬜ |
@@ -433,7 +436,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | TeamFlix | ✅ | ⬜ |
 | TeamHD | ✅ | ⬜ |
 | TeamOS | ✅ | ⬜ |
-| The Brothers | ✅ | ⬜ |
 | The Crazy Ones | ✅ | ⬜ |
 | The Empire | ✅ | ⬜ |
 | The Falling Angels | ✅ | ⬜ |
@@ -503,7 +505,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Xingyung (星陨阁) | ✅ | ⬜ |
 | xloli | ✅ | ⬜ |
 | xloli (API) | ✅ | ⬜ |
-| xTorrenty | ✅ | ⬜ |
 | Xtreme Bytes | ✅ | ⬜ |
 | XWT-Classics | ✅ | ⬜ |
 | XWT-Classics2FA | ✅ | ⬜ |
@@ -515,9 +516,10 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | Zenith | ✅ | ⬜ |
 | ZmPT (织梦) | ✅ | ⬜ |
 | ZmPT (织梦) (API) | ✅ | ⬜ |
+| ZooToons | ✅ | ⬜ |
 | ZRPT (自然) | ✅ | ⬜ |
 
-### Semi-private (60)
+### Semi-private (61)
 
 | Tracker | Built | Live-tested |
 |---|:--:|:--:|
@@ -578,6 +580,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | TR4KER | ✅ | ⬜ |
 | TrahT | ✅ | ⬜ |
 | TribalMixes | ✅ | ⬜ |
+| UATorrent | ✅ | ⬜ |
 | Union Fansub | ✅ | ⬜ |
 | UzTracker | ✅ | ⬜ |
 | Ztracker | ✅ | ⬜ |
