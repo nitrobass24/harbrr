@@ -257,7 +257,6 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | House of Devil | ✅ | ⬜ |
 | HQMusic | ✅ | ⬜ |
 | HUDBT (蝴蝶) | ✅ | ⬜ |
-| HxPT (好学) | ✅ | ⬜ |
 | Hǎitáng (海棠PT) | ✅ | ⬜ |
 | Immortuos | ✅ | ⬜ |
 | Indietorrents | ✅ | ⬜ |
@@ -393,6 +392,7 @@ Served through the shared engine from the vendored Jackett snapshot — all buil
 | RacingForMe | ✅ | ✅ |
 | RailgunPT | ✅ | ⬜ |
 | Rastastugan (API) | ✅ | ✅ |
+| Red Angel | ✅ | ⬜ |
 | Red Star Torrent | ✅ | ⬜ |
 | ReelFLiX (API) | ✅ | ✅ |
 | RetroMoviesClub (API) | ✅ | ✅ |
