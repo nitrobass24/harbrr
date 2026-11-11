@@ -1,4 +1,4 @@
-import createClient, { type Client } from "openapi-fetch"
+import createClient, { type Client } from "openapi-typesafe-fetch"
 import { getBaseUrl } from "@/lib/base-url"
 import type { components, operations, paths } from "@/types/api.gen"
 
@@ -138,7 +138,7 @@ function toAPIError(response: Response, error: unknown): APIError {
   return new APIError(response.status, code, message)
 }
 
-// unwrap turns an openapi-fetch {data, error, response} result into the resolved
+// unwrap turns an openapi-typesafe-fetch {data, error, response} result into the resolved
 // value or a thrown APIError. T is INFERRED from the typed client call's data
 // shape — never pass it explicitly — so what a call site gets back is exactly
 // what the generated types say the endpoint returns. The standard call shape is
@@ -159,7 +159,7 @@ export async function unwrap<T>(call: Promise<{ data?: T, error?: unknown, respo
 export class ApiClient {
   private csrfToken = ""
 
-  // http is the typed openapi-fetch client. Call sites use it directly —
+  // http is the typed openapi-typesafe-fetch client. Call sites use it directly —
   // unwrap(api.http.<VERB>(path, args)) — the few methods below exist only
   // where a call needs more than that one-liner.
   readonly http: Client<paths>
@@ -172,7 +172,7 @@ export class ApiClient {
   // transport for the duration of a test and restores it after.
   fetchFn: (input: Request) => Promise<Response>
 
-  // baseUrl is made absolute (origin + path prefix) because openapi-fetch constructs
+  // baseUrl is made absolute (origin + path prefix) because openapi-typesafe-fetch constructs
   // a `Request` itself before dispatching — a plain browser `fetch("/api/...")` (the
   // old hand-rolled client's approach) resolves a relative URL against the document
   // implicitly, but `new Request("/api/...")` does not, so the origin is spelled out.

@@ -18,7 +18,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "generate:routes": "tsr generate",
-    "generate:api": "openapi-typescript ../internal/web/swagger/openapi.yaml -o src/types/api.gen.ts --default-non-nullable=false",
+    "generate:api": "openapi-typesafe ../internal/web/swagger/openapi.yaml -o src/types/api.gen.ts --default-non-nullable=false",
     "test:e2e": "playwright test"
   },
   "overrides": {
@@ -36,7 +36,7 @@
     "clsx": "^2.1.1",
     "lucide-react": "^1.66.0",
     "next-themes": "^0.4.6",
-    "openapi-fetch": "0.17.0",
+    "openapi-typesafe-fetch": "1.0.0-rc.5",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "sonner": "^2.0.8",
@@ -59,7 +59,7 @@
     "eslint-plugin-react-refresh": "^0.5.7",
     "globals": "^17.14.0",
     "jsdom": "^31.0.0",
-    "openapi-typescript": "7.13.0",
+    "openapi-typesafe": "1.0.0-rc.5",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.72.1",
