@@ -212,7 +212,7 @@ jobs:
       # instead: `guards` compares this pin against go.mod off the critical path,
       # and GOTOOLCHAIN=local below makes `go list -m` refuse to run at all if the
       # container's Go is older than go.mod asks for.
-      image: golang:1.27.3-alpine
+      image: golang:1.27.4-alpine
       # Persistent host-disk Go caches instead of actions/cache: the self-hosted
       # fleet shares one host, so round-tripping ~2GB of cache blobs through GHA
       # storage cost ~40s of restore per shard (plus the stalled-segment-download
