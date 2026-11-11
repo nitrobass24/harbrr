@@ -313,7 +313,7 @@ jobs:
     name: web-checks
     runs-on: self-hosted
     container:
-      image: oven/bun:1.4.0-alpine
+      image: oven/bun:1.4.4-alpine
       # Host-disk bun package cache, shared by every frontend job (concurrent
       # installs are safe — the cache is content-addressed and lock-protected).
       # All frontend jobs run as root, so the cache has a single writer uid.
@@ -355,7 +355,7 @@ jobs:
     name: web
     runs-on: self-hosted
     container:
-      image: oven/bun:1.4.0-alpine
+      image: oven/bun:1.4.4-alpine
       # Host-disk bun cache — see web-checks. This job heads the run's critical
       # path (web -> web-e2e / docker -> docker-merge), so its install time is
       # wall-clock for the whole run.
@@ -503,7 +503,7 @@ jobs:
       # The Playwright image ships node, not bun. The npm wrapper package is the
       # cheapest way in — it just fetches the pinned bun binary (no build step).
       - name: install bun
-        run: npm install -g bun@1.4.0
+        run: npm install -g bun@1.4.4
       - name: install
         working-directory: web
         run: bun install --frozen-lockfile

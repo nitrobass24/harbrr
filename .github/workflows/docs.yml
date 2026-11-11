@@ -40,7 +40,7 @@ jobs:
     # The docusaurus bin runs under bun's Node-compat runtime (no node in this
     # image); if that ever misbehaves, `apk add nodejs` and bun stays installer-only.
     container:
-      image: oven/bun:1.4.0-alpine
+      image: oven/bun:1.4.4-alpine
       volumes:
         - /mnt/optane/github-actions/harbrr-bun-cache:/bun-cache
     timeout-minutes: 10
